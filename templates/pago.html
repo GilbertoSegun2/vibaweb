@@ -1,0 +1,270 @@
+{% extends 'base.html' %}
+{% load core_extras %}
+
+{% block title %}Pago - Viba-Web{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 style="color: #003366;">
+        <i class="bi bi-credit-card"></i> Pago de la Compra
+    </h2>
+    <a href="/viajes/{{ viaje.id }}/pasajeros/" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Volver
+    </a>
+</div>
+
+<!-- Contador -->
+<div class="alert alert-warning d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <i class="bi bi-clock-history"></i>
+        <strong>Tiempo restante para completar la compra:</strong>
+    </div>
+    <div>
+        <span id="contador" class="badge bg-danger fs-5">--:--</span>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Columna izquierda: datos de la cuenta destino + formulario -->
+    <div class="col-lg-8">
+        
+        <!-- Datos de la cuenta destino -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-header" style="background-color: #003366; color: white;">
+                <strong><i class="bi bi-bank"></i> Datos para realizar el pago</strong>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <p class="mb-1"><strong>Banco:</strong> {{ datos_cuenta.banco }}</p>
+                        <p class="mb-1"><strong>Titular:</strong> {{ datos_cuenta.titular }}</p>
+                        <p class="mb-1"><strong>Cédula/RIF:</strong> {{ datos_cuenta.cedula }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <p class="mb-1"><strong>Teléfono Pago Móvil:</strong> {{ datos_cuenta.telefono }}</p>
+                        <p class="mb-1"><strong>Cuenta bancaria:</strong> {{ datos_cuenta.cuenta }}</p>
+                        <p class="mb-1"><strong>Monto a pagar:</strong> 
+                            <span class="badge bg-success fs-6">Bs. {{ total_bs }}</span>
+                        </p>
+                    </div>
+                </div>
+                <hr>
+                <p class="text-muted small mb-0">
+                    <i class="bi bi-info-circle"></i>
+                    Realiza el pago por <strong>Pago Móvil</strong> o <strong>Transferencia</strong> a los datos de arriba.
+                    Luego completa el formulario con los datos del pago y sube una foto del comprobante.
+                </p>
+            </div>
+        </div>
+        
+        <!-- Formulario de pago -->
+        <div class="card shadow-sm">
+            <div class="card-header" style="background-color: #003366; color: white;">
+                <strong><i class="bi bi-pencil-square"></i> Datos del pago realizado</strong>
+            </div>
+            <div class="card-body">
+                <form method="post" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">{{ form.metodo.label }}</label>
+                            {{ form.metodo }}
+                            {% if form.metodo.errors %}<div class="text-danger small">{{ form.metodo.errors }}</div>{% endif %}
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label class="form-label">{{ form.banco_origen.label }}</label>
+                            {{ form.banco_origen }}
+                            {% if form.banco_origen.errors %}<div class="text-danger small">{{ form.banco_origen.errors }}</div>{% endif %}
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label class="form-label">{{ form.telefono_origen.label }}</label>
+                            {{ form.telefono_origen }}
+                            {% if form.telefono_origen.errors %}<div class="text-danger small">{{ form.telefono_origen.errors }}</div>{% endif %}
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label class="form-label">{{ form.cedula_origen.label }}</label>
+                            {{ form.cedula_origen }}
+                            {% if form.cedula_origen.errors %}<div class="text-danger small">{{ form.cedula_origen.errors }}</div>{% endif %}
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label class="form-label">{{ form.referencia.label }} <span class="text-danger">*</span></label>
+                            {{ form.referencia }}
+                            {% if form.referencia.errors %}<div class="text-danger small">{{ form.referencia.errors }}</div>{% endif %}
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label">{{ form.monto_pagado_bs.label }} <span class="text-danger">*</span></label>
+                                
+                            {% if form.monto_pagado_bs.errors %}<div class="text-danger small">{{ form.monto_pagado_bs.errors }}</div>{% endif %}
+                                <input type="text" 
+                                   name="monto_pagado_bs" 
+                                   id="id_monto_pagado_bs" 
+                                   class="form-control mascara-monto" 
+                                   value="{{ form.monto_pagado_bs.value|default:'' }}" 
+                                   placeholder="0,00" 
+                                   inputmode="numeric" 
+                                   autocomplete="off" 
+                                   required>
+                            <div class="form-text">Monto total que aparece en el comprobante.</div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label">{{ form.comprobante.label }} <span class="text-danger">*</span></label>
+                            {{ form.comprobante }}
+                            {% if form.comprobante.errors %}<div class="text-danger small">{{ form.comprobante.errors }}</div>{% endif %}
+                            <div class="form-text">Sube una foto del comprobante (JPG, PNG).</div>
+                        </div>
+                    </div>
+                    
+                    <div class="alert alert-info mt-3 small mb-0">
+                        <i class="bi bi-info-circle"></i>
+                        Tu compra quedará <strong>pendiente de verificación</strong>. 
+                        Una vez confirmado el pago por nuestro equipo, recibirás tus boletos por email o WhatsApp.
+                    </div>
+                    
+                    {% if mostrar_aviso %}
+                    <div class="alert {% if monto_faltante > 0 %}alert-danger{% else %}alert-warning{% endif %} mt-3">
+                        {% if monto_faltante > 0 %}
+                            <h5><i class="bi bi-exclamation-triangle-fill"></i> Falta completar el pago</h5>
+                            <hr>
+                            <p class="mb-1"><strong>Monto a pagar:</strong> Bs. {{ total_bs }}</p>
+                            <p class="mb-1"><strong>Monto que indicaste haber pagado:</strong> Bs. {{ monto_pagado }}</p>
+                            <p class="mb-2"><strong>Faltan:</strong> 
+                                <span class="badge bg-danger fs-6">Bs. {{ monto_faltante }}</span>
+                            </p>
+                            <p class="mb-2 small">
+                                <i class="bi bi-info-circle"></i>
+                                Puedes <strong>corregir el monto</strong> antes de confirmar, 
+                                o <strong>confirmar este pago parcial</strong>. 
+                                El saldo quedará pendiente y podrás completarlo con un nuevo pago.
+                            </p>
+                        {% else %}
+                            <h5><i class="bi bi-info-circle-fill"></i> Estás pagando de más</h5>
+                            <hr>
+                            <p class="mb-1"><strong>Monto a pagar:</strong> Bs. {{ total_bs }}</p>
+                            <p class="mb-1"><strong>Monto que indicaste haber pagado:</strong> Bs. {{ monto_pagado }}</p>
+                            <p class="mb-2"><strong>Excedente:</strong> 
+                                <span class="badge bg-warning text-dark fs-6">Bs. {{ monto_excedente }}</span>
+                            </p>
+                            <p class="mb-2 small">
+                                <i class="bi bi-info-circle"></i>
+                                Si confirmas, el excedente de <strong>Bs. {{ monto_excedente }}</strong> 
+                                se guardará como <strong>crédito a tu favor</strong> para futuras compras.
+                            </p>
+                        {% endif %}
+                        
+                        <div class="text-center mt-3">
+                            <button type="submit" name="confirmar_diferencia" value="1" class="btn btn-warning">
+                                <i class="bi bi-check-circle"></i> 
+                                {% if monto_faltante > 0 %}Confirmar pago parcial{% else %}Confirmar y generar crédito{% endif %}
+                            </button>
+                            <a href="/viajes/{{ viaje.id }}/pago/" class="btn btn-outline-secondary ms-2">
+                                <i class="bi bi-x-circle"></i> Corregir monto
+                            </a>
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    <div class="text-center mt-4">
+                        <button type="submit" class="btn btn-success btn-lg px-5">
+                            <i class="bi bi-check-circle"></i> Confirmar pago
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Columna derecha: resumen -->
+    <div class="col-lg-4">
+        <div class="card shadow-sm" style="position: sticky; top: 20px;">
+            <div class="card-body">
+                <h5 class="card-title" style="color: #003366;">
+                    <i class="bi bi-receipt"></i> Resumen
+                </h5>
+                <hr>
+                <p class="mb-1"><strong>Viaje:</strong> {{ viaje.ruta.nombre }}</p>
+                <p class="mb-1"><strong>Fecha:</strong> {{ viaje.fecha|date:'d/m/Y' }}</p>
+                <p class="mb-1"><strong>Hora:</strong> {{ viaje.hora|hora_am_pm }}</p>
+                <hr>
+                <p class="mb-1"><strong>Cantidad:</strong> {{ cantidad }} boleto(s)</p>
+                
+                {% if tarifa %}
+                <p class="mb-1">
+                    <strong>Precio unitario:</strong> 
+                    <span class="badge bg-success">${{ tarifa.monto_usd }}</span>
+                </p>
+                {% if tasa_bcv %}
+                <p class="mb-1 text-muted small">Bs. {{ tarifa.monto_usd|convertir_bs }}</p>
+                {% endif %}
+                <p class="mb-1"><strong>Seguro:</strong> ${{ seguro }}</p>
+                {% if tasa_bcv %}
+                <p class="mb-1 text-muted small">Bs. {{ seguro|convertir_bs }}</p>
+                {% endif %}
+                {% else %}
+                <p class="mb-1">
+                    <strong>Precio:</strong> 
+                    <span class="badge bg-danger">Sin tarifa</span>
+                </p>
+                {% endif %}
+                
+                <hr>
+                <h5 class="mb-1">
+                    <strong>Total:</strong> 
+                    <span class="badge bg-success fs-6">${{ total_usd }}</span>
+                </h5>
+                {% if tasa_bcv %}
+                <p class="mb-0 text-muted small">
+                    Bs. {{ total_usd|convertir_bs }}
+                </p>
+                <p class="mb-0 text-muted small">
+                    <i class="bi bi-currency-exchange"></i> Tasa BCV: {{ tasa_bcv|floatformat:2 }}
+                </p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/mascara_montos.js"></script>
+<script>
+    // Contador de tiempo
+    let minutosRestantes = {{ minutos_reserva }};
+    let segundosTotales = minutosRestantes * 60;
+    
+    const contadorEl = document.getElementById('contador');
+    
+    function formatearTiempo(segundos) {
+        const m = Math.floor(segundos / 60);
+        const s = segundos % 60;
+        return `${m}:${s.toString().padStart(2, '0')}`;
+    }
+    
+    contadorEl.textContent = formatearTiempo(segundosTotales);
+    
+    const intervalo = setInterval(() => {
+        segundosTotales--;
+        
+        if (segundosTotales <= 0) {
+            clearInterval(intervalo);
+            alert('Se acabó el tiempo de reserva. Los asientos se han liberado.');
+            window.location.href = '/viajes/{{ viaje.id }}/';
+            return;
+        }
+        
+        contadorEl.textContent = formatearTiempo(segundosTotales);
+        
+        if (segundosTotales <= 120) {
+            contadorEl.classList.remove('bg-danger');
+            contadorEl.classList.add('bg-dark');
+        }
+    }, 1000);
+</script>
+{% endblock %}

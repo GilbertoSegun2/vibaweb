@@ -1,0 +1,569 @@
+{% extends 'base.html' %}
+{% load core_extras %}
+
+{% block title %}{{ viaje.ruta.nombre }} - Viba-Web{% endblock %}
+
+{% block extra_css %}
+<style>
+    .mapa-bus {
+        max-width: 420px;
+        margin: 0 auto;
+        background: #f8f9fa;
+        border: 2px solid #dee2e6;
+        border-radius: 12px;
+        padding: 15px;
+    }
+    .bus-frente {
+        text-align: center;
+        font-weight: bold;
+        color: #003366;
+        padding: 8px;
+        background: #e7f0f7;
+        border-radius: 8px;
+        margin-bottom: 15px;
+        font-size: 0.9rem;
+    }
+    .piso-titulo {
+        text-align: center;
+        font-weight: bold;
+        color: #003366;
+        background: #e7f0f7;
+        padding: 6px;
+        border-radius: 6px;
+        margin: 15px 0 10px 0;
+        font-size: 0.9rem;
+    }
+    .fila-asientos {
+        display: flex;
+        justify-content: center;
+        gap: 6px;
+        margin-bottom: 6px;
+    }
+    .asiento {
+        width: 42px;
+        height: 42px;
+        border-radius: 6px;
+        border: 2px solid #adb5bd;
+        background: #ffffff;
+        color: #495057;
+        font-size: 0.75rem;
+        font-weight: bold;
+        cursor: pointer;
+        transition: all 0.15s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+    }
+    .asiento:hover:not(:disabled) {
+        transform: scale(1.08);
+        border-color: #003366;
+    }
+    .asiento.disponible {
+        background: #ffffff;
+        color: #495057;
+    }
+    .asiento.seleccionado {
+        background: #003366;
+        color: #ffffff;
+        border-color: #001f3f;
+    }
+    .asiento.vendido {
+        background: #dc3545;
+        color: #ffffff;
+        border-color: #a71d2a;
+        cursor: not-allowed;
+    }
+    .asiento.reservado {
+        background: #ffc107;
+        color: #000;
+        border-color: #cc9a06;
+        cursor: not-allowed;
+    }
+    .asiento.bloqueado {
+        background: #6c757d;
+        color: #ffffff;
+        border-color: #495057;
+        cursor: not-allowed;
+    }
+    .asiento.especial {
+        width: 42px;
+        height: 42px;
+        border-radius: 6px;
+        background: #e9ecef;
+        border: 2px dashed #adb5bd;
+        color: #6c757d;
+        font-size: 0.65rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        text-align: center;
+    }
+    .pasillo {
+        width: 25px;
+        min-width: 25px;
+    }
+    .leyenda {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        justify-content: center;
+        font-size: 0.8rem;
+        margin-top: 15px;
+    }
+    .leyenda-item {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+    }
+    .leyenda-cuadro {
+        width: 18px;
+        height: 18px;
+        border-radius: 4px;
+        border: 2px solid #adb5bd;
+    }
+    .panel-resumen {
+        position: sticky;
+        top: 20px;
+    }
+    @media (max-width: 576px) {
+        .asiento, .asiento.especial {
+            width: 34px;
+            height: 34px;
+            font-size: 0.65rem;
+        }
+        .mapa-bus {
+            padding: 10px;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 style="color: #003366;">
+        <i class="bi bi-bus-front"></i> {{ viaje.ruta.nombre }}
+    </h2>
+    <a href="/" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Volver
+    </a>
+</div>
+
+<div class="row">
+    <!-- Columna izquierda: información del viaje -->
+    <div class="col-lg-3 mb-3">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h5 class="card-title" style="color: #003366;">Información</h5>
+                <hr>
+                <p class="mb-1"><strong>Fecha:</strong> {{ viaje.fecha|date:'d/m/Y' }}</p>
+                <p class="mb-1"><strong>Hora:</strong> {{ viaje.hora|hora_am_pm }}</p>
+                <p class="mb-1"><strong>Origen:</strong> {{ viaje.ruta.origen.nombre }}</p>
+                <p class="mb-1"><strong>Bus:</strong> {{ viaje.bus.modelo }}</p>
+                <p class="mb-1"><strong>Placa:</strong> {{ viaje.bus.placa }}</p>
+                <hr>
+                
+                {% if tarifa %}
+                    <p class="mb-1">
+                        <strong>Precio:</strong> 
+                        <span class="badge bg-success fs-6">${{ tarifa.monto_usd }}</span>
+                    </p>
+                    <p class="mb-1 text-muted small">
+                        Bs. {{ tarifa.monto_usd|convertir_bs }}
+                    </p>
+                    <p class="mb-1">
+                        <strong>Seguro:</strong> ${{ seguro }}
+                    </p>
+                    <p class="mb-1 text-muted small">
+                        Bs. {{ seguro|convertir_bs }}
+                    </p>
+                {% else %}
+                    <p class="mb-1">
+                        <strong>Precio:</strong> 
+                        <span class="badge bg-danger fs-6">Sin tarifa</span>
+                    </p>
+                    <p class="mb-1 text-muted small">
+                        Por favor, selecciona un viaje desde la búsqueda
+                    </p>
+                {% endif %}
+                
+                {% if tasa_bcv %}
+                <p class="mb-0 text-muted small">
+                    <i class="bi bi-currency-exchange"></i> Tasa BCV: {{ tasa_bcv|floatformat:2 }} Bs/USD
+                </p>
+                {% else %}
+                <p class="mb-0 text-danger small">
+                    <i class="bi bi-exclamation-triangle"></i> Tasa BCV no configurada
+                </p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- Columna central: mapa de asientos -->
+    <div class="col-lg-6 mb-3">
+        <div class="mapa-bus">
+            <div class="bus-frente">
+                <i class="bi bi-arrow-up-circle-fill"></i> FRENTE DEL BUS
+            </div>
+            
+            {% for piso, filas in asientos_por_piso.items %}
+                {% if asientos_por_piso|length > 1 %}
+                    <div class="piso-titulo">
+                        {% if piso == 1 %}PISO INFERIOR{% else %}PISO SUPERIOR{% endif %}
+                    </div>
+                {% endif %}
+                {% for fila_num, asientos in filas.items %}
+                    <div class="fila-asientos">
+                        {% for asiento in asientos %}
+                            {# Insertar el pasillo justo antes de la columna 3 #}
+                            {% if asiento.columna == 3 %}
+                                <div class="pasillo"></div>
+                            {% endif %}
+                            
+                            {% if asiento.tipo == 'asiento' %}
+                                <button 
+                                    type="button"
+                                    class="asiento 
+                                        {% if asiento.estado == 'disponible' %}disponible{% endif %}
+                                        {% if asiento.estado == 'vendido' %}vendido{% endif %}
+                                        {% if asiento.estado == 'reservado' %}{% if asiento.reservado_por_id == cliente_id %}seleccionado{% else %}reservado{% endif %}{% endif %}
+                                        {% if asiento.estado == 'bloqueado' %}bloqueado{% endif %}"
+                                    data-asiento-id="{{ asiento.id }}"
+                                    data-asiento-numero="{{ asiento.numero }}"
+                                    data-asiento-lado="{{ asiento.lado }}"
+                                    {% if asiento.estado != 'disponible' and asiento.reservado_por_id != cliente_id %}disabled{% endif %}
+                                    title="Asiento {{ asiento.numero }} ({{ asiento.get_lado_display }})">
+                                    {{ asiento.numero }}
+                                </button>
+                            {% elif asiento.tipo == 'escalera' %}
+                                <div class="asiento especial" title="Escaleras">
+                                    <i class="bi bi-arrow-up-down"></i>
+                                </div>
+                            {% elif asiento.tipo == 'baño' %}
+                                <div class="asiento especial" title="Baño">
+                                    <i class="bi bi-droplet-fill"></i>
+                                </div>
+                            {% elif asiento.tipo == 'vacio' %}
+                                <div class="asiento especial"></div>
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+                {% endfor %}
+
+            {% endfor %}
+            
+            <div class="leyenda">
+                <div class="leyenda-item">
+                    <div class="leyenda-cuadro" style="background: #ffffff;"></div>
+                    <span>Disponible</span>
+                </div>
+                <div class="leyenda-item">
+                    <div class="leyenda-cuadro" style="background: #003366;"></div>
+                    <span>Seleccionado</span>
+                </div>
+                <div class="leyenda-item">
+                    <div class="leyenda-cuadro" style="background: #dc3545;"></div>
+                    <span>Vendido</span>
+                </div>
+                <div class="leyenda-item">
+                    <div class="leyenda-cuadro" style="background: #ffc107;"></div>
+                    <span>Reservado</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Columna derecha: resumen de selección -->
+    <div class="col-lg-3 mb-3">
+        <div class="card shadow-sm panel-resumen">
+            <div class="card-body">
+                <h5 class="card-title" style="color: #003366;">
+                    <i class="bi bi-cart"></i> Tu Selección
+                </h5>
+                <hr>
+                <div id="sin-seleccion">
+                    <p class="text-muted small">Haz clic en los asientos para seleccionarlos.</p>
+                </div>
+                
+                <div id="con-seleccion" style="display: none;">
+                    <p class="mb-1"><strong>Asientos:</strong></p>
+                    <div id="lista-asientos" class="mb-3"></div>
+                    
+<!--
+                    <p class="mb-1"><strong>Cantidad:</strong> <span id="cantidad">0</span></p>
+                    <p class="mb-3"><strong>Total estimado:</strong> <span class="badge bg-success fs-6">$<span id="total">0.00</span></span></p>
+-->
+                    <p class="mb-1"><strong>Cantidad:</strong> <span id="cantidad">0</span></p>
+                    <p class="mb-1">
+                        <strong>Total estimado:</strong> 
+                        <span class="badge bg-success fs-6">$<span id="total">0.00</span></span>
+                    </p>
+                    <p class="mb-3 text-muted small">
+                        Bs. <span id="total_bs">0,00</span>
+                        {% if tasa_bcv %}
+                            <br><i class="bi bi-currency-exchange"></i> Tasa BCV: {{ tasa_bcv|floatformat:2 }}
+                        {% else %}
+                            <br><span class="text-danger"><i class="bi bi-exclamation-triangle"></i> Tasa BCV no configurada</span>
+                        {% endif %}
+                    </p>
+                    
+                    <button id="btn-continuar" class="btn btn-primary w-100" style="background-color: #003366; border-color: #003366;">
+                        <i class="bi bi-arrow-right-circle"></i> Continuar con la compra
+                    </button>
+                </div>
+                
+                <div id="mensaje-info" class="alert alert-info small mt-3" style="display: none;">
+                    <i class="bi bi-info-circle"></i> <span id="mensaje-texto"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // ============================================================
+    // CONFIGURACIÓN
+    // ============================================================
+    {% if tarifa %}
+        const PRECIO = parseFloat("{{ tarifa.monto_usd }}".replace(',', '.')) || 0;
+    {% else %}
+        const PRECIO = 0;
+    {% endif %}
+    const SEGURO = parseFloat("{{ seguro }}".replace(',', '.')) || 0;
+    const TASA_BCV = parseFloat("{{ tasa_bcv|default:'0' }}".replace(',', '.')) || 0;
+    const VIAJE_ID = {{ viaje.id }};
+    const USUARIO_AUTENTICADO = {% if user.is_authenticated %}true{% else %}false{% endif %};
+    const URL_LOGIN = "/login/?next=/viajes/{{ viaje.id }}/";
+    const URL_RESERVAR_TEMPORAL = "/reservar-temporal/";
+    const URL_RENOVAR_RESERVA = "/renovar-reserva/";
+    const URL_LIBERAR = "/liberar/";
+    const INTERVALO_RENOVACION = 20000;  // 20 segundos
+    const TIEMPO_INACTIVIDAD = 120000;   // 2 minutos
+
+    // ============================================================
+    // ESTADO
+    // ============================================================
+    const seleccionados = new Set();
+    let ultimaActividad = Date.now();
+    let intervaloRenovacion = null;
+
+    // ============================================================
+    // ELEMENTOS DEL DOM
+    // ============================================================
+    const asientos = document.querySelectorAll('.asiento.disponible, .asiento.seleccionado, .asiento.reservado:not([disabled])');
+    const sinSeleccion = document.getElementById('sin-seleccion');
+    const conSeleccion = document.getElementById('con-seleccion');
+    const listaAsientos = document.getElementById('lista-asientos');
+    const cantidadEl = document.getElementById('cantidad');
+    const totalEl = document.getElementById('total');
+    const totalBsEl = document.getElementById('total_bs');
+    const btnContinuar = document.getElementById('btn-continuar');
+    const mensajeInfo = document.getElementById('mensaje-info');
+    const mensajeTexto = document.getElementById('mensaje-texto');
+    
+    // ============================================================
+    // POBLAR ASIENTOS YA RESERVADOS POR EL CLIENTE AL CARGAR
+    // ============================================================
+    document.querySelectorAll('.asiento.seleccionado').forEach(asiento => {
+        seleccionados.add(asiento.dataset.asientoId);
+    });
+
+    if (seleccionados.size > 0) {
+        actualizarResumen();
+    }
+
+    // ============================================================
+    // UTILIDADES
+    // ============================================================
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+
+    function mostrarMensaje(texto, tipo = 'info') {
+        mensajeInfo.style.display = 'block';
+        mensajeInfo.className = 'alert alert-' + tipo + ' small mt-3';
+        mensajeTexto.textContent = texto;
+    }
+
+    // ============================================================
+    // RASTREO DE ACTIVIDAD DEL USUARIO
+    // ============================================================
+    ['mousemove', 'click', 'keypress', 'scroll', 'touchstart'].forEach(evento => {
+        document.addEventListener(evento, () => {
+            ultimaActividad = Date.now();
+        });
+    });
+
+    function usuarioActivo() {
+        return (Date.now() - ultimaActividad) < TIEMPO_INACTIVIDAD;
+    }
+
+    // ============================================================
+    // RESERVAR UN ASIENTO (llamada al servidor)
+    // ============================================================
+    function reservarAsientoTemporal(asientoId) {
+        return fetch(URL_RESERVAR_TEMPORAL, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken'),
+            },
+            body: new URLSearchParams({
+                'viaje_id': VIAJE_ID,
+                'asiento_id': asientoId,
+            })
+        })
+        .then(response => response.json());
+    }
+
+    // ============================================================
+    // RENOVAR RESERVA (llamada periódica)
+    // ============================================================
+    function renovarReserva() {
+        if (seleccionados.size === 0) return;
+        if (!usuarioActivo()) return;
+        
+        const formData = new FormData();
+        formData.append('viaje_id', VIAJE_ID);
+        seleccionados.forEach(id => formData.append('asientos[]', id));
+        
+        fetch(URL_RENOVAR_RESERVA, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken'),
+            },
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (!data.ok) {
+                console.warn('No se pudo renovar la reserva:', data.error);
+            }
+        })
+        .catch(error => {
+            console.warn('Error al renovar reserva:', error);
+        });
+    }
+
+    intervaloRenovacion = setInterval(renovarReserva, INTERVALO_RENOVACION);
+
+    // ============================================================
+    // CLIC EN UN ASIENTO
+    // ============================================================
+    asientos.forEach(asiento => {
+        asiento.addEventListener('click', function() {
+            const id = this.dataset.asientoId;
+            
+            // Si ya está seleccionado, desmarcarlo
+            if (seleccionados.has(id)) {
+                seleccionados.delete(id);
+                this.classList.remove('seleccionado');
+                this.classList.add('disponible');
+                actualizarResumen();
+                
+                const formData = new FormData();
+                formData.append('asientos[]', id);
+                fetch(URL_LIBERAR, {
+                    method: 'POST',
+                    headers: {'X-CSRFToken': getCookie('csrftoken')},
+                    body: formData
+                });
+                return;
+            }
+            
+            if (!USUARIO_AUTENTICADO) {
+                window.location.href = URL_LOGIN;
+                return;
+            }
+            
+            reservarAsientoTemporal(id).then(data => {
+                if (data.ok) {
+                    seleccionados.add(id);
+                    asiento.classList.remove('disponible');
+                    asiento.classList.add('seleccionado');
+                    actualizarResumen();
+                } else {
+                    alert(data.error);
+                    location.reload();
+                }
+            }).catch(error => {
+                console.error('Error:', error);
+                alert('Error de conexión. Intenta de nuevo.');
+            });
+        });
+    });
+
+    // ============================================================
+    // ACTUALIZAR RESUMEN
+    // ============================================================
+    function actualizarResumen() {
+        const cantidad = seleccionados.size;
+        
+        if (cantidad === 0) {
+            sinSeleccion.style.display = 'block';
+            conSeleccion.style.display = 'none';
+            return;
+        }
+        
+        sinSeleccion.style.display = 'none';
+        conSeleccion.style.display = 'block';
+        
+        const numeros = [];
+        document.querySelectorAll('.asiento.seleccionado').forEach(a => {
+            numeros.push(a.dataset.asientoNumero);
+        });
+        numeros.sort();
+        listaAsientos.innerHTML = numeros.map(n => 
+            `<span class="badge bg-primary me-1 mb-1">${n}</span>`
+        ).join('');
+        
+        cantidadEl.textContent = cantidad;
+        
+        const total_usd = (PRECIO + SEGURO) * cantidad;
+        totalEl.textContent = total_usd.toFixed(2);
+        
+        if (totalBsEl) {
+            if (TASA_BCV > 0) {
+                const total_bs = total_usd * TASA_BCV;
+                totalBsEl.textContent = total_bs.toLocaleString('es-VE', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                });
+            } else {
+                totalBsEl.textContent = '---';
+            }
+        }
+    }
+
+    // ============================================================
+    // BOTÓN "CONTINUAR CON LA COMPRA"
+    // ============================================================
+    btnContinuar.addEventListener('click', function() {
+        if (!USUARIO_AUTENTICADO) {
+            window.location.href = URL_LOGIN;
+            return;
+        }
+        
+        if (seleccionados.size === 0) {
+            alert('Selecciona al menos un asiento.');
+            return;
+        }
+        
+        window.location.href = '/viajes/' + VIAJE_ID + '/pasajeros/';
+    });
+</script>
+{% endblock %}

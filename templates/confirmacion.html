@@ -1,0 +1,91 @@
+{% extends 'base.html' %}
+{% load core_extras %}
+
+{% block title %}Compra Confirmada - Viba-Web{% endblock %}
+
+{% block content %}
+<div class="text-center mb-4">
+    <i class="bi bi-check-circle-fill text-success" style="font-size: 4rem;"></i>
+    <h2 class="mt-3" style="color: #003366;">¡Compra registrada exitosamente!</h2>
+    <p class="lead text-muted">
+        Tu pago está <strong>pendiente de verificación</strong>. 
+        Una vez confirmado, recibirás tus boletos.
+    </p>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        
+        <!-- Datos de la transacción -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-header" style="background-color: #003366; color: white;">
+                <strong><i class="bi bi-receipt"></i> Datos de la transacción</strong>
+            </div>
+            <div class="card-body">
+                <p class="mb-1"><strong>Código:</strong> {{ transaccion.codigo }}</p>
+                <p class="mb-1"><strong>Viaje:</strong> {{ transaccion.viaje.ruta.nombre }}</p>
+                <p class="mb-1"><strong>Fecha:</strong> {{ transaccion.viaje.fecha|date:'d/m/Y' }} - {{ transaccion.viaje.hora|hora_am_pm }}</p>
+                <p class="mb-1"><strong>Cantidad de boletos:</strong> {{ transaccion.cantidad_boletos }}</p>
+                <hr>
+                <p class="mb-1"><strong>Total USD:</strong> ${{ transaccion.monto_total_usd }}</p>
+                <p class="mb-1"><strong>Total Bs.:</strong> Bs. {{ transaccion.monto_total_bs }}</p>
+                {% if transaccion.tasa_bcv %}
+                <p class="mb-0"><strong>Tasa BCV:</strong> {{ transaccion.tasa_bcv|floatformat:2 }}</p>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- Boletos -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-header" style="background-color: #003366; color: white;">
+                <strong><i class="bi bi-ticket-perforated"></i> Boletos ({{ boletos|length }})</strong>
+            </div>
+            <div class="card-body">
+                {% for boleto in boletos %}
+                <div class="border rounded p-3 mb-2">
+                    <div class="row align-items-center">
+                        <div class="col-md-6">
+                            <p class="mb-1"><strong>Asiento:</strong> {{ boleto.asiento.numero }}</p>
+                            <p class="mb-1"><strong>Pasajero:</strong> {{ boleto.pasajero_nombre }}</p>
+                            <p class="mb-1"><strong>Cédula:</strong> {{ boleto.pasajero_cedula }}</p>
+                            <p class="mb-0"><strong>Tipo:</strong> {{ boleto.get_tipo_pasajero_display }}</p>
+                        </div>
+                        <div class="col-md-6 text-center">
+                            <p class="mb-1 small text-muted">Código QR:</p>
+                            <code class="d-block text-break">{{ boleto.codigo_qr }}</code>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        
+        <!-- Pago -->
+        {% if pago %}
+        <div class="card shadow-sm mb-4">
+            <div class="card-header" style="background-color: #003366; color: white;">
+                <strong><i class="bi bi-credit-card"></i> Datos del pago</strong>
+            </div>
+            <div class="card-body">
+                <p class="mb-1"><strong>Método:</strong> {{ pago.get_metodo_display }}</p>
+                <p class="mb-1"><strong>Referencia:</strong> {{ pago.referencia }}</p>
+                <p class="mb-1"><strong>Monto pagado:</strong> Bs. {{ pago.monto_bs }}</p>
+                <p class="mb-1"><strong>Estado:</strong> 
+                    <span class="badge bg-warning text-dark">{{ pago.get_estado_display }}</span>
+                </p>
+                {% if pago.observacion %}
+                <p class="mb-0 text-danger small"><i class="bi bi-exclamation-triangle"></i> {{ pago.observacion }}</p>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+        
+        <!-- Acciones -->
+        <div class="text-center">
+            <a href="/" class="btn btn-outline-secondary">
+                <i class="bi bi-house"></i> Volver al inicio
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

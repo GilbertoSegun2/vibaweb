@@ -1,0 +1,172 @@
+{% extends 'base.html' %}
+
+{% load core_extras %} 
+
+{% block title %}Datos de Pasajeros - Viba-Web{% endblock %}
+
+{% block content %}
+<div class="alert alert-warning d-flex justify-content-between align-items-center">
+    <div>
+        <i class="bi bi-clock-history"></i>
+        <strong>Tiempo restante para completar la compra:</strong>
+    </div>
+    <div>
+        <span id="contador" class="badge bg-danger fs-5">--:--</span>
+    </div>
+</div>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 style="color: #003366;">
+        <i class="bi bi-people"></i> Datos de los Pasajeros
+    </h2>
+    <a href="/viajes/{{ viaje.id }}/" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Volver
+    </a>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="alert alert-info small mb-3">
+            <i class="bi bi-info-circle"></i>
+            Tienes <strong>{{ cantidad }}</strong> asiento(s) reservado(s).
+            Completa los datos de cada pasajero.
+        </div>
+        
+        <form method="post">
+            {% csrf_token %}
+            
+            {% for asiento, form in formularios %}
+                <div class="card mb-3 shadow-sm">
+                    <div class="card-header" style="background-color: #003366; color: white;">
+                        <strong><i class="bi bi-person-badge"></i> Asiento {{ asiento.numero }}</strong>
+                        <span class="badge bg-light text-dark ms-2">
+                            {{ asiento.get_lado_display }}
+                        </span>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">{{ form.nombre.label }}</label>
+                                {{ form.nombre }}
+                                {% if form.nombre.errors %}
+                                    <div class="text-danger small">{{ form.nombre.errors }}</div>
+                                {% endif %}
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">{{ form.cedula.label }}</label>
+                                {{ form.cedula }}
+                                {% if form.cedula.errors %}
+                                    <div class="text-danger small">{{ form.cedula.errors }}</div>
+                                {% endif %}
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">{{ form.telefono.label }}</label>
+                                {{ form.telefono }}
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">{{ form.tipo_pasajero.label }}</label>
+                                {{ form.tipo_pasajero }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+            
+            <div class="text-center mt-4 mb-4">
+                <button type="submit" class="btn btn-primary btn-lg px-5" style="background-color: #003366; border-color: #003366;">
+                    <i class="bi bi-arrow-right-circle"></i> Continuar al Pago
+                </button>
+            </div>
+        </form>
+    </div>
+    
+    <div class="col-lg-4">
+        <div class="card shadow-sm" style="position: sticky; top: 20px;">
+            <div class="card-body">
+                <h5 class="card-title" style="color: #003366;">
+                    <i class="bi bi-receipt"></i> Resumen
+                </h5>
+                <hr>
+                <p class="mb-1"><strong>Viaje:</strong> {{ viaje.ruta.nombre }}</p>
+                <p class="mb-1"><strong>Fecha:</strong> {{ viaje.fecha|date:'d/m/Y' }}</p>
+                <p class="mb-1"><strong>Hora:</strong> {{ viaje.hora|hora_am_pm }}</p>
+                <hr>
+                <p class="mb-1"><strong>Cantidad:</strong> {{ cantidad }} boleto(s)</p>
+                {% if tarifa %}
+                <p class="mb-1">
+                    <strong>Precio unitario:</strong> 
+                    <span class="badge bg-success">${{ tarifa.monto_usd }}</span>
+                </p>
+                {% if tasa_bcv %}
+                <p class="mb-1 text-muted small">
+                    Bs. {{ tarifa.monto_usd|convertir_bs }}
+                </p>
+                {% endif %}
+                <p class="mb-1"><strong>Seguro:</strong> ${{ seguro }}</p>
+                {% if tasa_bcv %}
+                <p class="mb-1 text-muted small">
+                    Bs. {{ seguro|convertir_bs }}
+                </p>
+                {% endif %}
+                {% else %}
+                <p class="mb-1">
+                    <strong>Precio:</strong> 
+                    <span class="badge bg-danger">Sin tarifa</span>
+                </p>
+                {% endif %}
+                <hr>
+                <h5 class="mb-1">
+                    <strong>Total:</strong> 
+                    <span class="badge bg-success fs-6">${{ total_usd }}</span>
+                </h5>
+                {% if tasa_bcv %}
+                <p class="mb-0 text-muted small">
+                    Bs. {{ total_usd|convertir_bs }}
+                </p>
+                <p class="mb-0 text-muted small">
+                    <i class="bi bi-currency-exchange"></i> Tasa BCV: {{ tasa_bcv|floatformat:2 }}
+                </p>
+                {% else %}
+                <p class="mb-0 text-danger small">
+                    <i class="bi bi-exclamation-triangle"></i> Tasa BCV no configurada
+                </p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% block extra_js %}
+<script>
+    let minutosRestantes = {{ minutos_reserva }};
+    let segundosTotales = minutosRestantes * 60;
+    
+    const contadorEl = document.getElementById('contador');
+    
+    function formatearTiempo(segundos) {
+        const m = Math.floor(segundos / 60);
+        const s = segundos % 60;
+        return `${m}:${s.toString().padStart(2, '0')}`;
+    }
+    
+    contadorEl.textContent = formatearTiempo(segundosTotales);
+    
+    const intervalo = setInterval(() => {
+        segundosTotales--;
+        
+        if (segundosTotales <= 0) {
+            clearInterval(intervalo);
+            alert('Se acabó el tiempo de reserva. Los asientos se han liberado.');
+            window.location.href = '/viajes/{{ viaje.id }}/';
+            return;
+        }
+        
+        contadorEl.textContent = formatearTiempo(segundosTotales);
+        
+        if (segundosTotales <= 120) {
+            contadorEl.classList.remove('bg-danger');
+            contadorEl.classList.add('bg-dark');
+        }
+    }, 1000);
+</script>
+{% endblock %}
+{% endblock %}

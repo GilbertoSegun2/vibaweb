@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+
+{% block title %}Mi Perfil - Viba-Web{% endblock %}
+
+{% block content %}
+<h2 class="mb-4" style="color: #003366;">
+    <i class="bi bi-person-circle"></i> Mi Perfil
+</h2>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h5 class="card-title" style="color: #003366;">Datos Personales</h5>
+                <hr>
+                <p><strong>Usuario:</strong> {{ user.username }}</p>
+                <p><strong>Nombre:</strong> {{ user.get_full_name }}</p>
+                <p><strong>Email:</strong> {{ user.email }}</p>
+                {% if cliente %}
+                    <p><strong>Cédula:</strong> {{ cliente.cedula }}</p>
+                    <p><strong>Teléfono:</strong> {{ cliente.telefono }}</p>
+                    {% if cliente.whatsapp %}
+                        <p><strong>WhatsApp:</strong> {{ cliente.whatsapp }}</p>
+                    {% endif %}
+                {% else %}
+                    <div class="alert alert-warning">
+                        No tienes perfil de cliente asociado.
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h5 class="card-title" style="color: #003366;">Mis Boletos</h5>
+                <hr>
+                <p class="text-muted">Aún no tienes boletos comprados.</p>
+                <a href="/viajes/" class="btn btn-primary w-100" style="background-color: #003366; border-color: #003366;">
+                    <i class="bi bi-search"></i> Buscar Viajes
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
