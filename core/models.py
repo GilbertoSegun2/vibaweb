@@ -210,7 +210,7 @@ class Viaje(models.Model):
     bus = models.ForeignKey(Bus, on_delete=models.PROTECT, verbose_name="Bus")
     fecha = models.DateField(verbose_name="Fecha")
     hora = models.TimeField(verbose_name="Hora de salida")
-    precio_usd = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Precio USD")
+    precio_usd = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Precio USD")
     seguro_usd = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Seguro USD")
     estado = models.CharField(max_length=20, choices=ESTADOS, default='programado', verbose_name="Estado")
     cerrado_venta = models.BooleanField(default=False, verbose_name="Venta cerrada")
@@ -242,6 +242,12 @@ class Viaje(models.Model):
         Al crear un viaje nuevo, genera sus asientos automáticamente.
         El precio se calcula al momento de la venta, según la tarifa origen-destino.
         """
+        # Si el precio es None, ponerlo en 0 (por si el admin no lo envía)
+        if self.precio_usd is None:
+            self.precio_usd = 0
+        if self.seguro_usd is None:
+            self.seguro_usd = 0
+        
         es_nuevo = self.pk is None
         super().save(*args, **kwargs)
         
