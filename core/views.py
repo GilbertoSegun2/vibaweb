@@ -5,8 +5,9 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.contrib import messages
 
-from .models import Oficina, Viaje, Asiento, Transaccion, Pago, Boleto, Tarifa
+from .models import Oficina, Viaje, Asiento, Transaccion, Pago, Boleto, Tarifa, MovimientoAsiento
 from .forms import RegistroForm, LoginForm
+
 
 
 from django.http import JsonResponse
@@ -18,13 +19,45 @@ from decimal import Decimal
 
 from .utils import obtener_parametro, liberar_reservas_vencidas, generar_codigo_transaccion, generar_codigo_qr
 
-
 # ============================================================
 # VISTAS PÚBLICAS
 # ============================================================
 
 def inicio(request):
     """Página de inicio con buscador de viajes"""
+    # Resetear el tiempo de reserva al volver al inicio
+    request.session.pop('reserva_inicio', None)
+    
+    # Liberar los asientos que el cliente tenía reservados (por si acaso)
+    cliente = None
+    if request.user.is_authenticated:
+        cliente = getattr(request.user, 'cliente', None)
+    
+    if cliente:
+        with transaction.atomic():
+            asientos_reservados = Asiento.objects.select_for_update().filter(
+                estado='reservado',
+                reservado_por=cliente
+            )
+            
+            # Registrar auditoría por cada asiento liberado
+            for asiento in asientos_reservados:
+                MovimientoAsiento.objects.create(
+                    asiento=asiento,
+                    tipo='liberacion_manual',
+                    estado_anterior='reservado',
+                    estado_nuevo='disponible',
+                    usuario=request.user,
+                    motivo='El cliente volvió al inicio',
+                )
+            
+            # Liberar los asientos
+            asientos_reservados.update(
+                estado='disponible',
+                reservado_hasta=None,
+                reservado_por=None
+            )
+    
     oficinas = Oficina.objects.filter(activa=True).order_by('nombre')
     return render(request, 'inicio.html', {
         'oficinas': oficinas,
@@ -345,6 +378,7 @@ def reservar_asientos(request):
 def liberar_asientos(request):
     """
     Libera los asientos reservados por el cliente actual.
+    Registra el movimiento en la auditoría.
     """
     asientos_ids = request.POST.getlist('asientos[]')
 
@@ -357,11 +391,26 @@ def liberar_asientos(request):
 
     try:
         with transaction.atomic():
-            Asiento.objects.select_for_update().filter(
+            # Buscar los asientos del cliente
+            asientos = Asiento.objects.select_for_update().filter(
                 id__in=asientos_ids,
                 estado='reservado',
                 reservado_por=cliente
-            ).update(
+            )
+            
+            # Registrar cada movimiento en la auditoría
+            for asiento in asientos:
+                MovimientoAsiento.objects.create(
+                    asiento=asiento,
+                    tipo='liberacion_manual',
+                    estado_anterior='reservado',
+                    estado_nuevo='disponible',
+                    usuario=request.user,
+                    motivo='El cliente liberó el asiento manualmente',
+                )
+            
+            # Ahora liberar los asientos
+            asientos.update(
                 estado='disponible',
                 reservado_hasta=None,
                 reservado_por=None
@@ -417,7 +466,24 @@ def pasajeros(request, viaje_id):
         return redirect('core:detalle_viaje', viaje_id=viaje.id)
     
     # Renovar la reserva por el tiempo configurado en el parámetro 111
-    minutos = int(obtener_parametro('111', default=10))
+    # Calcular el tiempo restante según reserva_inicio
+    minutos = int(obtener_parametro('101', default=10))
+    reserva_inicio_str = request.session.get('reserva_inicio')
+    if reserva_inicio_str:
+        try:
+            reserva_inicio = datetime.fromisoformat(reserva_inicio_str)
+            expira_en = reserva_inicio + timedelta(minutes=minutos)
+            if timezone.now() > expira_en:
+                # Expirado: liberar asientos y redirigir
+                liberar_reservas_vencidas(viaje=viaje)
+                request.session.pop('reserva_inicio', None)
+                messages.warning(request, "Tu tiempo de reserva ha expirado. Selecciona de nuevo.")
+                return redirect('core:inicio')
+            segundos_restantes = int((expira_en - timezone.now()).total_seconds())
+        except (ValueError, TypeError):
+            segundos_restantes = minutos * 60
+    else:
+        segundos_restantes = minutos * 60
     nuevo_vence = timezone.now() + timedelta(minutes=minutos)
     asientos.update(reservado_hasta=nuevo_vence)
     
@@ -472,6 +538,7 @@ def pasajeros(request, viaje_id):
         'total_usd': total_usd,
         'tarifa': tarifa,
         'seguro': valor_seguro,  # ← nuevo
+        'segundos_restantes': segundos_restantes,  # ← NUEVO
         'minutos_reserva': minutos,
     })
 
@@ -614,8 +681,23 @@ def pago(request, viaje_id):
         messages.warning(request, "Algunos asientos ya no están disponibles. Selecciona de nuevo.")
         return redirect('core:detalle_viaje', viaje_id=viaje.id)
     
-    # Renovar la reserva por el tiempo del parámetro 112
-    minutos = int(obtener_parametro('112', default=10))
+    # Calcular el tiempo restante según reserva_inicio
+    minutos = int(obtener_parametro('101', default=10))
+    reserva_inicio_str = request.session.get('reserva_inicio')
+    if reserva_inicio_str:
+        try:
+            reserva_inicio = datetime.fromisoformat(reserva_inicio_str)
+            expira_en = reserva_inicio + timedelta(minutes=minutos)
+            if timezone.now() > expira_en:
+                liberar_reservas_vencidas(viaje=viaje)
+                request.session.pop('reserva_inicio', None)
+                messages.warning(request, "Tu tiempo de reserva ha expirado. Selecciona de nuevo.")
+                return redirect('core:inicio')
+            segundos_restantes = int((expira_en - timezone.now()).total_seconds())
+        except (ValueError, TypeError):
+            segundos_restantes = minutos * 60
+    else:
+        segundos_restantes = minutos * 60
     vence = timezone.now() + timedelta(minutes=minutos)
     asientos.update(reservado_hasta=vence)
     
@@ -756,6 +838,7 @@ def pago(request, viaje_id):
         'cantidad': cantidad,
         'tarifa': tarifa,
         'seguro': valor_seguro,  # ← nuevo
+        'segundos_restantes': segundos_restantes,  # ← NUEVO
         'total_usd': total_usd,
         'total_bs': total_bs,
         'tasa_bcv': tasa_bcv,

@@ -137,8 +137,7 @@
 </div>
 {% block extra_js %}
 <script>
-    let minutosRestantes = {{ minutos_reserva }};
-    let segundosTotales = minutosRestantes * 60;
+    let segundosTotales = {{ segundos_restantes }};
     
     const contadorEl = document.getElementById('contador');
     
@@ -155,8 +154,8 @@
         
         if (segundosTotales <= 0) {
             clearInterval(intervalo);
-            alert('Se acabó el tiempo de reserva. Los asientos se han liberado.');
-            window.location.href = '/viajes/{{ viaje.id }}/';
+            alert('Tu tiempo de reserva ha expirado. Los asientos han sido liberados.');
+            window.location.href = '/';
             return;
         }
         
