@@ -1,11 +1,13 @@
 """
 Comando para actualizar la tasa BCV del día.
-
-Uso:
-    python manage.py actualizar_bcv
-    python manage.py actualizar_bcv --manual 36.50
+...
 """
 import re
+
+# Silenciar el warning de certificado SSL del BCV
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 import requests
 from bs4 import BeautifulSoup
 from django.core.management.base import BaseCommand
@@ -30,7 +32,7 @@ class Command(BaseCommand):
             try:
                 tasa = float(options['manual'].replace(',', '.'))
                 self.guardar_tasa(tasa)
-                self.stdout.write(self.style.SUCCESS(f'✓ Tasa actualizada manualmente: {tasa} Bs/USD'))
+                self.stdout.write(self.style.SUCCESS(f'OK Tasa actualizada manualmente: {tasa} Bs/USD'))
                 return
             except ValueError:
                 self.stdout.write(self.style.ERROR('Valor manual inválido.'))
@@ -75,7 +77,7 @@ class Command(BaseCommand):
             tasa = float(valor_limpio)
             
             self.guardar_tasa(tasa)
-            self.stdout.write(self.style.SUCCESS(f'✓ Tasa actualizada: {tasa} Bs/USD'))
+            self.stdout.write(self.style.SUCCESS(f'OK Tasa actualizada: {tasa} Bs/USD'))
             
         except requests.exceptions.RequestException as e:
             self.stdout.write(self.style.ERROR(f'Error de conexión: {e}'))
