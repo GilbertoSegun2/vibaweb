@@ -4,17 +4,16 @@
 
 {% block title %}Datos de Pasajeros - Viba-Web{% endblock %}
 
-{% block content %}
-<div class="alert alert-warning d-flex justify-content-between align-items-center">
-    <div>
-        <i class="bi bi-clock-history"></i>
-        <strong>Tiempo restante para completar la compra:</strong>
-    </div>
-    <div>
-        <span id="contador" class="badge bg-danger fs-5">--:--</span>
-    </div>
+{% block contador_flotante %}
+<!-- Contador flotante -->
+<div class="contador-flotante" id="contador-wrap">
+    <i class="bi bi-clock-history"></i>
+    <span class="etiqueta">Tiempo restante:</span>
+    <span id="contador" class="tiempo">--:--</span>
 </div>
+{% endblock %}
 
+{% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2 style="color: #003366;">
         <i class="bi bi-people"></i> Datos de los Pasajeros
@@ -160,10 +159,11 @@
         }
         
         contadorEl.textContent = formatearTiempo(segundosTotales);
-        
         if (segundosTotales <= 120) {
-            contadorEl.classList.remove('bg-danger');
-            contadorEl.classList.add('bg-dark');
+            const wrap = document.getElementById('contador-wrap');
+            if (wrap) {
+                wrap.classList.add('urgente');
+            }
         }
     }, 1000);
 </script>

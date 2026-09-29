@@ -3,6 +3,15 @@
 
 {% block title %}Pago - Viba-Web{% endblock %}
 
+{% block contador_flotante %}
+<!-- Contador flotante -->
+<div class="contador-flotante" id="contador-wrap">
+    <i class="bi bi-clock-history"></i>
+    <span class="etiqueta">Tiempo restante:</span>
+    <span id="contador" class="tiempo">--:--</span>
+</div>
+{% endblock %}
+
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2 style="color: #003366;">
@@ -11,17 +20,6 @@
     <a href="/viajes/{{ viaje.id }}/pasajeros/" class="btn btn-outline-secondary">
         <i class="bi bi-arrow-left"></i> Volver
     </a>
-</div>
-
-<!-- Contador -->
-<div class="alert alert-warning d-flex justify-content-between align-items-center mb-4">
-    <div>
-        <i class="bi bi-clock-history"></i>
-        <strong>Tiempo restante para completar la compra:</strong>
-    </div>
-    <div>
-        <span id="contador" class="badge bg-danger fs-5">--:--</span>
-    </div>
 </div>
 
 <div class="row">
@@ -262,8 +260,10 @@
         contadorEl.textContent = formatearTiempo(segundosTotales);
         
         if (segundosTotales <= 120) {
-            contadorEl.classList.remove('bg-danger');
-            contadorEl.classList.add('bg-dark');
+            const wrap = document.getElementById('contador-wrap');
+            if (wrap) {
+                wrap.classList.add('urgente');
+            }
         }
     }, 1000);
 </script>

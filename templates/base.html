@@ -52,6 +52,18 @@
         </div>
     </nav>
     
+    <!-- Contador flotante global (fuera de main) -->
+    {% if expiracion_iso %}
+    <div class="position-fixed shadow rounded bg-dark text-white px-2 py-1 border border-warning"
+         style="top: 130px; right: 15px; z-index: 1050; font-size: 0.75rem;">
+        <div class="d-flex align-items-center gap-2">
+            <i class="bi bi-clock-history text-warning"></i>
+            <span class="text-warning">Tiempo restante:</span>
+            <span id="contador-global" class="font-monospace fw-bold text-warning">--:--</span>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Contenido principal -->
     <main class="container my-4">
         {% block content %}
@@ -68,6 +80,37 @@
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     
+    {% if expiracion_iso %}
+    <script>
+        // Contador flotante global
+        const expirationTime = new Date("{{ expiracion_iso }}").getTime();
+        const contadorGlobal = document.getElementById("contador-global");
+
+        function actualizarContador() {
+            const now = new Date().getTime();
+            const distance = expirationTime - now;
+
+            if (distance < 0) {
+                clearInterval(timerInterval);
+                alert("Tu tiempo de reserva ha expirado. Los asientos han sido liberados.");
+                window.location.href = "/";
+                return;
+            }
+
+            const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+
+            if (contadorGlobal) {
+                contadorGlobal.innerText = 
+                    String(minutes).padStart(2, '0') + ":" + 
+                    String(seconds).padStart(2, '0');
+            }
+        }
+
+        const timerInterval = setInterval(actualizarContador, 1000);
+        actualizarContador();
+    </script>
+    {% endif %}
     {% block extra_js %}{% endblock %}
 </body>
 </html>
