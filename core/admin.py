@@ -19,12 +19,23 @@ class EmpresaAdmin(admin.ModelAdmin):
     ordering = ('nombre',)
     
 
-@admin.register(Parametro)
+# ============================================================
+# ADMIN DE PARÁMETROS CON URLS PERSONALIZADAS
+# ============================================================
+
 class ParametroAdmin(admin.ModelAdmin):
     list_display = ('codigo', 'descripcion', 'tipo', 'valor_numerico', 'valor_texto', 'activo')
     list_filter = ('tipo', 'activo')
     search_fields = ('codigo', 'descripcion')
     ordering = ('codigo',)
+    change_list_template = 'admin/parametro_change_list.html'
+    
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path('actualizar-bcv/', self.admin_site.admin_view(actualizar_bcv_view), name='actualizar_bcv'),
+        ]
+        return custom_urls + urls
 
 
 @admin.register(Bus)
@@ -196,3 +207,79 @@ class PagoAdmin(admin.ModelAdmin):
     # date_hierarchy = 'fecha_pago'
     raw_id_fields = ('transaccion', 'confirmado_por')
     readonly_fields = ('fecha_pago',)
+
+# ============================================================
+# VISTA PERSONALIZADA: ACTUALIZAR TASA BCV
+# ============================================================
+from django.contrib.admin.views.decorators import staff_member_required
+from django.shortcuts import render, redirect
+from django.urls import path
+from django.contrib import messages
+from django.utils import timezone
+import subprocess
+import sys
+
+
+@staff_member_required
+def actualizar_bcv_view(request):
+    """Vista personalizada para actualizar la tasa BCV desde el admin"""
+    resultado = None
+    
+    if request.method == 'POST':
+        try:
+            # Ejecutar el comando como subproceso
+            proceso = subprocess.run(
+                [sys.executable, 'manage.py', 'actualizar_bcv'],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            
+            resultado = {
+                'exito': proceso.returncode == 0,
+                'salida': proceso.stdout,
+                'error': proceso.stderr,
+                'fecha': timezone.now(),
+            }
+            
+            if proceso.returncode == 0:
+                messages.success(request, "✓ Tasa BCV actualizada correctamente.")
+            else:
+                messages.error(request, f"✗ Error: {proceso.stderr}")
+                
+        except subprocess.TimeoutExpired:
+            resultado = {
+                'exito': False,
+                'salida': '',
+                'error': 'Timeout: el comando tardó más de 30 segundos.',
+                'fecha': timezone.now(),
+            }
+            messages.error(request, "Timeout al actualizar la tasa BCV.")
+        except Exception as e:
+            resultado = {
+                'exito': False,
+                'salida': '',
+                'error': str(e),
+                'fecha': timezone.now(),
+            }
+            messages.error(request, f"Error: {str(e)}")
+    
+    # Leer la tasa actual
+    from .utils import obtener_parametro
+    from .models import Parametro
+    
+    tasa_actual = obtener_parametro('107', default=None)
+    
+    fecha_actualizacion = None
+    try:
+        p = Parametro.objects.get(codigo='108')
+        fecha_actualizacion = p.valor_texto
+    except Parametro.DoesNotExist:
+        pass
+    
+    return render(request, 'admin/actualizar_bcv.html', {
+        'titulo': 'Actualizar Tasa BCV',
+        'tasa_actual': tasa_actual,
+        'fecha_actualizacion': fecha_actualizacion,
+        'resultado': resultado,
+    })

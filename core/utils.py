@@ -172,3 +172,4 @@ def generar_codigo_qr():
     """Genera un código QR único para el boleto"""
     import uuid
     return uuid.uuid4().hex[:16].upper()
+    

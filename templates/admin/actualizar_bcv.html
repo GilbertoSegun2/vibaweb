@@ -1,0 +1,69 @@
+{% extends 'admin/base_site.html' %}
+
+{% block title %}{{ titulo }}{% endblock %}
+
+{% block content %}
+<div id="content-main">
+    <h1>{{ titulo }}</h1>
+    
+    <!-- Información actual -->
+    <div class="module" style="margin-bottom: 20px;">
+        <h2>Estado actual de la tasa BCV</h2>
+        <table style="width: 100%;">
+            <tr>
+                <th style="width: 200px;">Tasa actual (Bs/USD):</th>
+                <td>
+                    {% if tasa_actual %}
+                        <strong style="font-size: 1.3em; color: #28a745;">{{ tasa_actual }}</strong>
+                    {% else %}
+                        <span style="color: #dc3545;">No configurada</span>
+                    {% endif %}
+                </td>
+            </tr>
+            <tr>
+                <th>Última actualización:</th>
+                <td>
+                    {% if fecha_actualizacion %}
+                        {{ fecha_actualizacion }}
+                    {% else %}
+                        <span style="color: #dc3545;">Nunca</span>
+                    {% endif %}
+                </td>
+            </tr>
+        </table>
+    </div>
+    
+    <!-- Botón de actualización -->
+    <div class="module">
+        <h2>Actualizar tasa desde el BCV</h2>
+        <p>Haz clic en el botón para consultar la página del BCV y actualizar la tasa del día.</p>
+        
+        <form method="post">
+            {% csrf_token %}
+            <button type="submit" 
+                    style="background: #417690; color: white; padding: 12px 24px; 
+                           border: none; border-radius: 4px; font-size: 14px; 
+                           cursor: pointer; margin-top: 10px;">
+                🔄 Actualizar Tasa BCV
+            </button>
+        </form>
+        
+        {% if resultado %}
+            <div style="margin-top: 20px; padding: 15px; border-radius: 4px;
+                        {% if resultado.exito %}
+                            background: #d4edda; border: 1px solid #c3e6cb; color: #155724;
+                        {% else %}
+                            background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24;
+                        {% endif %}">
+                <strong>Resultado ({{ resultado.fecha|date:'H:i:s' }}):</strong>
+                <pre style="margin-top: 10px; white-space: pre-wrap; font-family: monospace;">{{ resultado.salida }}{{ resultado.error }}</pre>
+            </div>
+        {% endif %}
+    </div>
+    
+    <div style="margin-top: 20px;">
+        <a href="{% url 'admin:core_parametro_changelist' %}" 
+           style="color: #417690;">← Volver a Parámetros</a>
+    </div>
+</div>
+{% endblock %}
