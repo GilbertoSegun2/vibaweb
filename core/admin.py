@@ -36,6 +36,9 @@ class ParametroAdmin(admin.ModelAdmin):
             path('actualizar-bcv/', self.admin_site.admin_view(actualizar_bcv_view), name='actualizar_bcv'),
         ]
         return custom_urls + urls
+        
+        
+admin.site.register(Parametro, ParametroAdmin)
 
 
 @admin.register(Bus)
@@ -227,11 +230,12 @@ def actualizar_bcv_view(request):
     
     if request.method == 'POST':
         try:
-            # Ejecutar el comando como subproceso
             proceso = subprocess.run(
                 [sys.executable, 'manage.py', 'actualizar_bcv'],
                 capture_output=True,
                 text=True,
+                encoding='utf-8',    # ← NUEVO
+                errors='replace',    # ← NUEVO
                 timeout=30,
             )
             
