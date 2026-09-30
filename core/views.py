@@ -420,7 +420,7 @@ def liberar_asientos(request):
 
     except Exception as e:
         return JsonResponse({'ok': False, 'error': str(e)}, status=500)
-        
+
 @login_required
 def pasajeros(request, viaje_id):
     """
@@ -441,6 +441,27 @@ def pasajeros(request, viaje_id):
     
     # Liberar reservas vencidas por si acaso
     liberar_reservas_vencidas(viaje=viaje)
+    
+    # ==========================================
+    # 1. CÁLCULO DEL TIEMPO (Movido al inicio)
+    # ==========================================
+    minutos = int(obtener_parametro('101', default=10))
+    reserva_inicio_str = request.session.get('reserva_inicio')
+    if reserva_inicio_str:
+        try:
+            reserva_inicio = datetime.fromisoformat(reserva_inicio_str)
+            expira_en = reserva_inicio + timedelta(minutes=minutos)
+            if timezone.now() > expira_en:
+                liberar_reservas_vencidas(viaje=viaje)
+                request.session.pop('reserva_inicio', None)
+                messages.warning(request, "Tu tiempo de reserva ha expirado. Selecciona de nuevo.")
+                return redirect('core:inicio')
+            segundos_restantes = int((expira_en - timezone.now()).total_seconds())
+        except (ValueError, TypeError):
+            segundos_restantes = minutos * 60
+    else:
+        segundos_restantes = minutos * 60
+
     # Recuperar el origen y destino de la sesión para buscar la tarifa
     origen_id = request.session.get('busqueda_origen_id')
     destino_id = request.session.get('busqueda_destino_id')
@@ -451,8 +472,10 @@ def pasajeros(request, viaje_id):
             destino_id=destino_id,
             activa=True
         ).first()
+        
     # Leer el seguro del parámetro 100
     valor_seguro = obtener_parametro('100', default=0)
+    
     # Obtener los asientos reservados por este cliente
     asientos = Asiento.objects.filter(
         viaje=viaje,
@@ -465,25 +488,7 @@ def pasajeros(request, viaje_id):
         messages.warning(request, "No tienes asientos reservados. Selecciona asientos primero.")
         return redirect('core:detalle_viaje', viaje_id=viaje.id)
     
-    # Renovar la reserva por el tiempo configurado en el parámetro 111
-    # Calcular el tiempo restante según reserva_inicio
-    minutos = int(obtener_parametro('101', default=10))
-    reserva_inicio_str = request.session.get('reserva_inicio')
-    if reserva_inicio_str:
-        try:
-            reserva_inicio = datetime.fromisoformat(reserva_inicio_str)
-            expira_en = reserva_inicio + timedelta(minutes=minutos)
-            if timezone.now() > expira_en:
-                # Expirado: liberar asientos y redirigir
-                liberar_reservas_vencidas(viaje=viaje)
-                request.session.pop('reserva_inicio', None)
-                messages.warning(request, "Tu tiempo de reserva ha expirado. Selecciona de nuevo.")
-                return redirect('core:inicio')
-            segundos_restantes = int((expira_en - timezone.now()).total_seconds())
-        except (ValueError, TypeError):
-            segundos_restantes = minutos * 60
-    else:
-        segundos_restantes = minutos * 60
+    # Renovar la reserva
     nuevo_vence = timezone.now() + timedelta(minutes=minutos)
     asientos.update(reservado_hasta=nuevo_vence)
     
@@ -500,7 +505,6 @@ def pasajeros(request, viaje_id):
                 valido = False
         
         if valido:
-            # Guardar los datos de los pasajeros en la sesión
             pasajeros_data = []
             for asiento, form in formularios:
                 pasajeros_data.append({
@@ -525,22 +529,142 @@ def pasajeros(request, viaje_id):
             formularios.append((asiento, form))
     
     cantidad = asientos.count()
-    if tarifa:
-        precio_unitario = tarifa.monto_usd + valor_seguro
-    else:
-        precio_unitario = 0
+    precio_unitario = (tarifa.monto_usd + valor_seguro) if tarifa else 0
     total_usd = precio_unitario * cantidad
     
+    expiracion_iso = (timezone.now() + timedelta(seconds=segundos_restantes)).isoformat()
     return render(request, 'pasajeros.html', {
         'viaje': viaje,
         'formularios': formularios,
         'cantidad': cantidad,
         'total_usd': total_usd,
         'tarifa': tarifa,
-        'seguro': valor_seguro,  # ← nuevo
-        'segundos_restantes': segundos_restantes,  # ← NUEVO
+        'seguro': valor_seguro,
+        'segundos_restantes': segundos_restantes, # ¡Siempre disponible!
+        'expiracion_iso': expiracion_iso,  # <--- ¡Importante para que el base.html active el timer!
         'minutos_reserva': minutos,
     })
+    
+# ~ @login_required
+# ~ def pasajeros(request, viaje_id):
+    # ~ """
+    # ~ Formulario para capturar los datos de cada pasajero.
+    # ~ Los asientos vienen de la reserva temporal del cliente actual.
+    # ~ Al entrar, se renueva la reserva por el tiempo configurado.
+    # ~ """
+    # ~ from .forms import PasajeroForm
+    # ~ from .utils import liberar_reservas_vencidas, obtener_parametro
+    # ~ from datetime import timedelta
+    
+    # ~ viaje = get_object_or_404(Viaje, id=viaje_id)
+    # ~ cliente = getattr(request.user, 'cliente', None)
+    
+    # ~ if not cliente:
+        # ~ messages.error(request, "Debes completar tu perfil antes de comprar.")
+        # ~ return redirect('core:perfil')
+    
+    # ~ # Liberar reservas vencidas por si acaso
+    # ~ liberar_reservas_vencidas(viaje=viaje)
+    # ~ # Recuperar el origen y destino de la sesión para buscar la tarifa
+    # ~ origen_id = request.session.get('busqueda_origen_id')
+    # ~ destino_id = request.session.get('busqueda_destino_id')
+    # ~ tarifa = None
+    # ~ if origen_id and destino_id:
+        # ~ tarifa = Tarifa.objects.filter(
+            # ~ origen_id=origen_id,
+            # ~ destino_id=destino_id,
+            # ~ activa=True
+        # ~ ).first()
+    # ~ # Leer el seguro del parámetro 100
+    # ~ valor_seguro = obtener_parametro('100', default=0)
+    # ~ # Obtener los asientos reservados por este cliente
+    # ~ asientos = Asiento.objects.filter(
+        # ~ viaje=viaje,
+        # ~ estado='reservado',
+        # ~ reservado_por=cliente,
+        # ~ reservado_hasta__gt=timezone.now()
+    # ~ ).order_by('numero')
+    
+    # ~ if not asientos.exists():
+        # ~ messages.warning(request, "No tienes asientos reservados. Selecciona asientos primero.")
+        # ~ return redirect('core:detalle_viaje', viaje_id=viaje.id)
+    
+    # ~ # Renovar la reserva por el tiempo configurado en el parámetro 111
+    # ~ # Calcular el tiempo restante según reserva_inicio
+    # ~ minutos = int(obtener_parametro('101', default=10))
+    # ~ reserva_inicio_str = request.session.get('reserva_inicio')
+    # ~ if reserva_inicio_str:
+        # ~ try:
+            # ~ reserva_inicio = datetime.fromisoformat(reserva_inicio_str)
+            # ~ expira_en = reserva_inicio + timedelta(minutes=minutos)
+            # ~ if timezone.now() > expira_en:
+                # ~ # Expirado: liberar asientos y redirigir
+                # ~ liberar_reservas_vencidas(viaje=viaje)
+                # ~ request.session.pop('reserva_inicio', None)
+                # ~ messages.warning(request, "Tu tiempo de reserva ha expirado. Selecciona de nuevo.")
+                # ~ return redirect('core:inicio')
+            # ~ segundos_restantes = int((expira_en - timezone.now()).total_seconds())
+        # ~ except (ValueError, TypeError):
+            # ~ segundos_restantes = minutos * 60
+    # ~ else:
+        # ~ segundos_restantes = minutos * 60
+    # ~ nuevo_vence = timezone.now() + timedelta(minutes=minutos)
+    # ~ asientos.update(reservado_hasta=nuevo_vence)
+    
+    # ~ # Si es POST, procesar los datos
+    # ~ if request.method == 'POST':
+        # ~ formularios = []
+        # ~ valido = True
+        
+        # ~ for asiento in asientos:
+            # ~ prefix = f"asiento_{asiento.id}"
+            # ~ form = PasajeroForm(request.POST, prefix=prefix)
+            # ~ formularios.append((asiento, form))
+            # ~ if not form.is_valid():
+                # ~ valido = False
+        
+        # ~ if valido:
+            # ~ # Guardar los datos de los pasajeros en la sesión
+            # ~ pasajeros_data = []
+            # ~ for asiento, form in formularios:
+                # ~ pasajeros_data.append({
+                    # ~ 'asiento_id': asiento.id,
+                    # ~ 'asiento_numero': asiento.numero,
+                    # ~ 'nombre': form.cleaned_data['nombre'],
+                    # ~ 'cedula': form.cleaned_data['cedula'],
+                    # ~ 'telefono': form.cleaned_data['telefono'],
+                    # ~ 'tipo_pasajero': form.cleaned_data['tipo_pasajero'],
+                # ~ })
+            
+            # ~ request.session['pasajeros_data'] = pasajeros_data
+            # ~ request.session['viaje_id'] = viaje.id
+            
+            # ~ return redirect('core:pago', viaje_id=viaje.id)
+    # ~ else:
+        # ~ # GET: crear formularios vacíos
+        # ~ formularios = []
+        # ~ for asiento in asientos:
+            # ~ prefix = f"asiento_{asiento.id}"
+            # ~ form = PasajeroForm(prefix=prefix)
+            # ~ formularios.append((asiento, form))
+    
+    # ~ cantidad = asientos.count()
+    # ~ if tarifa:
+        # ~ precio_unitario = tarifa.monto_usd + valor_seguro
+    # ~ else:
+        # ~ precio_unitario = 0
+    # ~ total_usd = precio_unitario * cantidad
+    
+    # ~ return render(request, 'pasajeros.html', {
+        # ~ 'viaje': viaje,
+        # ~ 'formularios': formularios,
+        # ~ 'cantidad': cantidad,
+        # ~ 'total_usd': total_usd,
+        # ~ 'tarifa': tarifa,
+        # ~ 'seguro': valor_seguro,  # ← nuevo
+        # ~ 'segundos_restantes': segundos_restantes,  # ← NUEVO
+        # ~ 'minutos_reserva': minutos,
+    # ~ })
 
 @require_POST
 @login_required

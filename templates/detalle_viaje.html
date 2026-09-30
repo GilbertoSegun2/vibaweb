@@ -334,41 +334,88 @@
 
 {% block extra_js %}
 <script>
-    // ============================================================
-    // CONTADOR DE TIEMPO
-    // ============================================================
-    let segundosTotales = {{ segundos_restantes }};
-    const contadorEl = document.getElementById('contador');
+// ============================================================
+// CONTADOR DE TIEMPO (Busca cualquier variante en todas las pantallas)
+// ============================================================
+let segundosTotales = {{ segundos_restantes }};
+
+function formatearTiempo(segundos) {
+    const m = Math.floor(segundos / 60);
+    const s = segundos % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+// Buscamos con un selector amplio que cubra cualquier pantalla
+const elementosContador = document.querySelectorAll('.contador-tiempo, #contador, #contador-pasajero, [id*="contador"]');
+
+function actualizarTodos(texto) {
+    elementosContador.forEach(el => {
+        el.textContent = texto;
+    });
+}
+
+if (elementosContador.length > 0 && segundosTotales > 0) {
+    const tiempoInicial = formatearTiempo(segundosTotales);
+    actualizarTodos(tiempoInicial);
     
-    function formatearTiempo(segundos) {
-        const m = Math.floor(segundos / 60);
-        const s = segundos % 60;
-        return `${m}:${s.toString().padStart(2, '0')}`;
-    }
-    
-    if (contadorEl) {
-        contadorEl.textContent = formatearTiempo(segundosTotales);
+    const intervalo = setInterval(() => {
+        segundosTotales--;
         
-        const intervalo = setInterval(() => {
-            segundosTotales--;
+        if (segundosTotales <= 0) {
+            clearInterval(intervalo);
+            alert('Tu tiempo de reserva ha expirado. Los asientos han sido liberados.');
+            window.location.href = '/';
+            return;
+        }
+        
+        const tiempoActual = formatearTiempo(segundosTotales);
+        actualizarTodos(tiempoActual);
+        
+        if (segundosTotales <= 120) {
+            const wraps = document.querySelectorAll('#contador-wrap, .contador-wrap');
+            wraps.forEach(wrap => wrap.classList.add('urgente'));
+        }
+    }, 1000);
+}
+
+    
+    //~ // ============================================================
+    //~ // CONTADOR DE TIEMPO
+    //~ // ============================================================
+    //~ let segundosTotales = {{ segundos_restantes }};
+    //~ const contadorEl = document.getElementById('contador');
+    
+    //~ function formatearTiempo(segundos) {
+        //~ const m = Math.floor(segundos / 60);
+        //~ const s = segundos % 60;
+        //~ return `${m}:${s.toString().padStart(2, '0')}`;
+    //~ }
+    
+    //~ if (contadorEl) {
+        //~ contadorEl.textContent = formatearTiempo(segundosTotales);
+        
+        //~ const intervalo = setInterval(() => {
+            //~ segundosTotales--;
             
-            if (segundosTotales <= 0) {
-                clearInterval(intervalo);
-                alert('Tu tiempo de reserva ha expirado. Los asientos han sido liberados.');
-                window.location.href = '/';
-                return;
-            }
+            //~ if (segundosTotales <= 0) {
+                //~ clearInterval(intervalo);
+                //~ alert('Tu tiempo de reserva ha expirado. Los asientos han sido liberados.');
+                //~ window.location.href = '/';
+                //~ return;
+            //~ }
             
-            contadorEl.textContent = formatearTiempo(segundosTotales);
+            //~ contadorEl.textContent = formatearTiempo(segundosTotales);
             
-            if (segundosTotales <= 120) {
-                const wrap = document.getElementById('contador-wrap');
-                if (wrap) {
-                    wrap.classList.add('urgente');
-                }
-            }
-        }, 1000);
-    }
+            //~ if (segundosTotales <= 120) {
+                //~ const wrap = document.getElementById('contador-wrap');
+                //~ if (wrap) {
+                    //~ wrap.classList.add('urgente');
+                //~ }
+            //~ }
+        //~ }, 1000);
+    //~ }
+    
+    
     // ============================================================
     // CONFIGURACIÓN
     // ============================================================
@@ -398,6 +445,7 @@
     // ============================================================
     // ELEMENTOS DEL DOM
     // ============================================================
+    // Selecciona todos los botones de tipo asiento
     const asientos = document.querySelectorAll('.asiento.disponible, .asiento.seleccionado, .asiento.reservado:not([disabled])');
     const sinSeleccion = document.getElementById('sin-seleccion');
     const conSeleccion = document.getElementById('con-seleccion');
@@ -504,7 +552,7 @@
     }
 
     intervaloRenovacion = setInterval(renovarReserva, INTERVALO_RENOVACION);
-
+    
     // ============================================================
     // CLIC EN UN ASIENTO
     // ============================================================
