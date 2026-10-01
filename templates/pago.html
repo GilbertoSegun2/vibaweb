@@ -228,6 +228,14 @@
         </div>
     </div>
 </div>
+<!-- SCRIPT PARA EVITAR DOBLE CLIC -->
+<script>
+    document.querySelector('form').addEventListener('submit', function() {
+        var btn = document.querySelector('button[type="submit"]');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Procesando pago...';
+    });
+</script>
 {% endblock %}
 
 {% block extra_js %}

@@ -994,12 +994,6 @@ def pasarela_virtual_view(request, viaje_id):
     total_usd = precio_unitario * cantidad
     tasa_bcv = obtener_parametro('107', default=0)
     total_bs = (total_usd * tasa_bcv).quantize(Decimal('0.01')) if tasa_bcv else 0
-    
-    # ~ # Calcula el total en bolívares normal
-    # ~ total_bs_raw = (total_usd * tasa_bcv).quantize(Decimal('0.01')) if tasa_bcv else 0
-    
-    # 💡 Formateamos a estilo venezolano: 28.310,37
-    # Primero reemplazamos el punto decimal por una coma temporal, y los miles por puntos
     total_bs_str = f"{total_bs:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     
     if request.method == 'POST':

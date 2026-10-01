@@ -536,7 +536,7 @@ class Pago(models.Model):
     )
 
     # Datos del pago
-    metodo = models.CharField(max_length=20, choices=METODOS, verbose_name="Método de pago")
+    metodo = models.CharField(max_length=50, choices=METODOS, verbose_name="Método de pago")
     monto_usd = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Monto USD")
     monto_bs = models.DecimalField(max_digits=20, decimal_places=2, default=0, verbose_name="Monto Bs.")
     tasa_bcv = models.DecimalField(max_digits=20, decimal_places=4, default=0, verbose_name="Tasa BCV")
