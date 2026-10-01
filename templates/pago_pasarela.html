@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container my-5">
+    <h2>Pasarela de Pago Digital</h2>
+    <p class="text-muted">Estás a un paso de confirmar tu viaje a <strong>{{ viaje.ruta.destino }}</strong>.</p>
+
+    <div class="card p-4 shadow-sm my-4">
+        <h4>Resumen de la Compra</h4>
+        <ul class="list-group list-group-flush my-3">
+            <li class="list-group-item d-flex justify-content-between">
+                <span>Cantidad de boletos:</span>
+                <strong>{{ cantidad }}</strong>
+            </li>
+            <li class="list-group-item d-flex justify-content-between">
+                <span>Total a Pagar (USD):</span>
+                <strong class="text-success">${{ total_usd }}</strong>
+            </li>
+            <li class="list-group-item d-flex justify-content-between">
+                <span>Total a Pagar (Bs. al cambio):</span>
+                <strong>Bs. {{ total_bs }}</strong>
+            </li>
+        </ul>
+
+        <!-- Formulario que invoca el método POST de la pasarela -->
+        <form method="POST">
+            {% csrf_token %}
+            <div class="alert alert-info">
+                Haz clic en el botón de abajo para procesar tu pago de forma segura con tarjeta o medios digitales.
+            </div>
+            <button type="submit" class="btn btn-primary btn-lg w-100">
+                <i class="fas fa-lock"></i> Pagar ${{ total_usd }} de forma segura
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}

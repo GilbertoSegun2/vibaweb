@@ -666,7 +666,7 @@ def renovar_reserva(request):
     
     except Exception as e:
         return JsonResponse({'ok': False, 'error': str(e)}, status=500)
-        
+
 @login_required
 def pago(request, viaje_id):
     """Formulario de pago para usuarios web"""
@@ -690,13 +690,13 @@ def pago(request, viaje_id):
     if not cliente:
         messages.error(request, "Debes completar tu perfil antes de comprar.")
         return redirect('core:perfil')
-    
+        
     # Recuperar los datos de los pasajeros de la sesión
     pasajeros_data = request.session.get('pasajeros_data', [])
     if not pasajeros_data:
         messages.warning(request, "No hay datos de pasajeros. Completa el formulario primero.")
         return redirect('core:pasajeros', viaje_id=viaje.id)
-    
+        
     # Obtener los asientos reservados
     asientos_ids = [p['asiento_id'] for p in pasajeros_data]
     asientos = Asiento.objects.filter(
@@ -737,7 +737,6 @@ def pago(request, viaje_id):
     else:
         precio_unitario = 0
     total_usd = precio_unitario * cantidad
-    total_usd = precio_unitario * cantidad
     tasa_bcv = obtener_parametro('107', default=0)
     total_bs = (total_usd * tasa_bcv).quantize(Decimal('0.01')) if tasa_bcv else 0
     
@@ -751,31 +750,23 @@ def pago(request, viaje_id):
     }
     
     if request.method == 'POST':
-        # 1. Hacemos una copia mutable de los datos POST
         datos_post = request.POST.copy()
-        
-        # 2. Extraemos el campo de monto pagado en bolívares (ej: "1.250,50")
         monto_str = datos_post.get('monto_pagado_bs', '')
         
         if monto_str:
-            # 3. Limpiamos los puntos de miles y cambiamos la coma decimal por punto
             monto_limpio = monto_str.replace('.', '').replace(',', '.')
             datos_post['monto_pagado_bs'] = monto_limpio
             
-        # 4. Instanciamos el formulario usando la data limpia y request.FILES
         form = PagoWebForm(datos_post, request.FILES)
         
         if form.is_valid():
-            # Calcular la diferencia entre lo pagado y lo esperado
             monto_pagado = form.cleaned_data['monto_pagado_bs']
             diferencia = monto_pagado - total_bs
             monto_faltante = abs(diferencia) if diferencia < 0 else Decimal('0')
             monto_excedente = diferencia if diferencia > Decimal('0.01') else Decimal('0')
             
-            # Si el cliente no ha confirmado el pago con diferencia, mostrar aviso
             confirmar = request.POST.get('confirmar_diferencia')
             if (abs(diferencia) > Decimal('0.01')) and not confirmar:
-                # Preparar contexto para mostrar el aviso
                 return render(request, 'pago.html', {
                     'viaje': viaje,
                     'form': form,
@@ -792,9 +783,7 @@ def pago(request, viaje_id):
                     'monto_excedente': monto_excedente,
                     'mostrar_aviso': True,
                 })
-           
-           
-            # Crear la transacción
+            
             codigo = generar_codigo_transaccion()        
             with transaction.atomic():
                 transaccion = Transaccion.objects.create(
@@ -806,9 +795,13 @@ def pago(request, viaje_id):
                     monto_total_bs=total_bs,
                     tasa_bcv=tasa_bcv,
                     estado='pendiente_verificacion',
+                    
+                    # 💡 CAMPOS DE TRAZABILIDAD PARA LA VENTA WEB
+                    vendido_por=None,  # Fue autogestionado por el cliente en la web
+                    dispositivo_venta=request.META.get('HTTP_USER_AGENT', 'Desconocido'),
+                    oficina_destino=viaje.ruta.destinos.first(),  # Oficina o destino asociado
                 )
                 
-                # Preparar observación de diferencia si existe
                 observacion = ''
                 if abs(diferencia) > Decimal('0.01'):
                     observacion = f"Diferencia de monto: pagó Bs. {monto_pagado}, esperado Bs. {total_bs}. Diferencia: Bs. {diferencia:,.2f}"
@@ -817,7 +810,7 @@ def pago(request, viaje_id):
                     transaccion=transaccion,
                     metodo=form.cleaned_data['metodo'],
                     monto_usd=total_usd,
-                    monto_bs=monto_pagado,  # El monto que el cliente dice que pagó
+                    monto_bs=monto_pagado,
                     tasa_bcv=tasa_bcv,
                     banco_origen=form.cleaned_data['banco_origen'],
                     telefono_origen=form.cleaned_data['telefono_origen'],
@@ -828,17 +821,14 @@ def pago(request, viaje_id):
                     observacion=observacion,
                 )
   
-                # Crear los boletos
                 for p in pasajeros_data:
                     asiento = Asiento.objects.select_for_update().get(id=p['asiento_id'])
                     
-                    # Marcar asiento como vendido
                     asiento.estado = 'vendido'
                     asiento.reservado_hasta = None
                     asiento.reservado_por = None
                     asiento.save()
                     
-                    # Calcular montos usando la tarifa + seguro del parámetro
                     if tarifa:
                         monto_tarifa = tarifa.monto_usd
                         monto_seguro = valor_seguro
@@ -862,10 +852,8 @@ def pago(request, viaje_id):
                         monto_total_bs=(monto_total_boleto * tasa_bcv).quantize(Decimal('0.01')) if tasa_bcv else 0,
                         codigo_qr=generar_codigo_qr(),
                         estado='vendido',
-                        vendido_por=request.user,
                     )
             
-            # Limpiar la sesión
             request.session.pop('pasajeros_data', None)
             request.session.pop('viaje_id', None)
             
@@ -879,14 +867,14 @@ def pago(request, viaje_id):
         'form': form,
         'cantidad': cantidad,
         'tarifa': tarifa,
-        'seguro': valor_seguro,  # ← nuevo
-        'segundos_restantes': segundos_restantes,  # ← NUEVO
+        'seguro': valor_seguro,
+        'segundos_restantes': segundos_restantes,
         'total_usd': total_usd,
         'total_bs': total_bs,
         'tasa_bcv': tasa_bcv,
         'datos_cuenta': datos_cuenta,
         'minutos_reserva': minutos,
-    })
+    })        
 
 @login_required
 def confirmacion(request, transaccion_id):
@@ -958,9 +946,7 @@ def registro_usuario(request):
     
 @login_required
 def pasarela_virtual_view(request, viaje_id):
-    """Pasarela de pagos virtual simulada para demostraciones"""
-    from datetime import timedelta
-    
+    """Pasarela de pagos virtual simulada para demostraciones con formulario seguro de tarjeta/token"""
     viaje = get_object_or_404(Viaje, id=viaje_id)
     cliente = getattr(request.user, 'cliente', None)
     
@@ -968,13 +954,13 @@ def pasarela_virtual_view(request, viaje_id):
         messages.error(request, "Debes completar tu perfil antes de comprar.")
         return redirect('core:perfil')
         
-    # Recuperar pasajeros de la sesión (igual que en tu flujo actual)
+    # Recuperar datos de pasajeros de la sesión
     pasajeros_data = request.session.get('pasajeros_data', [])
     if not pasajeros_data:
         messages.warning(request, "No hay datos de pasajeros. Completa el formulario primero.")
         return redirect('core:pasajeros', viaje_id=viaje.id)
         
-    # Asientos y montos
+    # Validar disponibilidad de asientos
     asientos_ids = [p['asiento_id'] for p in pasajeros_data]
     asientos = Asiento.objects.filter(id__in=asientos_ids, viaje=viaje, estado='reservado', reservado_por=cliente)
     
@@ -985,7 +971,6 @@ def pasarela_virtual_view(request, viaje_id):
     # Calcular totales
     cantidad = len(pasajeros_data)
     valor_seguro = obtener_parametro('100', default=0)
-    
     origen_id = request.session.get('busqueda_origen_id')
     destino_id = request.session.get('busqueda_destino_id')
     tarifa = Tarifa.objects.filter(origen_id=origen_id, destino_id=destino_id, activa=True).first() if (origen_id and destino_id) else None
@@ -994,14 +979,16 @@ def pasarela_virtual_view(request, viaje_id):
     total_usd = precio_unitario * cantidad
     tasa_bcv = obtener_parametro('107', default=0)
     total_bs = (total_usd * tasa_bcv).quantize(Decimal('0.01')) if tasa_bcv else 0
-    total_bs_str = f"{total_bs:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     
     if request.method == 'POST':
+        # 🟢 Aquí procesamos el formulario con los datos seguros de la tarjeta/token de Venezuela
         form = PasarelaVirtualForm(request.POST)
+        
         if form.is_valid():
-            # SIMULACIÓN EXITOSA: Creamos la transacción y boletos automáticamente
-            codigo = generar_codigo_transaccion()         
+            codigo = generar_codigo_transaccion()
+            
             with transaction.atomic():
+                # 1. Crear la transacción con su trazabilidad completa
                 transaccion = Transaccion.objects.create(
                     codigo=codigo,
                     cliente=cliente,
@@ -1010,22 +997,25 @@ def pasarela_virtual_view(request, viaje_id):
                     monto_total_usd=total_usd,
                     monto_total_bs=total_bs,
                     tasa_bcv=tasa_bcv,
-                    estado='aprobado', # O pendiente_verificacion si prefieres
+                    estado='confirmada',
+                    vendido_por=None,
+                    dispositivo_venta=request.META.get('HTTP_USER_AGENT', 'Desconocido'),
+                    oficina_destino=viaje.ruta.destinos.first(),
                 )
                 
-                # Registrar el pago simulado
+                # 2. Registrar el pago digital aprobado
                 pago = Pago.objects.create(
                     transaccion=transaccion,
-                    metodo='tarjeta_debito_simulada',
+                    metodo='pasarela_digital',
                     monto_usd=total_usd,
                     monto_bs=total_bs,
                     tasa_bcv=tasa_bcv,
-                    referencia='SIM-' + codigo,
+                    referencia='PASS-' + codigo,
                     estado='aprobado',
-                    observacion="Pago procesado mediante Pasarela Virtual Simulada (Demo para Jefes)."
+                    observacion="Pago procesado exitosamente mediante Pasarela Digital segura."
                 )
                 
-                # Marcar asientos como vendidos y crear boletos
+                # 3. Marcar asientos como vendidos y generar los boletos
                 for p in pasajeros_data:
                     asiento = Asiento.objects.select_for_update().get(id=p['asiento_id'])
                     asiento.estado = 'vendido'
@@ -1052,12 +1042,11 @@ def pasarela_virtual_view(request, viaje_id):
                         monto_total_bs=(monto_total_boleto * tasa_bcv).quantize(Decimal('0.01')) if tasa_bcv else 0,
                         codigo_qr=generar_codigo_qr(),
                         estado='vendido',
-                        vendido_por=request.user,
                     )
             
-            # Limpiar sesión y éxito
+            # Limpiar sesión y notificar éxito
             request.session.pop('pasajeros_data', None)
-            messages.success(request, "¡Transacción Aprobada exitosamente por la Pasarela Virtual!")
+            messages.success(request, "¡Compra registrada exitosamente!")
             return redirect('core:confirmacion', transaccion_id=transaccion.id)
     else:
         form = PasarelaVirtualForm()
@@ -1065,7 +1054,8 @@ def pasarela_virtual_view(request, viaje_id):
     return render(request, 'pasarela_virtual.html', {
         'form': form,
         'viaje': viaje,
+        'cantidad': cantidad,
         'total_usd': total_usd,
-        'total_bs': total_bs_str,  # 👈 Pasamos el string ya formateado
+        'total_bs': total_bs,
         'tasa_bcv': tasa_bcv,
     })

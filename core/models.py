@@ -339,6 +339,28 @@ class Transaccion(models.Model):
     fecha_creacion = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de creación")
     fecha_confirmacion = models.DateTimeField(null=True, blank=True, verbose_name="Fecha de confirmación")
     fecha_cancelacion = models.DateTimeField(null=True, blank=True, verbose_name="Fecha de cancelación")
+    
+    # --- NUEVOS CAMPOS DE TRAZABILIDAD Y VENTA ---
+    vendido_por = models.ForeignKey(
+        User, on_delete=models.PROTECT, null=True, blank=True,
+        related_name='transacciones_vendidas', verbose_name="Usuario que vendió"
+    )
+    oficina_venta = models.ForeignKey(
+        Oficina, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='transacciones_oficina', verbose_name="Oficina que vendió"
+    )
+    oficina_destino = models.ForeignKey(
+        Oficina, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='transacciones_destino', verbose_name="Oficina destino"
+    )
+    dispositivo_venta = models.CharField(
+        max_length=150, blank=True, verbose_name="Dispositivo / User-Agent"
+    )
+    numero_liquidacion = models.CharField(
+        max_length=50, blank=True, verbose_name="Número de liquidación"
+    )
+    # ---------------------------------------------    
+    
 
     # Auditoría
     confirmada_por = models.ForeignKey(
@@ -363,6 +385,8 @@ class Boleto(models.Model):
         ('cancelado', 'Cancelado con crédito'),
         ('no_show', 'No se presentó'),
         ('reprogramado', 'Reprogramado'),
+        ('liquidado', 'Liquidado'),      # 👈 Agregado para control financiero
+        ('no_liquidado', 'No liquidado'), # 👈 Agregado para control financiero
     ]
     
     TIPOS_PASAJERO = [
