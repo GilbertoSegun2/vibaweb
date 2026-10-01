@@ -217,3 +217,51 @@ class PagoWebForm(forms.Form):
         label="Imagen del comprobante",
         widget=forms.FileInput(attrs={'class': 'form-control', 'accept': 'image/*'})
     )
+
+
+class PasarelaVirtualForm(forms.Form):
+    # Bloque 1: Datos de la Tarjeta
+    numero_tarjeta = forms.CharField(
+        max_length=19,
+        label="Número de Tarjeta (16 dígitos)",
+        widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': '4152 3200 1234 5678', 'maxlength': '19'})
+    )
+    vencimiento = forms.CharField(
+        max_length=5,
+        label="Fecha de Vencimiento (MM/AA)",
+        widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'MM/AA', 'maxlength': '5'})
+    )
+    cvv = forms.CharField(
+        max_length=4,
+        label="CVV / CVC",
+        widget=forms.PasswordInput(attrs={'class': 'form-control', 'placeholder': '123', 'maxlength': '4'})
+    )
+
+    # Bloque 2: Datos del Tarjetahabiente
+    nombre_tarjeta = forms.CharField(
+        max_length=100,
+        label="Nombre impreso en la tarjeta",
+        widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'JUAN PÉREZ'})
+    )
+    tipo_documento = forms.ChoiceField(
+        choices=[('V', 'V'), ('E', 'E'), ('J', 'J'), ('G', 'G')],
+        label="Tipo Doc.",
+        widget=forms.Select(attrs={'class': 'form-select'})
+    )
+    cedula_tarjeta = forms.CharField(
+        max_length=15,
+        label="Cédula o RIF",
+        widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': '12345678'})
+    )
+
+    # Bloque 3: Autenticación Bancaria Avanzada (El Toque Venezolano)
+    tipo_cuenta = forms.ChoiceField(
+        choices=[('corriente', 'Cuenta Corriente'), ('ahorro', 'Cuenta Ahorros')],
+        label="Tipo de Cuenta",
+        widget=forms.Select(attrs={'class': 'form-select'})
+    )
+    clave_sms = forms.CharField(
+        max_length=10,
+        label="Clave Dinámica (SMS / Token)",
+        widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Código recibido por SMS'})
+    )

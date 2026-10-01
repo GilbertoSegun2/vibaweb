@@ -6,9 +6,7 @@ from django.contrib.auth.models import User
 from django.contrib import messages
 
 from .models import Oficina, Viaje, Asiento, Transaccion, Pago, Boleto, Tarifa, MovimientoAsiento
-from .forms import RegistroForm, LoginForm
-
-
+from .forms import RegistroForm, LoginForm, PagoWebForm, PasajeroForm, PasarelaVirtualForm
 
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
@@ -18,7 +16,6 @@ from datetime import timedelta
 from decimal import Decimal
 
 from .utils import obtener_parametro, liberar_reservas_vencidas, generar_codigo_transaccion, generar_codigo_qr
-
 # ============================================================
 # VISTAS PÚBLICAS
 # ============================================================
@@ -428,7 +425,6 @@ def pasajeros(request, viaje_id):
     Los asientos vienen de la reserva temporal del cliente actual.
     Al entrar, se renueva la reserva por el tiempo configurado.
     """
-    from .forms import PasajeroForm
     from .utils import liberar_reservas_vencidas, obtener_parametro
     from datetime import timedelta
     
@@ -516,10 +512,12 @@ def pasajeros(request, viaje_id):
                     'tipo_pasajero': form.cleaned_data['tipo_pasajero'],
                 })
             
+            
             request.session['pasajeros_data'] = pasajeros_data
             request.session['viaje_id'] = viaje.id
-            
-            return redirect('core:pago', viaje_id=viaje.id)
+            # 3. ¡LA REDIRECCIÓN CLAVE! Mandas al usuario directo a la pasarela virtual
+            return redirect('core:pasarela_virtual', viaje_id=viaje.id)
+            # ~ return redirect('core:pago', viaje_id=viaje.id)
     else:
         # GET: crear formularios vacíos
         formularios = []
@@ -545,127 +543,6 @@ def pasajeros(request, viaje_id):
         'minutos_reserva': minutos,
     })
     
-# ~ @login_required
-# ~ def pasajeros(request, viaje_id):
-    # ~ """
-    # ~ Formulario para capturar los datos de cada pasajero.
-    # ~ Los asientos vienen de la reserva temporal del cliente actual.
-    # ~ Al entrar, se renueva la reserva por el tiempo configurado.
-    # ~ """
-    # ~ from .forms import PasajeroForm
-    # ~ from .utils import liberar_reservas_vencidas, obtener_parametro
-    # ~ from datetime import timedelta
-    
-    # ~ viaje = get_object_or_404(Viaje, id=viaje_id)
-    # ~ cliente = getattr(request.user, 'cliente', None)
-    
-    # ~ if not cliente:
-        # ~ messages.error(request, "Debes completar tu perfil antes de comprar.")
-        # ~ return redirect('core:perfil')
-    
-    # ~ # Liberar reservas vencidas por si acaso
-    # ~ liberar_reservas_vencidas(viaje=viaje)
-    # ~ # Recuperar el origen y destino de la sesión para buscar la tarifa
-    # ~ origen_id = request.session.get('busqueda_origen_id')
-    # ~ destino_id = request.session.get('busqueda_destino_id')
-    # ~ tarifa = None
-    # ~ if origen_id and destino_id:
-        # ~ tarifa = Tarifa.objects.filter(
-            # ~ origen_id=origen_id,
-            # ~ destino_id=destino_id,
-            # ~ activa=True
-        # ~ ).first()
-    # ~ # Leer el seguro del parámetro 100
-    # ~ valor_seguro = obtener_parametro('100', default=0)
-    # ~ # Obtener los asientos reservados por este cliente
-    # ~ asientos = Asiento.objects.filter(
-        # ~ viaje=viaje,
-        # ~ estado='reservado',
-        # ~ reservado_por=cliente,
-        # ~ reservado_hasta__gt=timezone.now()
-    # ~ ).order_by('numero')
-    
-    # ~ if not asientos.exists():
-        # ~ messages.warning(request, "No tienes asientos reservados. Selecciona asientos primero.")
-        # ~ return redirect('core:detalle_viaje', viaje_id=viaje.id)
-    
-    # ~ # Renovar la reserva por el tiempo configurado en el parámetro 111
-    # ~ # Calcular el tiempo restante según reserva_inicio
-    # ~ minutos = int(obtener_parametro('101', default=10))
-    # ~ reserva_inicio_str = request.session.get('reserva_inicio')
-    # ~ if reserva_inicio_str:
-        # ~ try:
-            # ~ reserva_inicio = datetime.fromisoformat(reserva_inicio_str)
-            # ~ expira_en = reserva_inicio + timedelta(minutes=minutos)
-            # ~ if timezone.now() > expira_en:
-                # ~ # Expirado: liberar asientos y redirigir
-                # ~ liberar_reservas_vencidas(viaje=viaje)
-                # ~ request.session.pop('reserva_inicio', None)
-                # ~ messages.warning(request, "Tu tiempo de reserva ha expirado. Selecciona de nuevo.")
-                # ~ return redirect('core:inicio')
-            # ~ segundos_restantes = int((expira_en - timezone.now()).total_seconds())
-        # ~ except (ValueError, TypeError):
-            # ~ segundos_restantes = minutos * 60
-    # ~ else:
-        # ~ segundos_restantes = minutos * 60
-    # ~ nuevo_vence = timezone.now() + timedelta(minutes=minutos)
-    # ~ asientos.update(reservado_hasta=nuevo_vence)
-    
-    # ~ # Si es POST, procesar los datos
-    # ~ if request.method == 'POST':
-        # ~ formularios = []
-        # ~ valido = True
-        
-        # ~ for asiento in asientos:
-            # ~ prefix = f"asiento_{asiento.id}"
-            # ~ form = PasajeroForm(request.POST, prefix=prefix)
-            # ~ formularios.append((asiento, form))
-            # ~ if not form.is_valid():
-                # ~ valido = False
-        
-        # ~ if valido:
-            # ~ # Guardar los datos de los pasajeros en la sesión
-            # ~ pasajeros_data = []
-            # ~ for asiento, form in formularios:
-                # ~ pasajeros_data.append({
-                    # ~ 'asiento_id': asiento.id,
-                    # ~ 'asiento_numero': asiento.numero,
-                    # ~ 'nombre': form.cleaned_data['nombre'],
-                    # ~ 'cedula': form.cleaned_data['cedula'],
-                    # ~ 'telefono': form.cleaned_data['telefono'],
-                    # ~ 'tipo_pasajero': form.cleaned_data['tipo_pasajero'],
-                # ~ })
-            
-            # ~ request.session['pasajeros_data'] = pasajeros_data
-            # ~ request.session['viaje_id'] = viaje.id
-            
-            # ~ return redirect('core:pago', viaje_id=viaje.id)
-    # ~ else:
-        # ~ # GET: crear formularios vacíos
-        # ~ formularios = []
-        # ~ for asiento in asientos:
-            # ~ prefix = f"asiento_{asiento.id}"
-            # ~ form = PasajeroForm(prefix=prefix)
-            # ~ formularios.append((asiento, form))
-    
-    # ~ cantidad = asientos.count()
-    # ~ if tarifa:
-        # ~ precio_unitario = tarifa.monto_usd + valor_seguro
-    # ~ else:
-        # ~ precio_unitario = 0
-    # ~ total_usd = precio_unitario * cantidad
-    
-    # ~ return render(request, 'pasajeros.html', {
-        # ~ 'viaje': viaje,
-        # ~ 'formularios': formularios,
-        # ~ 'cantidad': cantidad,
-        # ~ 'total_usd': total_usd,
-        # ~ 'tarifa': tarifa,
-        # ~ 'seguro': valor_seguro,  # ← nuevo
-        # ~ 'segundos_restantes': segundos_restantes,  # ← NUEVO
-        # ~ 'minutos_reserva': minutos,
-    # ~ })
-
 @require_POST
 @login_required
 def reservar_temporal(request):
@@ -685,6 +562,20 @@ def reservar_temporal(request):
     cliente = getattr(request.user, 'cliente', None)
     if not cliente:
         return JsonResponse({'ok': False, 'error': 'Sin cliente.'}, status=400)
+        
+    # Verificar el máximo de puestos por transacción (parámetro 103)
+    max_puestos = int(obtener_parametro('103', default=5))
+    
+    # Contar cuántos asientos ya tiene el cliente en este viaje
+    asientos_reservados = Asiento.objects.filter(
+        viaje_id=viaje_id,
+        estado='reservado',
+        reservado_por=cliente,
+        reservado_hasta__gt=timezone.now()
+    ).count()
+    
+    # Verificar si ya alcanzó el límite (solo si está agregando uno nuevo)
+    # Verificamos después, cuando sabemos si el asiento ya es suyo
     
     segundos = int(obtener_parametro('113', default=30))
     vence = timezone.now() + timedelta(seconds=segundos)
@@ -702,6 +593,21 @@ def reservar_temporal(request):
                 asiento.reservado_hasta = vence
                 asiento.save()
                 return JsonResponse({'ok': True, 'vence': vence.isoformat()})
+                
+            # Verificar el máximo ANTES de reservar
+            max_puestos = int(obtener_parametro('103', default=5))
+            asientos_actuales = Asiento.objects.filter(
+                viaje_id=viaje_id,
+                estado='reservado',
+                reservado_por=cliente,
+                reservado_hasta__gt=timezone.now()
+            ).count()
+            
+            if asientos_actuales >= max_puestos:
+                return JsonResponse({
+                    'ok': False,
+                    'error': f'Ya tienes {asientos_actuales} asientos reservados. El máximo es {max_puestos} por transacción.'
+                }, status=400)
             
             # Si está reservado por otro o vendido, error
             if asiento.estado != 'disponible':
@@ -764,7 +670,6 @@ def renovar_reserva(request):
 @login_required
 def pago(request, viaje_id):
     """Formulario de pago para usuarios web"""
-    from .forms import PagoWebForm
     from .utils import obtener_parametro, liberar_reservas_vencidas
     from datetime import timedelta
     
@@ -846,7 +751,20 @@ def pago(request, viaje_id):
     }
     
     if request.method == 'POST':
-        form = PagoWebForm(request.POST, request.FILES)
+        # 1. Hacemos una copia mutable de los datos POST
+        datos_post = request.POST.copy()
+        
+        # 2. Extraemos el campo de monto pagado en bolívares (ej: "1.250,50")
+        monto_str = datos_post.get('monto_pagado_bs', '')
+        
+        if monto_str:
+            # 3. Limpiamos los puntos de miles y cambiamos la coma decimal por punto
+            monto_limpio = monto_str.replace('.', '').replace(',', '.')
+            datos_post['monto_pagado_bs'] = monto_limpio
+            
+        # 4. Instanciamos el formulario usando la data limpia y request.FILES
+        form = PagoWebForm(datos_post, request.FILES)
+        
         if form.is_valid():
             # Calcular la diferencia entre lo pagado y lo esperado
             monto_pagado = form.cleaned_data['monto_pagado_bs']
@@ -991,4 +909,169 @@ def confirmacion(request, transaccion_id):
         'transaccion': transaccion,
         'boletos': boletos,
         'pago': pago,
+    })
+
+from django.contrib.auth import login
+from django.contrib.auth.models import User
+from .models import Cliente
+
+def registro_usuario(request):
+    if request.user.is_authenticated:
+        return redirect('core:inicio')
+    
+    if request.method == 'POST':
+        form = RegistroForm(request.POST)
+        if form.is_valid():
+            # Extraemos los datos limpios
+            username = form.cleaned_data['username']
+            email = form.cleaned_data['email']
+            first_name = form.cleaned_data['first_name']
+            last_name = form.cleaned_data['last_name']
+            password = form.cleaned_data['password']
+            cedula = form.cleaned_data['cedula']
+            telefono = form.cleaned_data['telefono']
+            
+            # 1. Crear el usuario base de Django
+            user = User.objects.create_user(
+                username=username, 
+                email=email, 
+                password=password,
+                first_name=first_name,
+                last_name=last_name
+            )
+            
+            # 2. Crear el perfil de Cliente vinculado
+            Cliente.objects.create(
+                user=user,
+                cedula=cedula,
+                telefono=telefono
+            )
+            
+            # 3. Autenticar y redirigir al usuario inmediatamente
+            login(request, user)
+            messages.success(request, f"¡Bienvenido a Viba-Web, {first_name}! Tu cuenta ha sido creada con éxito.")
+            return redirect('core:inicio')
+    else:
+        form = RegistroForm()
+        
+    return render(request, 'registro.html', {'form': form})
+    
+@login_required
+def pasarela_virtual_view(request, viaje_id):
+    """Pasarela de pagos virtual simulada para demostraciones"""
+    from datetime import timedelta
+    
+    viaje = get_object_or_404(Viaje, id=viaje_id)
+    cliente = getattr(request.user, 'cliente', None)
+    
+    if not cliente:
+        messages.error(request, "Debes completar tu perfil antes de comprar.")
+        return redirect('core:perfil')
+        
+    # Recuperar pasajeros de la sesión (igual que en tu flujo actual)
+    pasajeros_data = request.session.get('pasajeros_data', [])
+    if not pasajeros_data:
+        messages.warning(request, "No hay datos de pasajeros. Completa el formulario primero.")
+        return redirect('core:pasajeros', viaje_id=viaje.id)
+        
+    # Asientos y montos
+    asientos_ids = [p['asiento_id'] for p in pasajeros_data]
+    asientos = Asiento.objects.filter(id__in=asientos_ids, viaje=viaje, estado='reservado', reservado_por=cliente)
+    
+    if asientos.count() != len(asientos_ids):
+        messages.warning(request, "Algunos asientos ya no están disponibles.")
+        return redirect('core:detalle_viaje', viaje_id=viaje.id)
+
+    # Calcular totales
+    cantidad = len(pasajeros_data)
+    valor_seguro = obtener_parametro('100', default=0)
+    
+    origen_id = request.session.get('busqueda_origen_id')
+    destino_id = request.session.get('busqueda_destino_id')
+    tarifa = Tarifa.objects.filter(origen_id=origen_id, destino_id=destino_id, activa=True).first() if (origen_id and destino_id) else None
+    
+    precio_unitario = (tarifa.monto_usd + valor_seguro) if tarifa else 0
+    total_usd = precio_unitario * cantidad
+    tasa_bcv = obtener_parametro('107', default=0)
+    total_bs = (total_usd * tasa_bcv).quantize(Decimal('0.01')) if tasa_bcv else 0
+    
+    # ~ # Calcula el total en bolívares normal
+    # ~ total_bs_raw = (total_usd * tasa_bcv).quantize(Decimal('0.01')) if tasa_bcv else 0
+    
+    # 💡 Formateamos a estilo venezolano: 28.310,37
+    # Primero reemplazamos el punto decimal por una coma temporal, y los miles por puntos
+    total_bs_str = f"{total_bs:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    
+    if request.method == 'POST':
+        form = PasarelaVirtualForm(request.POST)
+        if form.is_valid():
+            # SIMULACIÓN EXITOSA: Creamos la transacción y boletos automáticamente
+            codigo = generar_codigo_transaccion()         
+            with transaction.atomic():
+                transaccion = Transaccion.objects.create(
+                    codigo=codigo,
+                    cliente=cliente,
+                    viaje=viaje,
+                    cantidad_boletos=cantidad,
+                    monto_total_usd=total_usd,
+                    monto_total_bs=total_bs,
+                    tasa_bcv=tasa_bcv,
+                    estado='aprobado', # O pendiente_verificacion si prefieres
+                )
+                
+                # Registrar el pago simulado
+                pago = Pago.objects.create(
+                    transaccion=transaccion,
+                    metodo='tarjeta_debito_simulada',
+                    monto_usd=total_usd,
+                    monto_bs=total_bs,
+                    tasa_bcv=tasa_bcv,
+                    referencia='SIM-' + codigo,
+                    estado='aprobado',
+                    observacion="Pago procesado mediante Pasarela Virtual Simulada (Demo para Jefes)."
+                )
+                
+                # Marcar asientos como vendidos y crear boletos
+                for p in pasajeros_data:
+                    asiento = Asiento.objects.select_for_update().get(id=p['asiento_id'])
+                    asiento.estado = 'vendido'
+                    asiento.reservado_hasta = None
+                    asiento.reservado_por = None
+                    asiento.save()
+                    
+                    monto_tarifa = tarifa.monto_usd if tarifa else 0
+                    monto_seguro = valor_seguro if tarifa else 0
+                    monto_total_boleto = monto_tarifa + monto_seguro
+                    
+                    Boleto.objects.create(
+                        transaccion=transaccion,
+                        viaje=viaje,
+                        asiento=asiento,
+                        pasajero_cedula=p['cedula'],
+                        pasajero_nombre=p['nombre'],
+                        pasajero_telefono=p.get('telefono', ''),
+                        tipo_pasajero=p['tipo_pasajero'],
+                        monto_tarifa_usd=monto_tarifa,
+                        monto_seguro_usd=monto_seguro,
+                        monto_total_usd=monto_total_boleto,
+                        tasa_bcv=tasa_bcv,
+                        monto_total_bs=(monto_total_boleto * tasa_bcv).quantize(Decimal('0.01')) if tasa_bcv else 0,
+                        codigo_qr=generar_codigo_qr(),
+                        estado='vendido',
+                        vendido_por=request.user,
+                    )
+            
+            # Limpiar sesión y éxito
+            request.session.pop('pasajeros_data', None)
+            messages.success(request, "¡Transacción Aprobada exitosamente por la Pasarela Virtual!")
+            return redirect('core:confirmacion', transaccion_id=transaccion.id)
+    else:
+        form = PasarelaVirtualForm()
+
+    return render(request, 'pasarela_virtual.html', {
+        'form': form,
+        'viaje': viaje,
+        'total_usd': total_usd,
+        'total_bs': total_bs_str,  # 👈 Pasamos el string ya formateado
+        'tasa_bcv': tasa_bcv,
     })

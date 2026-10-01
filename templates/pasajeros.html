@@ -134,44 +134,4 @@
         </div>
     </div>
 </div>
-<!--
-{% block extra_js %}
-<script>
-    // Usamos el filtro default por seguridad
-    let segundosTotales = {{ segundos_restantes|default:0 }};
-    
-    function formatearTiempo(segundos) {
-        const m = Math.floor(segundos / 60);
-        const s = segundos % 60;
-        return `${m}:${s.toString().padStart(2, '0')}`;
-    }
-    
-    const contadorEl = document.getElementById('contador');
-    
-    if (contadorEl && segundosTotales > 0) {
-        contadorEl.textContent = formatearTiempo(segundosTotales);
-        
-        const intervalo = setInterval(() => {
-            segundosTotales--;
-            
-            if (segundosTotales <= 0) {
-                clearInterval(intervalo);
-                alert('Tu tiempo de reserva ha expirado. Los asientos han sido liberados.');
-                window.location.href = '/';
-                return;
-            }
-            
-            contadorEl.textContent = formatearTiempo(segundosTotales);
-            
-            if (segundosTotales <= 120) {
-                const wrap = document.getElementById('contador-wrap');
-                if (wrap) {
-                    wrap.classList.add('urgente');
-                }
-            }
-        }, 1000);
-    }
-</script>
-{% endblock %}
--->
 {% endblock %}

@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+
+{% load l10n %}
+{% block content %}
+<div class="container my-5">
+    <div class="row justify-content-center">
+        <div class="col-md-7">
+            <div class="card shadow border-0 rounded-4">
+                <div class="card-header bg-primary text-white text-center py-3 rounded-top-4">
+                    <h4 class="mb-0"><i class="bi bi-shield-lock-fill"></i> Pasarela de Pagos Segura</h4>
+                    <small>Módulo de Demostración - Conexión Bancaria Simulada</small>
+                </div>
+                <div class="card-body p-4">
+                    
+                    <!-- Resumen del Monto a Pagar -->
+                    <div class="alert alert-light border mb-4 text-center">
+                        <span class="text-muted d-block">Monto Total a Cancelar</span>
+                        <h2 class="text-success fw-bold mb-0">Bs. {{ total_bs|localize }}</h2>
+                        <small class="text-muted">Equivalente a ${{ total_usd|floatformat:2 }} USD (Tasa BCV: {{ tasa_bcv }})</small>
+                    </div>
+
+                    <!-- Formulario de la Pasarela -->
+                    <form method="POST">
+                        {% csrf_token %}
+                        
+                        <h6 class="text-primary fw-bold mb-3"><i class="bi bi-credit-card"></i> 1. Datos de la Tarjeta</h6>
+                        <div class="mb-3">
+                            {{ form.numero_tarjeta.label_tag }}
+                            {{ form.numero_tarjeta }}
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                {{ form.vencimiento.label_tag }}
+                                {{ form.vencimiento }}
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                {{ form.cvv.label_tag }}
+                                {{ form.cvv }}
+                            </div>
+                        </div>
+
+                        <h6 class="text-primary fw-bold mb-3 mt-3"><i class="bi bi-person-badge"></i> 2. Datos del Tarjetahabiente</h6>
+                        <div class="mb-3">
+                            {{ form.nombre_tarjeta.label_tag }}
+                            {{ form.nombre_tarjeta }}
+                        </div>
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                {{ form.tipo_documento.label_tag }}
+                                {{ form.tipo_documento }}
+                            </div>
+                            <div class="col-md-8 mb-3">
+                                {{ form.cedula_tarjeta.label_tag }}
+                                {{ form.cedula_tarjeta }}
+                            </div>
+                        </div>
+
+                        <h6 class="text-primary fw-bold mb-3 mt-3"><i class="bi bi-phone"></i> 3. Autenticación Bancaria</h6>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                {{ form.tipo_cuenta.label_tag }}
+                                {{ form.tipo_cuenta }}
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                {{ form.clave_sms.label_tag }}
+                                {{ form.clave_sms }}
+                                <div class="form-text text-muted" style="font-size: 0.8rem;">Clave dinámica recibida por SMS (Simulada).</div>
+                            </div>
+                        </div>
+
+                        <div class="d-grid gap-2 mt-4">
+                            <button type="submit" class="p-3 btn btn-success fw-bold fs-5 shadow-sm">
+                                <i class="bi bi-check-circle-fill"></i> Pagar Bs. {{ total_bs|localize }}
+                            </button>
+                            <a href="{% url 'core:detalle_viaje' viaje.id %}" class="btn btn-outline-secondary">Cancelar y Volver</a>
+                        </div>
+                    </form>
+
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

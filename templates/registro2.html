@@ -1,0 +1,62 @@
+{% extends 'base.html' %}
+
+{% block title %}Registro de Usuario - Viba-Web{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6 col-lg-5">
+        <div class="card shadow border-0 mt-3">
+            <div class="card-body p-4">
+                <h3 class="card-title text-center mb-4 fw-bold" style="color: #003366;">
+                    <i class="bi bi-person-plus-fill"></i> Registro de Pasajero
+                </h3>
+                
+                <form method="post">
+                    {% csrf_token %}
+                    
+                    <!-- Mostrar errores generales del formulario si los hay -->
+                    {% if form.non_field_errors %}
+                        <div class="alert alert-danger py-2">
+                            {{ form.non_field_errors }}
+                        </div>
+                    {% endif %}
+                    
+                    {% for field in form %}
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold text-secondary" style="font-size: 0.9rem;">
+                                {{ field.label }}
+                            </label>
+                            {{ field }}
+                            {% if field.errors %}
+                                <div class="text-danger small mt-1">
+                                    {{ field.errors.0 }}
+                                </div>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                    
+                    <button type="submit" class="btn btn-primary w-100 py-2 fw-bold mt-2" style="background-color: #003366; border: none;">
+                        Registrarse
+                    </button>
+                </form>
+                
+                <div class="text-center mt-3">
+                    <small class="text-muted">¿Ya tienes una cuenta? <a href="/login/" class="text-decoration-none fw-bold" style="color: #003366;">Ingresa aquí</a></small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Pequeño script para inyectar clases de Bootstrap a los inputs generados por Django -->
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        const inputs = document.querySelectorAll("input");
+        inputs.forEach(input => {
+            if (input.getAttribute("type") !== "checkbox" && input.getAttribute("type") !== "hidden") {
+                input.classList.add("form-control");
+            }
+        });
+    });
+</script>
+{% endblock %}

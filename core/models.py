@@ -149,7 +149,7 @@ class Tarifa(models.Model):
 
 class Ruta(models.Model):
     """Agrupación de tarifas desde una oficina origen hacia varias oficinas destino"""
-    nombre = models.CharField(max_length=100, verbose_name="Nombre")
+    nombre = models.CharField(max_length=100, unique=True, verbose_name="Nombre") # <-- Agregado unique=True
     origen = models.ForeignKey(
         Oficina,
         related_name='rutas_origen',
