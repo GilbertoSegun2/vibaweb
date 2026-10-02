@@ -145,6 +145,7 @@ def buscar_viajes(request):
         'oficinas': Oficina.objects.filter(activa=True).order_by('nombre'),
     })
 
+@login_required
 def detalle_viaje(request, viaje_id):
     """Muestra el detalle de un viaje y sus asientos organizados como mapa"""
     from .utils import liberar_reservas_vencidas
@@ -270,7 +271,7 @@ def login_view(request):
             if user is not None:
                 auth_login(request, user)
                 messages.success(request, f"¡Bienvenido de nuevo, {user.first_name or user.username}!")
-                next_url = request.GET.get('next') or 'core:perfil'
+                next_url = request.POST.get('next') or request.GET.get('next') or 'core:perfil'
                 return redirect(next_url)
             else:
                 messages.error(request, "Usuario o contraseña incorrectos.")
@@ -938,7 +939,8 @@ def registro_usuario(request):
             # 3. Autenticar y redirigir al usuario inmediatamente
             login(request, user)
             messages.success(request, f"¡Bienvenido a Viba-Web, {first_name}! Tu cuenta ha sido creada con éxito.")
-            return redirect('core:inicio')
+            next_url = request.POST.get('next') or request.GET.get('next') or 'core:inicio'
+            return redirect(next_url)
     else:
         form = RegistroForm()
         

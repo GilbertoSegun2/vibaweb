@@ -19,7 +19,8 @@
                 
                 <form method="post">
                     {% csrf_token %}
-                    
+                    <input type="hidden" name="next" value="{{ request.GET.next|default:'' }}">
+
                     <h6 class="text-muted mb-3">Datos de acceso</h6>
                     <div class="row g-3 mb-4">
                         <div class="col-md-6">
@@ -81,7 +82,10 @@
                 
                 <hr class="my-4">
                 <p class="text-center mb-0">
-                    ¿Ya tienes cuenta? <a href="/login/">Inicia sesión aquí</a>
+                    ¿Ya tienes cuenta? 
+                    <a href="{% url 'core:login' %}{% if request.GET.next %}?next={{ request.GET.next }}{% endif %}">
+                        Inicia sesión aquí
+                    </a>
                 </p>
             </div>
         </div>
