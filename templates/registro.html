@@ -35,12 +35,22 @@
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">{{ form.password1.label }}</label>
-                            {{ form.password1 }}
+                            <div class="input-group">
+                                {{ form.password1 }}
+                                <button type="button" class="btn btn-outline-secondary" onclick="togglePassword(this)" tabindex="-1">
+                                    <i class="bi bi-eye"></i>
+                                </button>
+                            </div>
                             {% if form.password1.errors %}<div class="text-danger small">{{ form.password1.errors }}</div>{% endif %}
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">{{ form.password2.label }}</label>
-                            {{ form.password2 }}
+                            <div class="input-group">
+                                {{ form.password2 }}
+                                <button type="button" class="btn btn-outline-secondary" onclick="togglePassword(this)" tabindex="-1">
+                                    <i class="bi bi-eye"></i>
+                                </button>
+                            </div>
                             {% if form.password2.errors %}<div class="text-danger small">{{ form.password2.errors }}</div>{% endif %}
                         </div>
                     </div>
