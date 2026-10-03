@@ -30,15 +30,9 @@
                         <label class="form-label">{{ form.username.label }}</label>
                         {{ form.username }}
                     </div>
-                    
                     <div class="mb-3">
                         <label class="form-label">{{ form.password.label }}</label>
-                        <div class="input-group">
-                            {{ form.password }}
-                            <button type="button" class="btn btn-outline-secondary" onclick="togglePassword(this)" tabindex="-1">
-                                <i class="bi bi-eye"></i>
-                            </button>
-                        </div>
+                        {{ form.password }}
                     </div>
 
                     <div class="text-center mt-4">

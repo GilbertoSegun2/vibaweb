@@ -259,7 +259,7 @@ def login_view(request):
         form = LoginForm(request.POST)
         if form.is_valid():
             username = form.cleaned_data['username']
-            password = form.cleaned_data['password1']
+            password = form.cleaned_data['password']
             
             # Permitir login con email también
             if '@' in username:
@@ -916,7 +916,7 @@ def registro_usuario(request):
             email = form.cleaned_data['email']
             first_name = form.cleaned_data['first_name']
             last_name = form.cleaned_data['last_name']
-            password = form.cleaned_data['password1']
+            password = form.cleaned_data['password']
             cedula = form.cleaned_data['cedula']
             telefono = form.cleaned_data['telefono']
             
