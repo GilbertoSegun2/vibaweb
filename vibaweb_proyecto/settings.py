@@ -52,6 +52,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'core.middleware.SessionTimeoutMiddleware',
 ]
 
 ROOT_URLCONF = 'vibaweb_proyecto.urls'
@@ -68,6 +69,7 @@ TEMPLATES = [
                 'django.contrib.messages.context_processors.messages',
                 'core.context_processors.tasa_bcv',
                 'core.context_processors.expiracion_reserva',
+                'core.context_processors.personalizacion',
             ],
         },
     },
@@ -195,3 +197,15 @@ MEDIA_ROOT = BASE_DIR / 'media'
 LOGIN_URL = 'core:login'
 LOGIN_REDIRECT_URL = 'core:perfil'
 LOGOUT_REDIRECT_URL = 'core:inicio'
+
+# ============================================================
+# SEGURIDAD DE SESIONES
+# ============================================================
+# El timeout real se controla desde el parámetro 140 (middleware).
+# Estos son valores base de respaldo:
+
+SESSION_COOKIE_AGE = 7200                # 2 horas (fallback)
+SESSION_SAVE_EVERY_REQUEST = True        # Renovar con cada clic
+SESSION_COOKIE_HTTPONLY = True           # Invisible para JavaScript
+SESSION_COOKIE_SAMESITE = 'Lax'          # Protección CSRF
+SESSION_EXPIRE_AT_BROWSER_CLOSE = False  # Lo controla el middleware

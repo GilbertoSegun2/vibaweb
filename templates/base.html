@@ -18,10 +18,17 @@
 <body>
     
     <!-- Menú de navegación -->
-    <nav class="navbar navbar-expand-lg navbar-dark" style="background-color: #003366;">
+    <nav class="navbar navbar-expand-lg navbar-dark" style="background: linear-gradient(90deg, {{ navbar_color_1 }}, {{ navbar_color_2 }});">
         <div class="container">
             <a class="navbar-brand fw-bold" href="/">
-                <i class="bi bi-bus-front-fill"></i> Viba-Web
+                {% if navbar_icono|slice:":3" == "bi-" %}
+                    <i class="bi {{ navbar_icono }}"></i>
+                {% elif navbar_icono %}
+                    <img src="/static/img/iconos/{{ navbar_icono }}" height="30" style="vertical-align: middle;">
+                {% else %}
+                    <i class="bi bi-bus-front-fill"></i>
+                {% endif %}
+                Viba-Web
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#menuPrincipal">
                 <span class="navbar-toggler-icon"></span>
@@ -30,30 +37,35 @@
                 <ul class="navbar-nav ms-auto">
                     <li class="nav-item"><a class="nav-link" href="/">Inicio</a></li>
                     <li class="nav-item"><a class="nav-link" href="/viajes/">Buscar Viajes</a></li>
+                    
                     {% if user.is_authenticated %}
-                        <li class="nav-item"><a class="nav-link" href="/mis-boletos/">Mis Boletos</a></li>
-                        <li class="nav-item"><a class="nav-link" href="/logout/">Salir ({{ user.username }})</a></li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="/perfil/">
+                                <i class="bi bi-person-circle"></i> {{ user.first_name|default:user.username }}
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="/logout/">
+                                <i class="bi bi-box-arrow-right"></i> Salir
+                            </a>
+                        </li>
+                        {% if user.is_superuser %}
+                        <li class="nav-item">
+                            <a class="nav-link" href="/admin/" target="_blank">
+                                <i class="bi bi-gear-fill"></i> Admin
+                            </a>
+                        </li>
+                        {% endif %}
                     {% else %}
                         <li class="nav-item"><a class="nav-link" href="/login/">Ingresar</a></li>
                         <li class="nav-item"><a class="nav-link" href="/registro/">Registrarse</a></li>
                     {% endif %}
-                    
-                    
-                    {% if user.is_authenticated %}
-                        <li class="nav-item"><a class="nav-link" href="/perfil/"><i class="bi bi-person"></i> Mi Perfil</a></li>
-                        <li class="nav-item"><a class="nav-link" href="/logout/">Salir ({{ user.first_name|default:user.username }})</a></li>
-                    {% else %}
-                        <li class="nav-item"><a class="nav-link" href="/login/">Ingresar</a></li>
-                        <li class="nav-item"><a class="nav-link" href="/registro/">Registrarse</a></li>
-                    {% endif %}
-                    <li class="nav-item"><a class="nav-link" href="/admin/">Admin</a></li>
                 </ul>
             </div>
         </div>
     </nav>
     
-    <!-- Contador flotante global (fuera de main) -->
-    
+    <!-- Contador flotante global -->
     {% if expiracion_iso %}
     <div id="timer-box" class="position-fixed shadow rounded bg-dark px-2 py-1 border border-warning"
          style="top: 105px; left: 15px; z-index: 1050; font-size: 0.75rem;">
@@ -67,6 +79,26 @@
     
     <!-- Contenido principal -->
     <main class="container my-4">
+        
+        <!-- MENSAJES DE DJANGO -->
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show" role="alert">
+                    {% if message.tags == 'success' %}
+                        <i class="bi bi-check-circle-fill"></i>
+                    {% elif message.tags == 'error' %}
+                        <i class="bi bi-exclamation-triangle-fill"></i>
+                    {% elif message.tags == 'warning' %}
+                        <i class="bi bi-exclamation-circle-fill"></i>
+                    {% else %}
+                        <i class="bi bi-info-circle-fill"></i>
+                    {% endif %}
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+        
         {% block content %}
         {% endblock %}
     </main>
@@ -89,7 +121,7 @@
         const timerIcon = document.getElementById("timer-icon");
         const timerLabel = document.getElementById("timer-label");
         
-        let yaEstaRojo = false;  // Para no cambiar el color múltiples veces
+        let yaEstaRojo = false;
 
         function actualizarContador() {
             const now = new Date().getTime();
@@ -102,7 +134,6 @@
                 return;
             }
 
-            // Cambiar a rojo cuando quedan 2 minutos o menos
             if (distance <= 120000 && !yaEstaRojo) {
                 yaEstaRojo = true;
                 if (timerBox) {
@@ -112,15 +143,9 @@
                     timerBox.style.zIndex = "1050";
                     timerBox.style.fontSize = "0.75rem";
                 }
-                if (timerIcon) {
-                    timerIcon.className = "bi bi-exclamation-triangle-fill text-white";
-                }
-                if (timerLabel) {
-                    timerLabel.className = "text-white";
-                }
-                if (contadorEl) {
-                    contadorEl.className = "font-monospace fw-bold text-white";
-                }
+                if (timerIcon) timerIcon.className = "bi bi-exclamation-triangle-fill text-white";
+                if (timerLabel) timerLabel.className = "text-white";
+                if (contadorEl) contadorEl.className = "font-monospace fw-bold text-white";
             }
 
             const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
@@ -137,6 +162,23 @@
         actualizarContador();
     </script>
     {% endif %}
+    
+    <!-- Función global para mostrar/ocultar contraseñas -->
+    <script>
+    function togglePassword(btn) {
+        const input = btn.previousElementSibling;
+        const icon = btn.querySelector('i');
+        
+        if (input.type === 'password') {
+            input.type = 'text';
+            icon.className = 'bi bi-eye-slash';
+        } else {
+            input.type = 'password';
+            icon.className = 'bi bi-eye';
+        }
+    }
+    </script>
+    
     {% block extra_js %}{% endblock %}
 </body>
 </html>

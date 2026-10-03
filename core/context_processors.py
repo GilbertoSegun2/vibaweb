@@ -25,3 +25,14 @@ def expiracion_reserva(request):
         return {'expiracion_iso': expiracion.isoformat()}
     except (ValueError, TypeError):
         return {'expiracion_iso': None}
+
+
+def personalizacion(request):
+    """Parámetros de personalización visual (icono, fondo, colores)."""
+    from .utils import obtener_parametro
+    return {
+        'navbar_icono': obtener_parametro('150', default='bi-bus-front-fill'),
+        'inicio_fondo': obtener_parametro('151', default=''),
+        'navbar_color_1': obtener_parametro('152', default='#003366'),
+        'navbar_color_2': obtener_parametro('153', default='#001a33'),
+    }

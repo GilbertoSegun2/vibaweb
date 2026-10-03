@@ -3,6 +3,17 @@
 {% block title %}Inicio - Viba-Web{% endblock %}
 
 {% block content %}
+{% if inicio_fondo %}
+<div style="background-image: url('/static/img/fondos/{{ inicio_fondo }}');
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            min-height: calc(100vh - 60px);
+            padding: 30px 0;">
+{% else %}
+<div>
+{% endif %}
+
 <div class="text-center mb-5">
     <h1 class="display-4 fw-bold" style="color: #003366;">
         <i class="bi bi-bus-front-fill"></i> Bienvenido a Viba-Web
@@ -82,6 +93,8 @@
             </div>
         </div>
     </div>
+</div>
+
 </div>
 {% endblock %}
 
