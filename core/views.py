@@ -218,6 +218,10 @@ def detalle_viaje(request, viaje_id):
     # Ordenar filas dentro de cada piso
     for piso in asientos_por_piso:
         asientos_por_piso[piso] = dict(sorted(asientos_por_piso[piso].items()))
+        
+    # ⭐ INVERSIÓN DE PISOS PARA DOBLE PISO
+    if len(asientos_por_piso) > 1:
+        asientos_por_piso = dict(reversed(list(asientos_por_piso.items())))
 
     return render(request, 'detalle_viaje.html', {
         'viaje': viaje,

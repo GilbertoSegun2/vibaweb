@@ -5,40 +5,189 @@
 
 {% block extra_css %}
 <style>
+    /* =============================================
+       MAPA DEL BUS - CONTENEDOR PRINCIPAL
+       ============================================= */
     .mapa-bus {
         max-width: 420px;
         margin: 0 auto;
-        background: #f8f9fa;
-        border: 2px solid #dee2e6;
-        border-radius: 12px;
-        padding: 15px;
+        background: 
+            linear-gradient(90deg,
+                #d9d9d9 0%,
+                #ffffff 4%,
+                #f8f9fa 96%,
+                #d9d9d9 100%);
+        border: 3px solid #003366;
+        border-radius: 16px;
+        padding: 12px;
+        position: relative;
+        box-shadow: 
+            0 8px 20px rgba(0, 51, 102, 0.15),
+            inset 0 0 0 4px #ffffff,
+            inset 0 0 0 6px #e7f0f7;
     }
+
+    /* Ruedas decorativas laterales del bus */
+    .mapa-bus::before,
+    .mapa-bus::after {
+        content: "";
+        position: absolute;
+        width: 12px;
+        height: 55px;
+        background: #1a1a1a;
+        border-radius: 6px;
+        top: 50%;
+        transform: translateY(-50%);
+        box-shadow: inset 0 0 4px rgba(255, 255, 255, 0.3);
+    }
+    .mapa-bus::before { left: -7px; }
+    .mapa-bus::after  { right: -7px; }
+
+    /* =============================================
+       FRENTE DEL BUS (conductor a la izquierda)
+       ============================================= */
     .bus-frente {
-        text-align: center;
-        font-weight: bold;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 12px 14px;
+        background: linear-gradient(180deg, #e7f0f7 0%, #c9dced 100%);
+        border: 2px solid #003366;
+        border-bottom: none;
+        border-radius: 14px 14px 4px 4px;
+        margin-bottom: 0;
         color: #003366;
-        padding: 8px;
-        background: #e7f0f7;
-        border-radius: 8px;
-        margin-bottom: 15px;
-        font-size: 0.9rem;
+        font-weight: bold;
+        box-shadow: inset 0 -2px 6px rgba(0, 51, 102, 0.15);
     }
+
+    .bus-frente__cabina {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        background: #ffffff;
+        padding: 6px 10px;
+        border-radius: 20px;
+        border: 2px solid #003366;
+        box-shadow: 0 2px 4px rgba(0, 51, 102, 0.25);
+        font-size: 1.2rem;
+        color: #003366;
+    }
+
+    .bus-frente__cabina .bi-record-circle {
+        font-size: 0.85rem;
+        color: #dc3545;
+        animation: girarVolante 4s infinite ease-in-out;
+        display: inline-block;
+    }
+
+    @keyframes girarVolante {
+        0%   { transform: rotate(0deg); }
+        25%  { transform: rotate(15deg); }
+        50%  { transform: rotate(0deg); }
+        75%  { transform: rotate(-15deg); }
+        100% { transform: rotate(0deg); }
+    }
+
+    .bus-frente__label {
+        flex: 1;
+        text-align: center;
+        font-size: 0.95rem;
+        letter-spacing: 1.5px;
+        color: #003366;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+    }
+
+    .bus-frente__espejo {
+        font-size: 1.1rem;
+        color: #003366;
+        opacity: 0.7;
+    }
+
+    /* =============================================
+       PARTE TRASERA DEL BUS (con luces rojas)
+       ============================================= */
+    .bus-trasero {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 14px;
+        background: linear-gradient(180deg, #c9dced 0%, #e7f0f7 100%);
+        border: 2px solid #003366;
+        border-top: none;
+        border-radius: 4px 4px 14px 14px;
+        margin-top: 0;
+        box-shadow: inset 0 2px 6px rgba(0, 51, 102, 0.15);
+    }
+
+    .bus-trasero__luz {
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: radial-gradient(circle at 30% 30%, #ff6b6b, #dc3545 60%, #8b0000);
+        box-shadow:
+            0 0 8px rgba(220, 53, 69, 0.8),
+            0 0 16px rgba(220, 53, 69, 0.4);
+        animation: parpadeoLuz 2s infinite ease-in-out;
+    }
+
+    .bus-trasero__label {
+        flex: 1;
+        text-align: center;
+        color: #003366;
+        font-size: 0.9rem;
+        font-weight: bold;
+        letter-spacing: 1.5px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+    }
+
+    @keyframes parpadeoLuz {
+        0%, 100% {
+            box-shadow:
+                0 0 8px rgba(220, 53, 69, 0.8),
+                0 0 16px rgba(220, 53, 69, 0.4);
+        }
+        50% {
+            box-shadow:
+                0 0 12px rgba(220, 53, 69, 1),
+                0 0 24px rgba(220, 53, 69, 0.6);
+        }
+    }
+
+    /* =============================================
+       TÍTULOS DE PISO
+       ============================================= */
     .piso-titulo {
         text-align: center;
         font-weight: bold;
-        color: #003366;
-        background: #e7f0f7;
-        padding: 6px;
+        color: #ffffff;
+        background: linear-gradient(90deg, #003366 0%, #004a99 50%, #003366 100%);
+        padding: 8px 12px;
         border-radius: 6px;
-        margin: 15px 0 10px 0;
-        font-size: 0.9rem;
+        margin: 14px 6px 10px 6px;
+        font-size: 0.85rem;
+        letter-spacing: 2px;
+        box-shadow: 0 2px 6px rgba(0, 51, 102, 0.3);
     }
+
+    /* =============================================
+       FILAS Y ASIENTOS
+       ============================================= */
     .fila-asientos {
         display: flex;
         justify-content: center;
         gap: 6px;
         margin-bottom: 6px;
     }
+
     .asiento {
         width: 42px;
         height: 42px;
@@ -55,37 +204,44 @@
         justify-content: center;
         padding: 0;
     }
+
     .asiento:hover:not(:disabled) {
         transform: scale(1.08);
         border-color: #003366;
     }
+
     .asiento.disponible {
         background: #ffffff;
         color: #495057;
     }
+
     .asiento.seleccionado {
         background: #003366;
         color: #ffffff;
         border-color: #001f3f;
     }
+
     .asiento.vendido {
         background: #dc3545;
         color: #ffffff;
         border-color: #a71d2a;
         cursor: not-allowed;
     }
+
     .asiento.reservado {
         background: #ffc107;
         color: #000;
         border-color: #cc9a06;
         cursor: not-allowed;
     }
+
     .asiento.bloqueado {
         background: #6c757d;
         color: #ffffff;
         border-color: #495057;
         cursor: not-allowed;
     }
+
     .asiento.especial {
         width: 42px;
         height: 42px;
@@ -100,10 +256,15 @@
         padding: 0;
         text-align: center;
     }
+
     .pasillo {
         width: 25px;
         min-width: 25px;
     }
+
+    /* =============================================
+       LEYENDA
+       ============================================= */
     .leyenda {
         display: flex;
         flex-wrap: wrap;
@@ -112,21 +273,87 @@
         font-size: 0.8rem;
         margin-top: 15px;
     }
+
     .leyenda-item {
         display: flex;
         align-items: center;
         gap: 5px;
     }
+
     .leyenda-cuadro {
         width: 18px;
         height: 18px;
         border-radius: 4px;
         border: 2px solid #adb5bd;
     }
+
+    /* =============================================
+       PANEL DE RESUMEN (STICKY)
+       ============================================= */
     .panel-resumen {
         position: sticky;
         top: 20px;
     }
+
+    /* =============================================
+       INDICADOR FLOTANTE DE SCROLL (Móvil/Tablet)
+       ============================================= */
+    .scroll-hint-flotante {
+        display: none;
+    }
+
+    @media (max-width: 1024px) {
+        .scroll-hint-flotante {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 9999;
+            background: rgba(0, 51, 102, 0.95);
+            color: #ffffff;
+            padding: 10px 20px;
+            border-radius: 25px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            box-shadow: 0 4px 15px rgba(0, 51, 102, 0.5);
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+            pointer-events: none;
+            user-select: none;
+            white-space: nowrap;
+        }
+
+        .scroll-hint-flotante.visible {
+            opacity: 1;
+            visibility: visible;
+            animation: scrollHintBounce 1.5s infinite;
+        }
+    }
+
+    @keyframes scrollHintBounce {
+        0%, 100% { transform: translateX(-50%) translateY(0); }
+        50%      { transform: translateX(-50%) translateY(-5px); }
+    }
+
+    .scroll-hint-flotante .arrow {
+        font-size: 1.1rem;
+        font-weight: bold;
+        animation: scrollHintArrow 1s infinite;
+    }
+
+    @keyframes scrollHintArrow {
+        0%, 100% { transform: translateY(0); }
+        50%      { transform: translateY(3px); }
+    }
+
+    /* =============================================
+       RESPONSIVE
+       ============================================= */
     @media (max-width: 576px) {
         .asiento, .asiento.especial {
             width: 34px;
@@ -135,6 +362,10 @@
         }
         .mapa-bus {
             padding: 10px;
+        }
+        .bus-frente__label {
+            font-size: 0.8rem;
+            letter-spacing: 1px;
         }
     }
 </style>
@@ -213,20 +444,161 @@
     <!-- Columna central: mapa de asientos -->
     <div class="col-lg-6 mb-3">
         <div class="mapa-bus">
+            <!-- FRENTE DEL BUS (conductor a la izquierda) -->
             <div class="bus-frente">
-                <i class="bi bi-arrow-up-circle-fill"></i> FRENTE DEL BUS
+                <span class="bus-frente__cabina" title="Conductor">
+                    <svg viewBox="0 0 120 90" width="75" height="56" xmlns="http://www.w3.org/2000/svg" aria-label="Conductor">
+                        <!-- ============================================ -->
+                        <!-- VOLANTE (aro exterior con degradado)         -->
+                        <!-- ============================================ -->
+                        <defs>
+                            <radialGradient id="volanteGrad" cx="50%" cy="50%" r="50%">
+                                <stop offset="0%" stop-color="#1a4a7a"/>
+                                <stop offset="100%" stop-color="#001f3f"/>
+                            </radialGradient>
+                            <linearGradient id="manoGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                                <stop offset="0%" stop-color="#3a6a9a"/>
+                                <stop offset="100%" stop-color="#001f3f"/>
+                            </linearGradient>
+                            <linearGradient id="manoGrad2" x1="0%" y1="0%" x2="0%" y2="100%">
+                                <stop offset="0%" stop-color="#2a5a8a"/>
+                                <stop offset="100%" stop-color="#001a33"/>
+                            </linearGradient>
+                        </defs>
+                        
+                        <!-- Aro exterior del volante -->
+                        <circle cx="60" cy="40" r="28" fill="none" stroke="url(#volanteGrad)" stroke-width="7"/>
+                        
+                        <!-- Sombra interior del aro -->
+                        <circle cx="60" cy="40" r="24.5" fill="none" stroke="#001428" stroke-width="1" opacity="0.4"/>
+                        <circle cx="60" cy="40" r="31.5" fill="none" stroke="#001428" stroke-width="1" opacity="0.4"/>
+                        
+                        <!-- Centro del volante (bocina) -->
+                        <circle cx="60" cy="40" r="8" fill="url(#volanteGrad)"/>
+                        <circle cx="60" cy="40" r="7" fill="none" stroke="#001428" stroke-width="0.5" opacity="0.5"/>
+                        
+                        <!-- Rayos del volante (3 rayos) -->
+                        <!-- Rayo izquierdo -->
+                        <path d="M 60 40 L 34 33 L 34 37 L 60 43 Z" fill="#001f3f"/>
+                        <!-- Rayo derecho -->
+                        <path d="M 60 40 L 86 33 L 86 37 L 60 43 Z" fill="#001f3f"/>
+                        <!-- Rayo inferior -->
+                        <path d="M 57 46 L 57 65 L 63 65 L 63 46 Z" fill="#001f3f"/>
+                        
+                        <!-- ============================================ -->
+                        <!-- MANO IZQUIERDA (agarrando el volante)        -->
+                        <!-- ============================================ -->
+                        <g transform="translate(0, 0)">
+                            <!-- Muñeca/brazo izquierdo -->
+                            <path d="M 8 60 
+                                     L 8 85 
+                                     L 26 85 
+                                     L 26 62 
+                                     Q 24 58 20 55
+                                     Q 16 52 12 55
+                                     Q 8 58 8 60 Z" 
+                                  fill="url(#manoGrad2)"/>
+                            
+                            <!-- Palma agarrando el volante -->
+                            <path d="M 26 62 
+                                     Q 28 50 32 42
+                                     Q 34 36 30 32
+                                     Q 26 30 24 34
+                                     Q 22 38 22 44
+                                     Q 20 42 18 44
+                                     Q 16 46 18 52
+                                     Q 16 54 14 58
+                                     Q 14 62 18 64
+                                     Q 22 66 26 62 Z" 
+                                  fill="url(#manoGrad)"/>
+                            
+                            <!-- Dedo pulgar izquierdo (sobre el volante) -->
+                            <path d="M 24 34 
+                                     Q 26 30 30 31
+                                     Q 32 33 30 37
+                                     Q 28 40 26 38
+                                     Q 24 36 24 34 Z" 
+                                  fill="url(#manoGrad)"/>
+                            
+                            <!-- Dedos (4 líneas de nudillos sobre el aro) -->
+                            <ellipse cx="30" cy="32" rx="3" ry="2.5" fill="#3a6a9a" opacity="0.9"/>
+                            <ellipse cx="28" cy="38" rx="2.5" ry="2" fill="#3a6a9a" opacity="0.85"/>
+                            <ellipse cx="26" cy="44" rx="2.5" ry="2" fill="#3a6a9a" opacity="0.85"/>
+                            <ellipse cx="25" cy="50" rx="2.5" ry="2" fill="#3a6a9a" opacity="0.85"/>
+                            
+                            <!-- Uña del pulgar -->
+                            <ellipse cx="28" cy="33" rx="1.2" ry="1.8" fill="#e8d4c0"/>
+                        </g>
+                        
+                        <!-- ============================================ -->
+                        <!-- MANO DERECHA (agarrando el volante)          -->
+                        <!-- ============================================ -->
+                        <g transform="translate(0, 0)">
+                            <!-- Muñeca/brazo derecho -->
+                            <path d="M 112 60 
+                                     L 112 85 
+                                     L 94 85 
+                                     L 94 62 
+                                     Q 96 58 100 55
+                                     Q 104 52 108 55
+                                     Q 112 58 112 60 Z" 
+                                  fill="url(#manoGrad2)"/>
+                            
+                            <!-- Palma agarrando el volante -->
+                            <path d="M 94 62 
+                                     Q 92 50 88 42
+                                     Q 86 36 90 32
+                                     Q 94 30 96 34
+                                     Q 98 38 98 44
+                                     Q 100 42 102 44
+                                     Q 104 46 102 52
+                                     Q 104 54 106 58
+                                     Q 106 62 102 64
+                                     Q 98 66 94 62 Z" 
+                                  fill="url(#manoGrad)"/>
+                            
+                            <!-- Dedo pulgar derecho (sobre el volante) -->
+                            <path d="M 96 34 
+                                     Q 94 30 90 31
+                                     Q 88 33 90 37
+                                     Q 92 40 94 38
+                                     Q 96 36 96 34 Z" 
+                                  fill="url(#manoGrad)"/>
+                            
+                            <!-- Dedos (4 líneas de nudillos) -->
+                            <ellipse cx="90" cy="32" rx="3" ry="2.5" fill="#3a6a9a" opacity="0.9"/>
+                            <ellipse cx="92" cy="38" rx="2.5" ry="2" fill="#3a6a9a" opacity="0.85"/>
+                            <ellipse cx="94" cy="44" rx="2.5" ry="2" fill="#3a6a9a" opacity="0.85"/>
+                            <ellipse cx="95" cy="50" rx="2.5" ry="2" fill="#3a6a9a" opacity="0.85"/>
+                            
+                            <!-- Uña del pulgar -->
+                            <ellipse cx="92" cy="33" rx="1.2" ry="1.8" fill="#e8d4c0"/>
+                        </g>
+                    </svg>
+                </span>
+                <span class="bus-frente__label">
+                    <i class="bi bi-bus-front-fill"></i>
+                    FRENTE DEL BUS
+                    <i class="bi bi-bus-front-fill"></i>
+                </span>
+                <span class="bus-frente__espejo" title="Espejo">
+                    <i class="bi bi-eye-fill"></i>
+                </span>
             </div>
             
             {% for piso, filas in asientos_por_piso.items %}
                 {% if asientos_por_piso|length > 1 %}
                     <div class="piso-titulo">
-                        {% if piso == 1 %}PISO INFERIOR{% else %}PISO SUPERIOR{% endif %}
+                        {% if piso == 1 %}
+                            <i class="bi bi-arrow-down-circle"></i> PISO INFERIOR
+                        {% else %}
+                            <i class="bi bi-arrow-up-circle"></i> PISO SUPERIOR
+                        {% endif %}
                     </div>
                 {% endif %}
                 {% for fila_num, asientos in filas.items %}
                     <div class="fila-asientos">
                         {% for asiento in asientos %}
-                            {# Insertar el pasillo justo antes de la columna 3 #}
                             {% if asiento.columna == 3 %}
                                 <div class="pasillo"></div>
                             {% endif %}
@@ -260,9 +632,20 @@
                         {% endfor %}
                     </div>
                 {% endfor %}
-
             {% endfor %}
             
+            <!-- PARTE TRASERA DEL BUS -->
+            <div class="bus-trasero">
+                <span class="bus-trasero__luz"></span>
+                <span class="bus-trasero__label">
+                    <i class="bi bi-bus-front-fill"></i>
+                    PARTE TRASERA
+                    <i class="bi bi-bus-front-fill"></i>
+                </span>
+                <span class="bus-trasero__luz"></span>
+            </div>
+            
+            <!-- LEYENDA -->
             <div class="leyenda">
                 <div class="leyenda-item">
                     <div class="leyenda-cuadro" style="background: #ffffff;"></div>
@@ -300,10 +683,6 @@
                     <p class="mb-1"><strong>Asientos:</strong></p>
                     <div id="lista-asientos" class="mb-3"></div>
                     
-<!--
-                    <p class="mb-1"><strong>Cantidad:</strong> <span id="cantidad">0</span></p>
-                    <p class="mb-3"><strong>Total estimado:</strong> <span class="badge bg-success fs-6">$<span id="total">0.00</span></span></p>
--->
                     <p class="mb-1"><strong>Cantidad:</strong> <span id="cantidad">0</span></p>
                     <p class="mb-1">
                         <strong>Total estimado:</strong> 
@@ -330,12 +709,18 @@
         </div>
     </div>
 </div>
+
+<!-- Indicador flotante de scroll (Móvil/Tablet) -->
+<div id="scrollHintFlotante" class="scroll-hint-flotante" aria-hidden="true">
+    <span class="arrow">↓</span>
+    <span>Desplace hacia abajo</span>
+</div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
 // ============================================================
-// CONTADOR DE TIEMPO (Busca cualquier variante en todas las pantallas)
+// CONTADOR DE TIEMPO
 // ============================================================
 let segundosTotales = {{ segundos_restantes }};
 
@@ -345,7 +730,6 @@ function formatearTiempo(segundos) {
     return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-// Buscamos con un selector amplio que cubra cualquier pantalla
 const elementosContador = document.querySelectorAll('.contador-tiempo, #contador, #contador-pasajero, [id*="contador"]');
 
 function actualizarTodos(texto) {
@@ -378,284 +762,272 @@ if (elementosContador.length > 0 && segundosTotales > 0) {
     }, 1000);
 }
 
-    
-    //~ // ============================================================
-    //~ // CONTADOR DE TIEMPO
-    //~ // ============================================================
-    //~ let segundosTotales = {{ segundos_restantes }};
-    //~ const contadorEl = document.getElementById('contador');
-    
-    //~ function formatearTiempo(segundos) {
-        //~ const m = Math.floor(segundos / 60);
-        //~ const s = segundos % 60;
-        //~ return `${m}:${s.toString().padStart(2, '0')}`;
-    //~ }
-    
-    //~ if (contadorEl) {
-        //~ contadorEl.textContent = formatearTiempo(segundosTotales);
-        
-        //~ const intervalo = setInterval(() => {
-            //~ segundosTotales--;
-            
-            //~ if (segundosTotales <= 0) {
-                //~ clearInterval(intervalo);
-                //~ alert('Tu tiempo de reserva ha expirado. Los asientos han sido liberados.');
-                //~ window.location.href = '/';
-                //~ return;
-            //~ }
-            
-            //~ contadorEl.textContent = formatearTiempo(segundosTotales);
-            
-            //~ if (segundosTotales <= 120) {
-                //~ const wrap = document.getElementById('contador-wrap');
-                //~ if (wrap) {
-                    //~ wrap.classList.add('urgente');
-                //~ }
-            //~ }
-        //~ }, 1000);
-    //~ }
-    
-    
-    // ============================================================
-    // CONFIGURACIÓN
-    // ============================================================
-    {% if tarifa %}
-        const PRECIO = parseFloat("{{ tarifa.monto_usd }}".replace(',', '.')) || 0;
-    {% else %}
-        const PRECIO = 0;
-    {% endif %}
-    const SEGURO = parseFloat("{{ seguro }}".replace(',', '.')) || 0;
-    const TASA_BCV = parseFloat("{{ tasa_bcv|default:'0' }}".replace(',', '.')) || 0;
-    const VIAJE_ID = {{ viaje.id }};
-    const USUARIO_AUTENTICADO = {% if user.is_authenticated %}true{% else %}false{% endif %};
-    const URL_LOGIN = "/login/?next=/viajes/{{ viaje.id }}/";
-    const URL_RESERVAR_TEMPORAL = "/reservar-temporal/";
-    const URL_RENOVAR_RESERVA = "/renovar-reserva/";
-    const URL_LIBERAR = "/liberar/";
-    const INTERVALO_RENOVACION = 20000;  // 20 segundos
-    const TIEMPO_INACTIVIDAD = 120000;   // 2 minutos
+// ============================================================
+// CONFIGURACIÓN DE TARIFAS Y DATOS
+// ============================================================
+{% if tarifa %}
+    const PRECIO = parseFloat("{{ tarifa.monto_usd }}".replace(',', '.')) || 0;
+{% else %}
+    const PRECIO = 0;
+{% endif %}
+const SEGURO = parseFloat("{{ seguro }}".replace(',', '.')) || 0;
+const TASA_BCV = parseFloat("{{ tasa_bcv|default:'0' }}".replace(',', '.')) || 0;
+const VIAJE_ID = {{ viaje.id }};
+const USUARIO_AUTENTICADO = {% if user.is_authenticated %}true{% else %}false{% endif %};
+const URL_LOGIN = "/login/?next=/viajes/{{ viaje.id }}/";
+const URL_RESERVAR_TEMPORAL = "/reservar-temporal/";
+const URL_RENOVAR_RESERVA = "/renovar-reserva/";
+const URL_LIBERAR = "/liberar/";
+const INTERVALO_RENOVACION = 20000;  
+const TIEMPO_INACTIVIDAD = 120000;   
 
-    // ============================================================
-    // ESTADO
-    // ============================================================
-    const seleccionados = new Set();
-    let ultimaActividad = Date.now();
-    let intervaloRenovacion = null;
+// ============================================================
+// ESTADO Y DOM DE ASIENTOS
+// ============================================================
+const seleccionados = new Set();
+let ultimaActividad = Date.now();
+let intervaloRenovacion = null;
 
-    // ============================================================
-    // ELEMENTOS DEL DOM
-    // ============================================================
-    // Selecciona todos los botones de tipo asiento
-    const asientos = document.querySelectorAll('.asiento.disponible, .asiento.seleccionado, .asiento.reservado:not([disabled])');
-    const sinSeleccion = document.getElementById('sin-seleccion');
-    const conSeleccion = document.getElementById('con-seleccion');
-    const listaAsientos = document.getElementById('lista-asientos');
-    const cantidadEl = document.getElementById('cantidad');
-    const totalEl = document.getElementById('total');
-    const totalBsEl = document.getElementById('total_bs');
-    const btnContinuar = document.getElementById('btn-continuar');
-    const mensajeInfo = document.getElementById('mensaje-info');
-    const mensajeTexto = document.getElementById('mensaje-texto');
-    
-    // ============================================================
-    // POBLAR ASIENTOS YA RESERVADOS POR EL CLIENTE AL CARGAR
-    // ============================================================
-    document.querySelectorAll('.asiento.seleccionado').forEach(asiento => {
-        seleccionados.add(asiento.dataset.asientoId);
-    });
+const asientos = document.querySelectorAll('.asiento.disponible, .asiento.seleccionado, .asiento.reservado:not([disabled])');
+const sinSeleccion = document.getElementById('sin-seleccion');
+const conSeleccion = document.getElementById('con-seleccion');
+const listaAsientos = document.getElementById('lista-asientos');
+const cantidadEl = document.getElementById('cantidad');
+const totalEl = document.getElementById('total');
+const totalBsEl = document.getElementById('total_bs');
+const btnContinuar = document.getElementById('btn-continuar');
+const mensajeInfo = document.getElementById('mensaje-info');
+const mensajeTexto = document.getElementById('mensaje-texto');
 
-    if (seleccionados.size > 0) {
-        actualizarResumen();
-    }
+document.querySelectorAll('.asiento.seleccionado').forEach(asiento => {
+    seleccionados.add(asiento.dataset.asientoId);
+});
 
-    // ============================================================
-    // UTILIDADES
-    // ============================================================
-    function getCookie(name) {
-        let cookieValue = null;
-        if (document.cookie && document.cookie !== '') {
-            const cookies = document.cookie.split(';');
-            for (let i = 0; i < cookies.length; i++) {
-                const cookie = cookies[i].trim();
-                if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                    break;
-                }
+if (seleccionados.size > 0) {
+    actualizarResumen();
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
             }
         }
-        return cookieValue;
     }
+    return cookieValue;
+}
 
-    function mostrarMensaje(texto, tipo = 'info') {
-        mensajeInfo.style.display = 'block';
-        mensajeInfo.className = 'alert alert-' + tipo + ' small mt-3';
-        mensajeTexto.textContent = texto;
-    }
-
-    // ============================================================
-    // RASTREO DE ACTIVIDAD DEL USUARIO
-    // ============================================================
-    ['mousemove', 'click', 'keypress', 'scroll', 'touchstart'].forEach(evento => {
-        document.addEventListener(evento, () => {
-            ultimaActividad = Date.now();
-        });
+['mousemove', 'click', 'keypress', 'scroll', 'touchstart'].forEach(evento => {
+    document.addEventListener(evento, () => {
+        ultimaActividad = Date.now();
     });
+});
 
-    function usuarioActivo() {
-        return (Date.now() - ultimaActividad) < TIEMPO_INACTIVIDAD;
-    }
+function usuarioActivo() {
+    return (Date.now() - ultimaActividad) < TIEMPO_INACTIVIDAD;
+}
 
-    // ============================================================
-    // RESERVAR UN ASIENTO (llamada al servidor)
-    // ============================================================
-    function reservarAsientoTemporal(asientoId) {
-        return fetch(URL_RESERVAR_TEMPORAL, {
-            method: 'POST',
-            headers: {
-                'X-CSRFToken': getCookie('csrftoken'),
-            },
-            body: new URLSearchParams({
-                'viaje_id': VIAJE_ID,
-                'asiento_id': asientoId,
-            })
+function reservarAsientoTemporal(asientoId) {
+    return fetch(URL_RESERVAR_TEMPORAL, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCookie('csrftoken'),
+        },
+        body: new URLSearchParams({
+            'viaje_id': VIAJE_ID,
+            'asiento_id': asientoId,
         })
-        .then(response => response.json());
-    }
+    })
+    .then(response => response.json());
+}
 
-    // ============================================================
-    // RENOVAR RESERVA (llamada periódica)
-    // ============================================================
-    function renovarReserva() {
-        if (seleccionados.size === 0) return;
-        if (!usuarioActivo()) return;
-        
-        const formData = new FormData();
-        formData.append('viaje_id', VIAJE_ID);
-        seleccionados.forEach(id => formData.append('asientos[]', id));
-        
-        fetch(URL_RENOVAR_RESERVA, {
-            method: 'POST',
-            headers: {
-                'X-CSRFToken': getCookie('csrftoken'),
-            },
-            body: formData
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (!data.ok) {
-                console.warn('No se pudo renovar la reserva:', data.error);
-            }
-        })
-        .catch(error => {
-            console.warn('Error al renovar reserva:', error);
-        });
-    }
-
-    intervaloRenovacion = setInterval(renovarReserva, INTERVALO_RENOVACION);
+function renovarReserva() {
+    if (seleccionados.size === 0) return;
+    if (!usuarioActivo()) return;
     
-    // ============================================================
-    // CLIC EN UN ASIENTO
-    // ============================================================
-    asientos.forEach(asiento => {
-        asiento.addEventListener('click', function() {
-            const id = this.dataset.asientoId;
-            
-            // Si ya está seleccionado, desmarcarlo
-            if (seleccionados.has(id)) {
-                seleccionados.delete(id);
-                this.classList.remove('seleccionado');
-                this.classList.add('disponible');
-                actualizarResumen();
-                
-                const formData = new FormData();
-                formData.append('asientos[]', id);
-                fetch(URL_LIBERAR, {
-                    method: 'POST',
-                    headers: {'X-CSRFToken': getCookie('csrftoken')},
-                    body: formData
-                });
-                return;
-            }
-            
-            if (!USUARIO_AUTENTICADO) {
-                window.location.href = URL_LOGIN;
-                return;
-            }
-            
-            reservarAsientoTemporal(id).then(data => {
-                if (data.ok) {
-                    seleccionados.add(id);
-                    asiento.classList.remove('disponible');
-                    asiento.classList.add('seleccionado');
-                    actualizarResumen();
-                } else {
-                    alert(data.error);
-                    location.reload();
-                }
-            }).catch(error => {
-                console.error('Error:', error);
-                alert('Error de conexión. Intenta de nuevo.');
-            });
-        });
-    });
+    const formData = new FormData();
+    formData.append('viaje_id', VIAJE_ID);
+    seleccionados.forEach(id => formData.append('asientos[]', id));
+    
+    fetch(URL_RENOVAR_RESERVA, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCookie('csrftoken'),
+        },
+        body: formData
+    })
+    .then(response => response.json())
+    .catch(error => console.warn('Error al renovar reserva:', error));
+}
 
-    // ============================================================
-    // ACTUALIZAR RESUMEN
-    // ============================================================
-    function actualizarResumen() {
-        const cantidad = seleccionados.size;
+intervaloRenovacion = setInterval(renovarReserva, INTERVALO_RENOVACION);
+
+asientos.forEach(asiento => {
+    asiento.addEventListener('click', function() {
+        const id = this.dataset.asientoId;
         
-        if (cantidad === 0) {
-            sinSeleccion.style.display = 'block';
-            conSeleccion.style.display = 'none';
+        if (seleccionados.has(id)) {
+            seleccionados.delete(id);
+            this.classList.remove('seleccionado');
+            this.classList.add('disponible');
+            actualizarResumen();
+            
+            const formData = new FormData();
+            formData.append('asientos[]', id);
+            fetch(URL_LIBERAR, {
+                method: 'POST',
+                headers: {'X-CSRFToken': getCookie('csrftoken')},
+                body: formData
+            });
             return;
         }
         
-        sinSeleccion.style.display = 'none';
-        conSeleccion.style.display = 'block';
-        
-        const numeros = [];
-        document.querySelectorAll('.asiento.seleccionado').forEach(a => {
-            numeros.push(a.dataset.asientoNumero);
-        });
-        numeros.sort();
-        listaAsientos.innerHTML = numeros.map(n => 
-            `<span class="badge bg-primary me-1 mb-1">${n}</span>`
-        ).join('');
-        
-        cantidadEl.textContent = cantidad;
-        
-        const total_usd = (PRECIO + SEGURO) * cantidad;
-        totalEl.textContent = total_usd.toFixed(2);
-        
-        if (totalBsEl) {
-            if (TASA_BCV > 0) {
-                const total_bs = total_usd * TASA_BCV;
-                totalBsEl.textContent = total_bs.toLocaleString('es-VE', {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                });
-            } else {
-                totalBsEl.textContent = '---';
-            }
-        }
-    }
-
-    // ============================================================
-    // BOTÓN "CONTINUAR CON LA COMPRA"
-    // ============================================================
-    btnContinuar.addEventListener('click', function() {
         if (!USUARIO_AUTENTICADO) {
             window.location.href = URL_LOGIN;
             return;
         }
         
-        if (seleccionados.size === 0) {
-            alert('Selecciona al menos un asiento.');
+        reservarAsientoTemporal(id).then(data => {
+            if (data.ok) {
+                seleccionados.add(id);
+                asiento.classList.remove('disponible');
+                asiento.classList.add('seleccionado');
+                actualizarResumen();
+            } else {
+                alert(data.error);
+                location.reload();
+            }
+        });
+    });
+});
+
+function actualizarResumen() {
+    const cantidad = seleccionados.size;
+    if (cantidad === 0) {
+        sinSeleccion.style.display = 'block';
+        conSeleccion.style.display = 'none';
+        return;
+    }
+    
+    sinSeleccion.style.display = 'none';
+    conSeleccion.style.display = 'block';
+    
+    const numeros = [];
+    document.querySelectorAll('.asiento.seleccionado').forEach(a => {
+        numeros.push(a.dataset.asientoNumero);
+    });
+    numeros.sort();
+    listaAsientos.innerHTML = numeros.map(n => `<span class="badge bg-primary me-1 mb-1">${n}</span>`).join('');
+    
+    cantidadEl.textContent = cantidad;
+    const total_usd = (PRECIO + SEGURO) * cantidad;
+    totalEl.textContent = total_usd.toFixed(2);
+    
+    if (totalBsEl && TASA_BCV > 0) {
+        const total_bs = total_usd * TASA_BCV;
+        totalBsEl.textContent = total_bs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+}
+
+btnContinuar.addEventListener('click', function() {
+    if (!USUARIO_AUTENTICADO) {
+        window.location.href = URL_LOGIN;
+        return;
+    }
+    if (seleccionados.size === 0) {
+        alert('Selecciona al menos un asiento.');
+        return;
+    }
+    window.location.href = '/viajes/' + VIAJE_ID + '/pasajeros/';
+});
+
+// ============================================================
+// INDICADOR FLOTANTE DE SCROLL (Móvil/Tablet)
+// ============================================================
+(function() {
+    'use strict';
+
+    const STORAGE_KEY = 'viba_scroll_hint_viaje_' + VIAJE_ID;
+    const indicador = document.getElementById('scrollHintFlotante');
+    
+    if (!indicador) return;
+
+    const esMovilOtablet = () => window.matchMedia('(max-width: 1024px)').matches;
+    const yaVisto = () => sessionStorage.getItem(STORAGE_KEY) === 'true';
+    const marcarComoVisto = () => sessionStorage.setItem(STORAGE_KEY, 'true');
+
+    const hayScroll = () => {
+        return document.documentElement.scrollHeight > window.innerHeight + 60;
+    };
+
+    const estaAlFinal = () => {
+        const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+        const scrollHeight = document.documentElement.scrollHeight;
+        const clientHeight = window.innerHeight;
+        return (scrollTop + clientHeight) >= (scrollHeight - 60);
+    };
+
+    const mostrar = () => {
+        if (!esMovilOtablet()) return;
+        if (yaVisto()) return;
+        if (!hayScroll()) return;
+        if (estaAlFinal()) return;
+        indicador.classList.add('visible');
+        indicador.setAttribute('aria-hidden', 'false');
+    };
+
+    const ocultar = () => {
+        indicador.classList.remove('visible');
+        indicador.setAttribute('aria-hidden', 'true');
+    };
+
+    const ocultarPermanentemente = () => {
+        ocultar();
+        marcarComoVisto();
+    };
+
+    let timeoutScroll;
+    const alHacerScroll = () => {
+        ocultar();
+        clearTimeout(timeoutScroll);
+        timeoutScroll = setTimeout(() => {
+            if (estaAlFinal()) {
+                ocultarPermanentemente();
+            } else {
+                mostrar();
+            }
+        }, 400);
+    };
+
+    const alRedimensionar = () => {
+        if (!esMovilOtablet()) {
+            ocultar();
             return;
         }
-        
-        window.location.href = '/viajes/' + VIAJE_ID + '/pasajeros/';
-    });
+        if (estaAlFinal()) {
+            ocultarPermanentemente();
+        } else {
+            mostrar();
+        }
+    };
+
+    const init = () => {
+        setTimeout(mostrar, 900);
+        window.addEventListener('scroll', alHacerScroll, { passive: true });
+        window.addEventListener('resize', alRedimensionar, { passive: true });
+        window.addEventListener('orientationchange', alRedimensionar, { passive: true });
+    };
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();
 </script>
 {% endblock %}
