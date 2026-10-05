@@ -105,7 +105,7 @@
                             <i class="bi bi-person-check"></i>
                             <strong>{{ item.disponibles }}</strong> asientos disponibles
                         </p>
-                        <a href="/viajes/{{ item.viaje.id }}/" class="btn btn-primary w-100" style="background-color: #003366; border-color: #003366;">
+                        <a href="/viajes/{{ item.viaje.id }}/?origen={{ oficina_origen.id|default:'' }}&destino={{ oficina_destino.id|default:'' }}" class="btn btn-primary w-100" style="background-color: #003366; border-color: #003366;">
                             Ver Asientos <i class="bi bi-arrow-right"></i>
                         </a>
                     </div>
