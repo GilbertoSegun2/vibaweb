@@ -185,7 +185,7 @@ if not DEBUG:
     SECURE_HSTS_PRELOAD = True
     CSRF_TRUSTED_ORIGINS = config(
         'CSRF_TRUSTED_ORIGINS',
-        default='https://tuboletoexpreso.com,https://www.tuboletoexpreso.com',
+        default='https://tuboletoexpreso.com,https://www.boletoexpreso.com',
         cast=Csv()
     )
 
