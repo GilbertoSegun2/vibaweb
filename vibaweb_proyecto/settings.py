@@ -207,5 +207,22 @@ LOGOUT_REDIRECT_URL = 'core:inicio'
 SESSION_COOKIE_AGE = 7200                # 2 horas (fallback)
 SESSION_SAVE_EVERY_REQUEST = True        # Renovar con cada clic
 SESSION_COOKIE_HTTPONLY = True           # Invisible para JavaScript
-SESSION_COOKIE_SAMESITE = 'Lax'          # Protección CSRF
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False  # Lo controla el middleware
+
+# SameSite=None requiere Secure=True (solo HTTPS en producción)
+# En local (HTTP) usamos Lax para que funcione
+if DEBUG:
+    SESSION_COOKIE_SAMESITE = 'Lax'
+    CSRF_COOKIE_SAMESITE = 'Lax'
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_SECURE = False
+else:
+    SESSION_COOKIE_SAMESITE = 'None'
+    CSRF_COOKIE_SAMESITE = 'None'
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    
+# ============================================================
+# VISTA PERSONALIZADA DE ERROR CSRF
+# ============================================================
+CSRF_FAILURE_VIEW = 'core.views.mi_vista_error_csrf'

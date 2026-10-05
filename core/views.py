@@ -1065,3 +1065,31 @@ def pasarela_virtual_view(request, viaje_id):
         'total_bs': total_bs,
         'tasa_bcv': tasa_bcv,
     })
+
+
+
+def mi_vista_error_csrf(request, reason=""):
+    """Vista personalizada para errores CSRF (evita el 403 feo de Django)."""
+    from django.http import JsonResponse
+    
+    # Caso 1: Petición AJAX/fetch → JSON
+    if (request.headers.get('X-Requested-With') == 'XMLHttpRequest' or
+        request.headers.get('Accept', '').startswith('application/json')):
+        return JsonResponse({
+            'ok': False,
+            'error': 'Sesión expirada. Recarga la página e intenta de nuevo.',
+            'csrf_failed': True,
+        }, status=403)
+    
+    # Caso 2: Formulario HTML
+    messages.warning(
+        request,
+        "Tu sesión de seguridad expiró. Por favor, intenta de nuevo."
+    )
+    
+    if request.path.startswith('/login/'):
+        return redirect('core:login')
+    if request.path.startswith('/registro/'):
+        return redirect('core:registro')
+    
+    return redirect('core:inicio')
