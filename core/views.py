@@ -278,7 +278,16 @@ def detalle_viaje(request, viaje_id):
             messages.warning(
                 request,
                 "La ruta seleccionada no coincide con este viaje. Por favor, busca de nuevo."
-            )
+        )
+    # ⭐ BLOQUEO DE SEGURIDAD: Si no hay tarifa válida, no se puede comprar
+    # Esto evita que alguien acceda directo por URL y compre sin precio
+    if not tarifa:
+        messages.error(
+            request,
+            "Este viaje no tiene una tarifa configurada. "
+            "Por favor, realiza la búsqueda desde el inicio."
+        )
+        return redirect('core:inicio')
     
     # Leer el seguro del parámetro 100
     valor_seguro = obtener_parametro('100', default=0)
