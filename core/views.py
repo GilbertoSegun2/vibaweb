@@ -316,6 +316,7 @@ def detalle_viaje(request, viaje_id):
         'asientos_por_piso': asientos_por_piso,
         'cliente_id': cliente.id if cliente else None,
         'tarifa': tarifa,
+        'tiene_tarifa': tarifa is not None,  # ⭐ Para el template
         'seguro': valor_seguro,
         'segundos_restantes': segundos_restantes,
     })
@@ -604,6 +605,15 @@ def pasajeros(request, viaje_id):
             request.session.pop('busqueda_destino_id', None)
             messages.error(request, "Error de seguridad. Vuelve a buscar el viaje.")
             return redirect('core:inicio')
+    
+    # ⭐ FIX: Si no hay tarifa, no permitir avanzar
+    if not tarifa:
+        messages.error(
+            request,
+            "No hay tarifa configurada para esta ruta. "
+            "Por favor, selecciona el viaje desde la búsqueda."
+        )
+        return redirect('core:inicio')
         
     # Leer el seguro del parámetro 100
     valor_seguro = obtener_parametro('100', default=0)
@@ -829,6 +839,14 @@ def pago(request, viaje_id):
             request.session.pop('busqueda_destino_id', None)
             messages.error(request, "Error de seguridad. Vuelve a buscar el viaje.")
             return redirect('core:inicio')
+    
+    # ⭐ FIX: Si no hay tarifa, no permitir avanzar
+    if not tarifa:
+        messages.error(
+            request,
+            "No hay tarifa configurada. No se puede procesar la compra."
+        )
+        return redirect('core:inicio')
     
     # Leer el seguro del parámetro 100
     valor_seguro = obtener_parametro('100', default=0)
@@ -1134,6 +1152,14 @@ def pasarela_virtual_view(request, viaje_id):
             request.session.pop('busqueda_destino_id', None)
             messages.error(request, "Error de seguridad. Vuelve a buscar el viaje.")
             return redirect('core:inicio')
+    
+    # ⭐ FIX: Si no hay tarifa, no permitir avanzar (última defensa)
+    if not tarifa:
+        messages.error(
+            request,
+            "No hay tarifa configurada. No se puede procesar la compra."
+        )
+        return redirect('core:inicio')
     
     precio_unitario = (tarifa.monto_usd + valor_seguro) if tarifa else 0
     total_usd = precio_unitario * cantidad
