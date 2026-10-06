@@ -72,7 +72,9 @@
                             <button type="submit" class="p-3 btn btn-success fw-bold fs-5 shadow-sm">
                                 <i class="bi bi-check-circle-fill"></i> Pagar Bs. {{ total_bs|localize }}
                             </button>
-                            <a href="{% url 'core:detalle_viaje' viaje.id %}" class="btn btn-outline-secondary">Cancelar y Volver</a>
+                            <a href="{% url 'core:seleccionar_metodo_pago' viaje.id %}?from=cancelar" class="btn btn-outline-secondary">
+                                <i class="bi bi-arrow-left"></i> Cambiar método de pago
+                            </a>
                         </div>
                     </form>
 
@@ -83,10 +85,29 @@
 </div>
 <!-- SCRIPT PARA EVITAR DOBLE CLIC -->
 <script>
-    document.querySelector('form').addEventListener('submit', function() {
-        var btn = document.querySelector('button[type="submit"]');
-        btn.disabled = true;
-        btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Procesando pago...';
-    });
+    (function() {
+        const form = document.querySelector('form');
+        if (!form) return;
+        
+        let yaEnviado = false;
+        
+        form.addEventListener('submit', function(e) {
+            // Si ya se envió, bloquear el segundo submit
+            if (yaEnviado) {
+                e.preventDefault();
+                return;
+            }
+            yaEnviado = true;
+            
+            // Deshabilitar el botón después de que el navegador empiece el submit
+            setTimeout(function() {
+                const btn = form.querySelector('button[type="submit"]');
+                if (btn) {
+                    btn.disabled = true;
+                    btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Procesando pago...';
+                }
+            }, 50);
+        });
+    })();
 </script>
 {% endblock %}

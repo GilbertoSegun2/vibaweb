@@ -1,0 +1,76 @@
+{% extends 'base.html' %}
+
+{% block title %}Seleccionar Método de Pago - Viba-Web{% endblock %}
+
+{% block content %}
+
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        
+        <div class="text-center mb-4">
+            <i class="bi bi-wallet2 text-primary" style="font-size: 3rem;"></i>
+            <h2 class="mt-2" style="color: #003366;">Selecciona tu método de pago</h2>
+            <p class="text-muted">Elige cómo deseas pagar tu compra</p>
+        </div>
+
+        <!-- Resumen -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-body text-center">
+                <small class="text-muted d-block">Total a pagar</small>
+                <h3 class="mb-1" style="color: #003366;">
+                    ${{ total_usd|floatformat:2 }} USD
+                </h3>
+                <p class="text-muted mb-0">
+                    Equivalente a <strong>Bs. {{ total_bs|floatformat:2 }}</strong>
+                    {% if tasa_bcv %}
+                        <small>(Tasa BCV: {{ tasa_bcv|floatformat:2 }})</small>
+                    {% endif %}
+                </p>
+                <small class="text-muted">
+                    {{ cantidad }} boleto(s) — {{ viaje.ruta.nombre }}
+                </small>
+            </div>
+        </div>
+
+        <!-- Métodos disponibles -->
+        <div class="row g-3">
+            {% for metodo in metodos %}
+            <div class="col-md-6">
+                <a href="{{ metodo.url }}" class="text-decoration-none">
+                    <div class="card h-100 shadow-sm border-primary" style="cursor: pointer; transition: transform 0.2s;">
+                        <div class="card-body text-center">
+                            <i class="bi {{ metodo.icono }}" style="font-size: 3rem; color: #003366;"></i>
+                            <h5 class="mt-3 mb-2" style="color: #003366;">{{ metodo.nombre }}</h5>
+                            <p class="text-muted small mb-0">{{ metodo.descripcion }}</p>
+                        </div>
+                        <div class="card-footer bg-primary text-white text-center">
+                            Continuar <i class="bi bi-arrow-right"></i>
+                        </div>
+                    </div>
+                </a>
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- Botones de navegación -->
+        <div class="text-center mt-4">
+            {% if mostrar_cancelar %}
+                {# Viene de "cancelar" → permitir cancelar toda la compra #}
+                <a href="{% url 'core:detalle_viaje' viaje.id %}" class="btn btn-outline-danger">
+                    <i class="bi bi-x-circle"></i> Cancelar la compra
+                </a>
+                <a href="{% url 'core:pasajeros' viaje.id %}" class="btn btn-outline-secondary ms-2">
+                    <i class="bi bi-pencil"></i> Editar datos de pasajeros
+                </a>
+            {% else %}
+                {# Flujo normal → volver a pasajeros #}
+                <a href="{% url 'core:pasajeros' viaje.id %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left"></i> Volver a los datos de pasajeros
+                </a>
+            {% endif %}
+        </div>
+
+    </div>
+</div>
+
+{% endblock %}

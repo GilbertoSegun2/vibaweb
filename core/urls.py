@@ -14,9 +14,11 @@ urlpatterns = [
     path('reservar/', views.reservar_asientos, name='reservar_asientos'),
     path('liberar/', views.liberar_asientos, name='liberar_asientos'),
     path('viajes/<int:viaje_id>/pasajeros/', views.pasajeros, name='pasajeros'),
+    path('viajes/<int:viaje_id>/seleccionar-pago/', views.seleccionar_metodo_pago, name='seleccionar_metodo_pago'),
     path('reservar-temporal/', views.reservar_temporal, name='reservar_temporal'),
     path('renovar-reserva/', views.renovar_reserva, name='renovar_reserva'),
     path('viajes/<int:viaje_id>/pago/', views.pago, name='pago'),
     path('viajes/<int:viaje_id>/pasarela-virtual/', views.pasarela_virtual_view, name='pasarela_virtual'),
     path('confirmacion/<int:transaccion_id>/', views.confirmacion, name='confirmacion'),
+    path('mis-boletos/', views.mis_boletos, name='mis_boletos'),
 ]

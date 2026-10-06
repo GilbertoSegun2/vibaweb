@@ -381,6 +381,20 @@
 {% endblock %}
 
 {% block content %}
+
+{# ⭐ Aviso de compra reciente #}
+{% if transaccion_reciente %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+    <i class="bi bi-check-circle-fill"></i>
+    <strong>¡Ya compraste en este viaje!</strong>
+    Tu transacción <strong>{{ transaccion_reciente.codigo }}</strong> fue registrada hace unos minutos.
+    <a href="{% url 'core:confirmacion' transaccion_reciente.id %}" class="alert-link">
+        Ver comprobante <i class="bi bi-arrow-right"></i>
+    </a>
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+</div>
+{% endif %}
+
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2 style="color: #003366;">
         <i class="bi bi-bus-front"></i> {{ viaje.ruta.nombre }}

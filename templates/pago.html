@@ -17,8 +17,8 @@
     <h2 style="color: #003366;">
         <i class="bi bi-credit-card"></i> Pago de la Compra
     </h2>
-    <a href="/viajes/{{ viaje.id }}/pasajeros/" class="btn btn-outline-secondary">
-        <i class="bi bi-arrow-left"></i> Volver
+    <a href="{% url 'core:seleccionar_metodo_pago' viaje.id %}?from=cancelar" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Cambiar método de pago
     </a>
 </div>
 

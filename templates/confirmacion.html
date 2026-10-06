@@ -4,63 +4,99 @@
 {% block title %}Compra Confirmada - Viba-Web{% endblock %}
 
 {% block content %}
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- MENSAJE DE ÉXITO PRINCIPAL                                   -->
+<!-- ═══════════════════════════════════════════════════════════ -->
 <div class="text-center mb-4">
-    <i class="bi bi-check-circle-fill text-success" style="font-size: 4rem;"></i>
-    <h2 class="mt-3" style="color: #003366;">¡Compra registrada exitosamente!</h2>
-    <p class="lead text-muted">
-        Tu pago está <strong>pendiente de verificación</strong>. 
-        Una vez confirmado, recibirás tus boletos.
+    <i class="bi bi-check-circle-fill text-success" style="font-size: 5rem;"></i>
+    <h2 class="mt-3 fw-bold" style="color: #003366;">¡Compra registrada exitosamente!</h2>
+    <p class="lead text-muted mb-1">
+        Tu pago está <strong>pendiente de verificación</strong>.
     </p>
+    <p class="text-muted small">
+        Una vez confirmado por la empresa, podrás presentar tus boletos con el código QR.
+    </p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- CÓDIGO DE TRANSACCIÓN (destacado)                            -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div class="row justify-content-center mb-4">
+    <div class="col-lg-8">
+        <div class="card shadow-sm border-primary">
+            <div class="card-body text-center py-3">
+                <small class="text-muted d-block mb-1">Código de tu transacción</small>
+                <h4 class="mb-0" style="color: #003366; letter-spacing: 2px;">
+                    {{ transaccion.codigo }}
+                </h4>
+                <small class="text-muted">
+                    <i class="bi bi-info-circle"></i>
+                    Guarda este código para cualquier consulta
+                </small>
+            </div>
+        </div>
+    </div>
 </div>
 
 <div class="row justify-content-center">
     <div class="col-lg-8">
-        
-        <!-- Datos de la transacción -->
+
+        <!-- ═══════════════════════════════════════════════════════ -->
+        <!-- DATOS DEL VIAJE                                         -->
+        <!-- ═══════════════════════════════════════════════════════ -->
         <div class="card shadow-sm mb-4">
             <div class="card-header" style="background-color: #003366; color: white;">
-                <strong><i class="bi bi-receipt"></i> Datos de la transacción</strong>
+                <strong><i class="bi bi-bus-front"></i> Datos del viaje</strong>
             </div>
             <div class="card-body">
-                <p class="mb-1"><strong>Código:</strong> {{ transaccion.codigo }}</p>
-                <p class="mb-1"><strong>Viaje:</strong> {{ transaccion.viaje.ruta.nombre }}</p>
+                <p class="mb-1"><strong>Ruta:</strong> {{ transaccion.viaje.ruta.nombre }}</p>
+                <p class="mb-1"><strong>Desde:</strong> {{ transaccion.viaje.ruta.origen.nombre }}</p>
                 <p class="mb-1"><strong>Fecha:</strong> {{ transaccion.viaje.fecha|date:'d/m/Y' }} - {{ transaccion.viaje.hora|hora_am_pm }}</p>
-                <p class="mb-1"><strong>Cantidad de boletos:</strong> {{ transaccion.cantidad_boletos }}</p>
+                <p class="mb-1"><strong>Bus:</strong> {{ transaccion.viaje.bus.modelo }} ({{ transaccion.viaje.bus.placa }})</p>
                 <hr>
-                <p class="mb-1"><strong>Total USD:</strong> ${{ transaccion.monto_total_usd }}</p>
-                <p class="mb-1"><strong>Total Bs.:</strong> Bs. {{ transaccion.monto_total_bs }}</p>
+                <p class="mb-1"><strong>Cantidad de boletos:</strong> {{ transaccion.cantidad_boletos }}</p>
+                <p class="mb-1"><strong>Total USD:</strong> <span class="badge bg-success">${{ transaccion.monto_total_usd }}</span></p>
+                <p class="mb-1"><strong>Total Bs.:</strong> Bs. {{ transaccion.monto_total_bs|floatformat:2 }}</p>
                 {% if transaccion.tasa_bcv %}
-                <p class="mb-0"><strong>Tasa BCV:</strong> {{ transaccion.tasa_bcv|floatformat:2 }}</p>
+                <p class="mb-0 text-muted small"><strong>Tasa BCV aplicada:</strong> {{ transaccion.tasa_bcv|floatformat:2 }}</p>
                 {% endif %}
             </div>
         </div>
-        
-        <!-- Boletos -->
+
+        <!-- ═══════════════════════════════════════════════════════ -->
+        <!-- BOLETOS CON QR                                          -->
+        <!-- ═══════════════════════════════════════════════════════ -->
         <div class="card shadow-sm mb-4">
             <div class="card-header" style="background-color: #003366; color: white;">
-                <strong><i class="bi bi-ticket-perforated"></i> Boletos ({{ boletos|length }})</strong>
+                <strong><i class="bi bi-ticket-perforated"></i> Tus boletos ({{ boletos|length }})</strong>
             </div>
             <div class="card-body">
                 {% for boleto in boletos %}
-                <div class="border rounded p-3 mb-2">
+                <div class="border rounded p-3 mb-3 {% if not forloop.last %}mb-3{% endif %}">
                     <div class="row align-items-center">
                         <div class="col-md-6">
-                            <p class="mb-1"><strong>Asiento:</strong> {{ boleto.asiento.numero }}</p>
+                            <p class="mb-1">
+                                <strong>Asiento:</strong>
+                                <span class="badge bg-primary fs-6">{{ boleto.asiento.numero }}</span>
+                            </p>
                             <p class="mb-1"><strong>Pasajero:</strong> {{ boleto.pasajero_nombre }}</p>
                             <p class="mb-1"><strong>Cédula:</strong> {{ boleto.pasajero_cedula }}</p>
                             <p class="mb-0"><strong>Tipo:</strong> {{ boleto.get_tipo_pasajero_display }}</p>
                         </div>
-                        <div class="col-md-6 text-center">
+                        <div class="col-md-6 text-center mt-3 mt-md-0">
                             <p class="mb-1 small text-muted">Código QR:</p>
-                            <code class="d-block text-break">{{ boleto.codigo_qr }}</code>
+                            <code class="d-block text-break small" style="background: #f8f9fa; padding: 8px; border-radius: 6px;">{{ boleto.codigo_qr }}</code>
                         </div>
                     </div>
                 </div>
                 {% endfor %}
             </div>
         </div>
-        
-        <!-- Pago -->
+
+        <!-- ═══════════════════════════════════════════════════════ -->
+        <!-- DATOS DEL PAGO                                          -->
+        <!-- ═══════════════════════════════════════════════════════ -->
         {% if pago %}
         <div class="card shadow-sm mb-4">
             <div class="card-header" style="background-color: #003366; color: white;">
@@ -69,9 +105,17 @@
             <div class="card-body">
                 <p class="mb-1"><strong>Método:</strong> {{ pago.get_metodo_display }}</p>
                 <p class="mb-1"><strong>Referencia:</strong> {{ pago.referencia }}</p>
-                <p class="mb-1"><strong>Monto pagado:</strong> Bs. {{ pago.monto_bs }}</p>
-                <p class="mb-1"><strong>Estado:</strong> 
-                    <span class="badge bg-warning text-dark">{{ pago.get_estado_display }}</span>
+                <p class="mb-1"><strong>Monto pagado:</strong> Bs. {{ pago.monto_bs|floatformat:2 }}</p>
+                <p class="mb-1"><strong>Estado:</strong>
+                    {% if pago.estado == 'aprobado' %}
+                        <span class="badge bg-success">{{ pago.get_estado_display }}</span>
+                    {% elif pago.estado == 'pendiente' %}
+                        <span class="badge bg-warning text-dark">{{ pago.get_estado_display }}</span>
+                    {% elif pago.estado == 'rechazado' %}
+                        <span class="badge bg-danger">{{ pago.get_estado_display }}</span>
+                    {% else %}
+                        <span class="badge bg-secondary">{{ pago.get_estado_display }}</span>
+                    {% endif %}
                 </p>
                 {% if pago.observacion %}
                 <p class="mb-0 text-danger small"><i class="bi bi-exclamation-triangle"></i> {{ pago.observacion }}</p>
@@ -79,13 +123,34 @@
             </div>
         </div>
         {% endif %}
-        
-        <!-- Acciones -->
-        <div class="text-center">
-            <a href="/" class="btn btn-outline-secondary">
-                <i class="bi bi-house"></i> Volver al inicio
-            </a>
+
+        <!-- ═══════════════════════════════════════════════════════ -->
+        <!-- ACCIONES (3 BOTONES)                                    -->
+        <!-- ═══════════════════════════════════════════════════════ -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-body">
+                <h5 class="text-center mb-3" style="color: #003366;">
+                    <i class="bi bi-lightning-charge-fill"></i> ¿Qué deseas hacer ahora?
+                </h5>
+                <div class="d-grid gap-2">
+                    <button type="button" class="btn btn-outline-primary btn-lg" onclick="window.print();">
+                        <i class="bi bi-printer-fill"></i> Imprimir / Guardar como PDF
+                    </button>
+                    <a href="{% url 'core:mis_boletos' %}" class="btn btn-outline-success btn-lg">
+                        <i class="bi bi-list-check"></i> Ver todos mis boletos
+                    </a>
+                    <a href="{% url 'core:inicio' %}" class="btn btn-primary btn-lg" style="background-color: #003366; border-color: #003366;">
+                        <i class="bi bi-bus-front"></i> Comprar otro pasaje
+                    </a>
+                </div>
+                <p class="text-center text-muted small mb-0 mt-3">
+                    <i class="bi bi-info-circle"></i>
+                    Tu sesión permanece activa. Puedes buscar otro viaje sin volver a iniciar sesión.
+                </p>
+            </div>
         </div>
+
     </div>
 </div>
+
 {% endblock %}

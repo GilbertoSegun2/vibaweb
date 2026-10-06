@@ -320,7 +320,18 @@ def detalle_viaje(request, viaje_id):
     # ⭐ INVERSIÓN DE PISOS PARA DOBLE PISO
     if len(asientos_por_piso) > 1:
         asientos_por_piso = dict(reversed(list(asientos_por_piso.items())))
-
+    
+    # ⭐ Detectar si el cliente compró este viaje hace poco
+    transaccion_reciente = None
+    if cliente:
+        hace_5_min = timezone.now() - timedelta(minutes=5)
+        transaccion_reciente = Transaccion.objects.filter(
+            cliente=cliente,
+            viaje=viaje,
+            fecha_creacion__gte=hace_5_min,
+            estado__in=['pendiente_verificacion', 'confirmada'],
+        ).order_by('-fecha_creacion').first()
+    
     return render(request, 'detalle_viaje.html', {
         'viaje': viaje,
         'asientos_por_piso': asientos_por_piso,
@@ -329,6 +340,7 @@ def detalle_viaje(request, viaje_id):
         'tiene_tarifa': tarifa is not None,  # ⭐ Para el template
         'seguro': valor_seguro,
         'segundos_restantes': segundos_restantes,
+        'transaccion_reciente': transaccion_reciente,
     })
 
 
@@ -682,13 +694,28 @@ def pasajeros(request, viaje_id):
             
             request.session['pasajeros_data'] = pasajeros_data
             request.session['viaje_id'] = viaje.id
-            return redirect('core:pasarela_virtual', viaje_id=viaje.id)
+            return redirect('core:seleccionar_metodo_pago', viaje_id=viaje.id)
     else:
-        # GET: crear formularios vacíos
+        # ⭐ GET: crear formularios con datos previos de la sesión si existen
+        pasajeros_previos = request.session.get('pasajeros_data', [])
+        pasajeros_dict = {p['asiento_id']: p for p in pasajeros_previos}
+        
         formularios = []
         for asiento in asientos:
             prefix = f"asiento_{asiento.id}"
-            form = PasajeroForm(prefix=prefix)
+            
+            # Buscar si ya hay datos de este asiento en la sesión
+            inicial = {}
+            if asiento.id in pasajeros_dict:
+                p = pasajeros_dict[asiento.id]
+                inicial = {
+                    'nombre': p.get('nombre', ''),
+                    'cedula': p.get('cedula', ''),
+                    'telefono': p.get('telefono', ''),
+                    'tipo_pasajero': p.get('tipo_pasajero', 'normal'),
+                }
+            
+            form = PasajeroForm(prefix=prefix, initial=inicial)
             formularios.append((asiento, form))
     
     cantidad = asientos.count()
@@ -1033,7 +1060,9 @@ def pago(request, viaje_id):
             messages.success(request, "¡Pago registrado! Tu compra está pendiente de verificación.")
             return redirect('core:confirmacion', transaccion_id=transaccion.id)
     else:
-        form = PagoWebForm()
+        # ⭐ Preseleccionar el método según el ?metodo= de la URL
+        metodo_inicial = request.GET.get('metodo', 'pago_movil')
+        form = PagoWebForm(initial={'metodo': metodo_inicial})
     
     return render(request, 'pago.html', {
         'viaje': viaje,
@@ -1121,12 +1150,120 @@ def registro_usuario(request):
         
     return render(request, 'registro.html', {'form': form})
 
+@login_required
+def seleccionar_metodo_pago(request, viaje_id):
+    """Muestra los métodos de pago disponibles según los parámetros 130, 131, 132"""
+    viaje = get_object_or_404(Viaje, id=viaje_id)
+    cliente = getattr(request.user, 'cliente', None)
+    
+    if not cliente:
+        messages.error(request, "Debes completar tu perfil antes de comprar.")
+        return redirect('core:perfil')
+    
+    # Recuperar datos de pasajeros de la sesión
+    pasajeros_data = request.session.get('pasajeros_data', [])
+    if not pasajeros_data:
+        messages.warning(request, "No hay datos de pasajeros. Completa el formulario primero.")
+        return redirect('core:pasajeros', viaje_id=viaje.id)
+    
+    # Leer los 3 parámetros de métodos de pago
+    permite_pago_movil = obtener_parametro('131', default=True)
+    permite_transferencia = obtener_parametro('130', default=False)
+    permite_pasarela = obtener_parametro('132', default=True)
+    
+    # Construir lista de métodos disponibles
+    metodos = []
+    if permite_pago_movil:
+        metodos.append({
+            'id': 'pago_movil',
+            'nombre': 'Pago Móvil',
+            'icono': 'bi-phone-fill',
+            'descripcion': 'Paga desde tu banco con tu teléfono en segundos.',
+            'url': f'/viajes/{viaje.id}/pago/?metodo=pago_movil',
+        })
+    if permite_transferencia:
+        metodos.append({
+            'id': 'transferencia',
+            'nombre': 'Transferencia Bancaria',
+            'icono': 'bi-bank2',
+            'descripcion': 'Transfiere desde tu banca en línea o taquilla.',
+            'url': f'/viajes/{viaje.id}/pago/?metodo=transferencia',
+        })
+    if permite_pasarela:
+        metodos.append({
+            'id': 'pasarela',
+            'nombre': 'Pasarela Digital',
+            'icono': 'bi-credit-card-fill',
+            'descripcion': 'Paga con tarjeta de crédito/débito de forma segura.',
+            'url': f'/viajes/{viaje.id}/pasarela-virtual/',
+        })
+
+    # Si no hay ningún método habilitado, no permitir comprar
+    if not metodos:
+        messages.error(
+            request,
+            "No hay métodos de pago habilitados. Contacta a la empresa."
+        )
+        return redirect('core:inicio')
+
+    # ⭐ Si solo hay UN método habilitado Y NO venimos de "cancelar" → ir directo
+    # (si venimos de cancelar, mostramos la pantalla para no crear un loop infinito)
+    from_cancelar = request.GET.get('from') == 'cancelar'
+    if len(metodos) == 1 and not from_cancelar:
+        return redirect(metodos[0]['url'])
+    
+    # Si venimos de cancelar y solo hay 1 método, pasamos a la plantilla
+    # una bandera para mostrar el botón "Cancelar compra"
+    mostrar_cancelar = from_cancelar
+    
+    # Calcular totales para mostrar en la pantalla
+    cantidad = len(pasajeros_data)
+    valor_seguro = obtener_parametro('100', default=0)
+    origen_id = request.session.get('busqueda_origen_id')
+    destino_id = request.session.get('busqueda_destino_id')
+    
+    tarifa = None
+    if origen_id and destino_id:
+        tarifa, es_valido = validar_tarifa_para_viaje(viaje, origen_id, destino_id)
+        if not es_valido:
+            request.session.pop('busqueda_origen_id', None)
+            request.session.pop('busqueda_destino_id', None)
+            messages.error(request, "Error de seguridad. Vuelve a buscar el viaje.")
+            return redirect('core:inicio')
+    
+    if not tarifa:
+        messages.error(request, "No hay tarifa configurada.")
+        return redirect('core:inicio')
+    
+    precio_unitario = tarifa.monto_usd + valor_seguro
+    total_usd = precio_unitario * cantidad
+    tasa_bcv = obtener_parametro('107', default=0)
+    total_bs = (total_usd * tasa_bcv).quantize(Decimal('0.01')) if tasa_bcv else 0
+    
+    return render(request, 'seleccionar_metodo_pago.html', {
+        'viaje': viaje,
+        'metodos': metodos,
+        'cantidad': cantidad,
+        'total_usd': total_usd,
+        'total_bs': total_bs,
+        'tasa_bcv': tasa_bcv,
+        'mostrar_cancelar': mostrar_cancelar,   # ⭐ NUEVO
+    })
 
 @login_required
 def pasarela_virtual_view(request, viaje_id):
     """Pasarela de pagos virtual simulada para demostraciones con formulario seguro de tarjeta/token"""
     viaje = get_object_or_404(Viaje, id=viaje_id)
     cliente = getattr(request.user, 'cliente', None)
+    
+    # ⭐ Validar que la pasarela digital esté habilitada (parámetro 132)
+    permite_pasarela = obtener_parametro('132', default=True)
+    if not permite_pasarela:
+        messages.error(
+            request,
+            "La pasarela digital no está habilitada. Elige otro método de pago."
+        )
+        return redirect('core:seleccionar_metodo_pago', viaje_id=viaje.id)
     
     if not cliente:
         messages.error(request, "Debes completar tu perfil antes de comprar.")
@@ -1243,6 +1380,8 @@ def pasarela_virtual_view(request, viaje_id):
             request.session.pop('pasajeros_data', None)
             request.session.pop('asientos_seleccionados', None)
             messages.success(request, "¡Compra registrada exitosamente!")
+            # ⭐ REDIRIGIR a la página de confirmación
+            return redirect('core:confirmacion', transaccion_id=transaccion.id)
     else:
         form = PasarelaVirtualForm()
 
@@ -1285,3 +1424,41 @@ def mi_vista_error_csrf(request, reason=""):
         return redirect('core:registro')
     
     return redirect('core:inicio')
+
+
+
+# ============================================================
+# MIS BOLETOS (historial del cliente)
+# ============================================================
+
+@login_required
+def mis_boletos(request):
+    """Página que muestra todos los boletos comprados por el cliente"""
+    cliente = getattr(request.user, 'cliente', None)
+    
+    if not cliente:
+        messages.error(
+            request,
+            "Debes completar tu perfil antes de ver tus boletos."
+        )
+        return redirect('core:perfil')
+    
+    # Obtener todas las transacciones del cliente
+    from .models import Transaccion, Boleto
+    
+    transacciones = Transaccion.objects.filter(cliente=cliente).order_by('-fecha_creacion')
+    
+    # Para cada transacción, traer sus boletos
+    transacciones_con_boletos = []
+    for t in transacciones:
+        boletos = t.boletos.all().order_by('asiento__numero')
+        transacciones_con_boletos.append({
+            'transaccion': t,
+            'boletos': boletos,
+            'cantidad': boletos.count(),
+        })
+    
+    return render(request, 'mis_boletos.html', {
+        'cliente': cliente,
+        'transacciones_con_boletos': transacciones_con_boletos,
+    })
