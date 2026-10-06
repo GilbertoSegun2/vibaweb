@@ -441,8 +441,29 @@ def perfil(request):
     """Perfil del cliente"""
     cliente = getattr(request.user, 'cliente', None)
     
+    # ⭐ Contar transacciones del cliente
+    total_transacciones = 0
+    transacciones_activas = 0
+    total_boletos = 0
+    
+    if cliente:
+        from .models import Transaccion, Boleto
+        transacciones = Transaccion.objects.filter(cliente=cliente)
+        total_transacciones = transacciones.count()
+        transacciones_activas = transacciones.exclude(
+            estado__in=['cancelada', 'rechazada']
+        ).count()
+        total_boletos = Boleto.objects.filter(
+            transaccion__cliente=cliente
+        ).exclude(
+            transaccion__estado__in=['cancelada', 'rechazada']
+        ).count()
+    
     return render(request, 'perfil.html', {
         'cliente': cliente,
+        'total_transacciones': total_transacciones,
+        'transacciones_activas': transacciones_activas,
+        'total_boletos': total_boletos,
     })
 
 
