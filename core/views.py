@@ -278,7 +278,8 @@ def detalle_viaje(request, viaje_id):
             messages.warning(
                 request,
                 "La ruta seleccionada no coincide con este viaje. Por favor, busca de nuevo."
-        )
+            )
+    
     # ⭐ BLOQUEO DE SEGURIDAD: Si no hay tarifa válida, no se puede comprar
     # Esto evita que alguien acceda directo por URL y compre sin precio
     if not tarifa:
