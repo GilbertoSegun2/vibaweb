@@ -1029,5 +1029,87 @@ btnContinuar.addEventListener('click', function() {
         init();
     }
 })();
+
+// ============================================================
+// CONTROL DE PESTAÑA ÚNICA (Evita reservas duplicadas)
+// ============================================================
+(function() {
+    'use strict';
+    
+    const TAB_KEY = 'viba_reserva_activa';
+    const TAB_TIMEOUT = 5000;  // 5 segundos (para detectar pestañas cerradas)
+    const currentTabId = 'tab_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    const viajeActual = "{{ viaje.id }}";
+    
+    // Leer las pestañas registradas
+    let tabsActivas = {};
+    try {
+        tabsActivas = JSON.parse(localStorage.getItem(TAB_KEY) || '{}');
+    } catch(e) {
+        tabsActivas = {};
+    }
+    
+    const ahora = Date.now();
+    
+    // Limpiar pestañas viejas (más de 5 segundos sin actualización)
+    let tabsLimpios = {};
+    let hayOtraPestanaActiva = false;
+    
+    for (const [tabId, info] of Object.entries(tabsActivas)) {
+        if (ahora - info.lastPing < TAB_TIMEOUT) {
+            if (tabId !== currentTabId && info.viajeId === viajeActual) {
+                hayOtraPestanaActiva = true;
+            }
+            tabsLimpios[tabId] = info;
+        }
+    }
+    
+    // Si hay OTRA pestaña con el MISMO viaje activo → bloquear
+    if (hayOtraPestanaActiva) {
+        alert(
+            '⚠️ Ya tienes una ventana de reserva activa para este viaje.\n\n' +
+            'Por seguridad, no puedes tener dos pestañas abiertas al mismo tiempo.\n\n' +
+            'Esta pestaña será cerrada.'
+        );
+        window.location.href = '/';
+        return;
+    }
+    
+    // Registrar esta pestaña
+    tabsLimpios[currentTabId] = {
+        viajeId: viajeActual,
+        lastPing: ahora,
+    };
+    localStorage.setItem(TAB_KEY, JSON.stringify(tabsLimpios));
+    
+    // Actualizar "lastPing" cada 3 segundos (heartbeat)
+    const heartbeat = setInterval(function() {
+        let tabs = {};
+        try {
+            tabs = JSON.parse(localStorage.getItem(TAB_KEY) || '{}');
+        } catch(e) {
+            tabs = {};
+        }
+        
+        tabs[currentTabId] = {
+            viajeId: viajeActual,
+            lastPing: Date.now(),
+        };
+        localStorage.setItem(TAB_KEY, JSON.stringify(tabs));
+    }, 3000);
+    
+    // Al cerrar la pestaña, limpiar el registro
+    window.addEventListener('beforeunload', function() {
+        let tabs = {};
+        try {
+            tabs = JSON.parse(localStorage.getItem(TAB_KEY) || '{}');
+        } catch(e) {
+            tabs = {};
+        }
+        delete tabs[currentTabId];
+        localStorage.setItem(TAB_KEY, JSON.stringify(tabs));
+        clearInterval(heartbeat);
+    });
+})();
 </script>
 {% endblock %}
