@@ -5,6 +5,8 @@
 {% load core_extras %}
 
 {% block content %}
+{% now "Y-m-d" as fecha_hoy %}
+
 <h2 class="mb-4" style="color: #003366;">
     <i class="bi bi-search"></i> Buscar Viajes
 </h2>
@@ -81,7 +83,15 @@
                                 {{ item.viaje.ruta.nombre }}
                             </h5>
                             {% if item.tarifa %}
-                                <span class="badge bg-success">${{ item.tarifa.monto_usd }}</span>
+                                <div class="text-end">
+                                    <span class="badge bg-success">${{ item.tarifa.monto_usd }}</span>
+                                    {% if item.viaje.fecha|date:"Y-m-d" == fecha_hoy %}
+                                        <br>
+                                        <small class="text-muted" style="font-size: 0.7rem;">
+                                            Bs. {{ item.tarifa.monto_usd|convertir_bs }}
+                                        </small>
+                                    {% endif %}
+                                </div>
                             {% else %}
                                 <span class="badge bg-secondary">Sin tarifa</span>
                             {% endif %}
@@ -118,6 +128,13 @@
         <i class="bi bi-info-circle"></i>
         {% if oficina_origen or oficina_destino or fecha %}
             No se encontraron viajes con esos criterios. Intenta con otros.
+            {% if tarifa and oficina_origen and oficina_destino %}
+                <br>
+                <small class="text-muted">
+                    Precio de referencia para esta ruta:
+                    <strong class="text-success">${{ tarifa.monto_usd }}</strong>
+                </small>
+            {% endif %}
         {% else %}
             Realiza una búsqueda para ver viajes disponibles.
         {% endif %}
