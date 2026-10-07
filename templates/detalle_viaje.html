@@ -211,14 +211,25 @@
     }
 
     .asiento.disponible {
-        background: #ffffff;
-        color: #495057;
+        background: #d4edda;
+        color: #155724;
+        border-color: #28a745;
+    }
+
+    .asiento.disponible:hover:not(:disabled) {
+        background: #c3e6cb;
+        border-color: #1e7e34;
     }
 
     .asiento.seleccionado {
-        background: #003366;
-        color: #ffffff;
-        border-color: #001f3f;
+        background: #ffc107;
+        color: #000;
+        border-color: #cc9a06;
+    }
+
+    .asiento.seleccionado:hover:not(:disabled) {
+        background: #ffca2c;
+        border-color: #b8860b;
     }
 
     .asiento.vendido {
@@ -229,9 +240,16 @@
     }
 
     .asiento.reservado {
-        background: #ffc107;
-        color: #000;
-        border-color: #cc9a06;
+        background: #fd7e14;
+        color: #ffffff;
+        border-color: #e8590c;
+        cursor: not-allowed;
+    }
+
+    .asiento.pendiente_verificacion {
+        background: #9b59b6;
+        color: #ffffff;
+        border-color: #7d3c98;
         cursor: not-allowed;
     }
 
@@ -618,20 +636,22 @@
                             {% endif %}
                             
                             {% if asiento.tipo == 'asiento' %}
-                                <button 
+                                <button
                                     type="button"
-                                    class="asiento 
+                                    class="asiento
                                         {% if asiento.estado == 'disponible' %}disponible{% endif %}
                                         {% if asiento.estado == 'vendido' %}vendido{% endif %}
+                                        {% if asiento.estado == 'pendiente_verificacion' %}pendiente_verificacion{% endif %}
                                         {% if asiento.estado == 'reservado' %}{% if asiento.reservado_por_id == cliente_id %}seleccionado{% else %}reservado{% endif %}{% endif %}
                                         {% if asiento.estado == 'bloqueado' %}bloqueado{% endif %}"
                                     data-asiento-id="{{ asiento.id }}"
                                     data-asiento-numero="{{ asiento.numero }}"
                                     data-asiento-lado="{{ asiento.lado }}"
                                     {% if asiento.estado != 'disponible' and asiento.reservado_por_id != cliente_id %}disabled{% endif %}
-                                    title="Asiento {{ asiento.numero }} ({{ asiento.get_lado_display }})">
+                                    title="Asiento {{ asiento.numero }} ({{ asiento.get_lado_display }}) — {% if asiento.estado == 'reservado' %}Apartado temporalmente{% else %}{{ asiento.get_estado_display }}{% endif %}">
                                     {{ asiento.numero }}
                                 </button>
+
                             {% elif asiento.tipo == 'escalera' %}
                                 <div class="asiento especial" title="Escaleras">
                                     <i class="bi bi-arrow-up-down"></i>
@@ -659,23 +679,26 @@
                 <span class="bus-trasero__luz"></span>
             </div>
             
-            <!-- LEYENDA -->
             <div class="leyenda">
                 <div class="leyenda-item">
-                    <div class="leyenda-cuadro" style="background: #ffffff;"></div>
+                    <div class="leyenda-cuadro" style="background: #d4edda; border-color: #28a745;"></div>
                     <span>Disponible</span>
                 </div>
                 <div class="leyenda-item">
-                    <div class="leyenda-cuadro" style="background: #003366;"></div>
-                    <span>Seleccionado</span>
+                    <div class="leyenda-cuadro" style="background: #ffc107; border-color: #cc9a06;"></div>
+                    <span>Tu selección</span>
                 </div>
                 <div class="leyenda-item">
-                    <div class="leyenda-cuadro" style="background: #dc3545;"></div>
+                    <div class="leyenda-cuadro" style="background: #fd7e14; border-color: #e8590c;"></div>
+                    <span>Apartado temporal</span>
+                </div>
+                <div class="leyenda-item">
+                    <div class="leyenda-cuadro" style="background: #9b59b6; border-color: #7d3c98;"></div>
+                    <span>En verificación</span>
+                </div>
+                <div class="leyenda-item">
+                    <div class="leyenda-cuadro" style="background: #dc3545; border-color: #a71d2a;"></div>
                     <span>Vendido</span>
-                </div>
-                <div class="leyenda-item">
-                    <div class="leyenda-cuadro" style="background: #ffc107;"></div>
-                    <span>Reservado</span>
                 </div>
             </div>
         </div>
