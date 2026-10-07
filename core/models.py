@@ -191,8 +191,10 @@ class Cliente(models.Model):
         verbose_name_plural = "Clientes"
         ordering = ['cedula']
 
+
     def __str__(self):
-        return f"{self.cedula} - {self.user.get_full_name() or self.user.username}"
+        nombre = self.user.get_full_name() or self.user.username
+        return f"{nombre} ({self.cedula})"
 
 
 class Viaje(models.Model):
@@ -260,6 +262,7 @@ class Asiento(models.Model):
     ESTADOS = [
         ('disponible', 'Disponible'),
         ('reservado', 'Reservado'),
+        ('pendiente_verificacion', 'Pendiente de verificación de pago'),
         ('vendido', 'Vendido'),
         ('bloqueado', 'Bloqueado'),
     ]
@@ -282,7 +285,7 @@ class Asiento(models.Model):
         verbose_name="Lado"
     )
     tipo = models.CharField(max_length=20, choices=TIPOS, default='asiento', verbose_name="Tipo")
-    estado = models.CharField(max_length=20, choices=ESTADOS, default='disponible', verbose_name="Estado")
+    estado = models.CharField(max_length=30, choices=ESTADOS, default='disponible', verbose_name="Estado")
     reservado_hasta = models.DateTimeField(null=True, blank=True, verbose_name="Reservado hasta")
     reservado_por = models.ForeignKey(
         'Cliente',
@@ -380,13 +383,14 @@ class Transaccion(models.Model):
 class Boleto(models.Model):
     """Boleto vendido a un pasajero para un viaje y asiento específico"""
     ESTADOS = [
+        ('pendiente_verificacion', 'Pendiente de verificación'),
         ('vendido', 'Vendido'),
         ('usado', 'Usado'),
         ('cancelado', 'Cancelado con crédito'),
         ('no_show', 'No se presentó'),
         ('reprogramado', 'Reprogramado'),
-        ('liquidado', 'Liquidado'),      # 👈 Agregado para control financiero
-        ('no_liquidado', 'No liquidado'), # 👈 Agregado para control financiero
+        ('liquidado', 'Liquidado'),
+        ('no_liquidado', 'No liquidado'),
     ]
     
     TIPOS_PASAJERO = [
@@ -429,7 +433,7 @@ class Boleto(models.Model):
     codigo_qr = models.CharField(max_length=50, unique=True, verbose_name="Código QR")
     
     # Estados y fechas
-    estado = models.CharField(max_length=20, choices=ESTADOS, default='vendido', verbose_name="Estado")
+    estado = models.CharField(max_length=30, choices=ESTADOS, default='pendiente_verificacion', verbose_name="Estado")
     fecha_venta = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de venta")
     fecha_chequeo = models.DateTimeField(null=True, blank=True, verbose_name="Fecha de chequeo")
     
@@ -520,8 +524,8 @@ class MovimientoAsiento(models.Model):
 
     asiento = models.ForeignKey(Asiento, on_delete=models.PROTECT, related_name='movimientos', verbose_name="Asiento")
     tipo = models.CharField(max_length=30, choices=TIPOS, verbose_name="Tipo de movimiento")
-    estado_anterior = models.CharField(max_length=20, verbose_name="Estado anterior")
-    estado_nuevo = models.CharField(max_length=20, verbose_name="Estado nuevo")
+    estado_anterior = models.CharField(max_length=30, verbose_name="Estado anterior")
+    estado_nuevo = models.CharField(max_length=30, verbose_name="Estado nuevo")
     usuario = models.ForeignKey(User, on_delete=models.PROTECT, null=True, blank=True, verbose_name="Usuario")
     fecha_hora = models.DateTimeField(auto_now_add=True, verbose_name="Fecha y hora")
     motivo = models.CharField(max_length=200, blank=True, verbose_name="Motivo")

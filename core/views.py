@@ -1041,12 +1041,17 @@ def pago(request, viaje_id):
                     observacion=observacion,
                 )
   
+                # ⭐ Leer timeout del parámetro 141 (horas de espera para verificar)
+                horas_verificacion = int(obtener_parametro('141', default=72))
+                vence_verificacion = timezone.now() + timedelta(hours=horas_verificacion)
+                
                 for p in pasajeros_data:
                     asiento = Asiento.objects.select_for_update().get(id=p['asiento_id'])
                     
-                    asiento.estado = 'vendido'
-                    asiento.reservado_hasta = None
-                    asiento.reservado_por = None
+                    # ⭐ Nuevo estado: pendiente de verificación (no vendido todavía)
+                    asiento.estado = 'pendiente_verificacion'
+                    asiento.reservado_hasta = vence_verificacion
+                    asiento.reservado_por = cliente  # ⭐ Mantener el cliente para auditoría
                     asiento.save()
                     
                     if tarifa:
@@ -1071,8 +1076,9 @@ def pago(request, viaje_id):
                         tasa_bcv=tasa_bcv,
                         monto_total_bs=(monto_total_boleto * tasa_bcv).quantize(Decimal('0.01')) if tasa_bcv else 0,
                         codigo_qr=generar_codigo_qr(),
-                        estado='vendido',
+                        estado='pendiente_verificacion',  # ⭐ Nuevo estado
                     )
+
             
             request.session.pop('pasajeros_data', None)
             request.session.pop('viaje_id', None)
@@ -1351,6 +1357,7 @@ def pasarela_virtual_view(request, viaje_id):
                     monto_total_bs=total_bs,
                     tasa_bcv=tasa_bcv,
                     estado='confirmada',
+                    fecha_confirmacion=timezone.now(),   # ⭐ AGREGAR
                     vendido_por=None,
                     dispositivo_venta=request.META.get('HTTP_USER_AGENT', 'Desconocido'),
                     oficina_destino=viaje.ruta.destinos.first(),

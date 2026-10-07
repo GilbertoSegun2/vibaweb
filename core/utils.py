@@ -71,26 +71,56 @@ def obtener_parametro(codigo, default=None):
 def liberar_reservas_vencidas(viaje=None):
     """
     Libera los asientos cuya reserva temporal ha vencido.
+    
+    Maneja 2 casos:
+    1. Asientos 'reservado' con reservado_hasta vencido → liberar (timeout normal)
+    2. Asientos 'pendiente_verificacion' con reservado_hasta vencido
+       → si pasaron las horas del parámetro 141 sin que el supervisor verifique,
+         se liberan automáticamente.
+    
     Si se pasa un viaje, solo limpia ese viaje.
-    Devuelve la cantidad de asientos liberados.
+    Devuelve la cantidad total de asientos liberados.
     """
     from django.utils import timezone
     from .models import Asiento
-
+    
     ahora = timezone.now()
-    qs = Asiento.objects.filter(
+    total_liberados = 0
+    
+    # ============================================================
+    # CASO 1: Reservas temporales vencidas (10 minutos)
+    # ============================================================
+    qs_reservados = Asiento.objects.filter(
         estado='reservado',
         reservado_hasta__lt=ahora
     )
     if viaje is not None:
-        qs = qs.filter(viaje=viaje)
-
-    cantidad = qs.update(
+        qs_reservados = qs_reservados.filter(viaje=viaje)
+    
+    total_liberados += qs_reservados.update(
         estado='disponible',
         reservado_hasta=None,
         reservado_por=None
     )
-    return cantidad
+    
+    # ============================================================
+    # CASO 2: Pendientes de verificación vencidos (parámetro 141)
+    # ============================================================
+    # Si el supervisor no verificó el pago en N horas, se liberan
+    qs_pendientes = Asiento.objects.filter(
+        estado='pendiente_verificacion',
+        reservado_hasta__lt=ahora
+    )
+    if viaje is not None:
+        qs_pendientes = qs_pendientes.filter(viaje=viaje)
+    
+    total_liberados += qs_pendientes.update(
+        estado='disponible',
+        reservado_hasta=None,
+        reservado_por=None
+    )
+    
+    return total_liberados
     
 def obtener_tasa_bcv():
     """

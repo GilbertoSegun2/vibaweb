@@ -1,4 +1,6 @@
 from django.contrib import admin
+from django.db import transaction
+from django.utils.safestring import mark_safe
 from .models import Oficina, Empresa, Parametro, Bus, Tarifa, Ruta, Cliente, Viaje, Asiento, Boleto, Credito, MovimientoAsiento, PlantillaBus, PlantillaAsiento
 
 
@@ -190,15 +192,205 @@ from .models import Transaccion, Pago
 from .models import Transaccion, Pago
 
 
+# ============================================================
+# ACCIONES MASIVAS PARA TRANSACCIONES
+# ============================================================
+
+@admin.action(description='✅ Aprobar pago (marcar como confirmada)')
+def aprobar_pago_action(modeladmin, request, queryset):
+    """Aprueba las transacciones seleccionadas: asientos y boletos pasan a 'vendido'."""
+    from django.utils import timezone
+    from .models import Asiento, Boleto, MovimientoAsiento
+    
+    aprobadas = 0
+    omitidas = 0
+    
+    for transaccion in queryset:
+        if transaccion.estado not in ('pendiente_verificacion', 'pendiente_pago'):
+            omitidas += 1
+            continue
+        
+        with transaction.atomic():
+            # 1. Actualizar transacción
+            transaccion.estado = 'confirmada'
+            transaccion.fecha_confirmacion = timezone.now()
+            transaccion.confirmada_por = request.user
+            transaccion.save()
+            
+            # 2. Actualizar asientos y boletos
+            for boleto in transaccion.boletos.all():
+                asiento = boleto.asiento
+                
+                # Registrar auditoría
+                MovimientoAsiento.objects.create(
+                    asiento=asiento,
+                    tipo='venta',
+                    estado_anterior=asiento.estado,
+                    estado_nuevo='vendido',
+                    usuario=request.user,
+                    motivo=f'Pago aprobado. Transacción {transaccion.codigo}',
+                    boleto_relacionado=boleto,
+                )
+                
+                asiento.estado = 'vendido'
+                asiento.reservado_hasta = None
+                asiento.reservado_por = None
+                asiento.save()
+                
+                boleto.estado = 'vendido'
+                boleto.save()
+            
+            # 3. Actualizar pagos
+            transaccion.pagos.update(
+                estado='confirmado',
+                confirmado_por=request.user,
+                fecha_confirmacion=timezone.now(),
+            )
+        
+        aprobadas += 1
+    
+    msg = f'✅ {aprobadas} transacción(es) aprobada(s).'
+    if omitidas:
+        msg += f' ({omitidas} omitida(s) por estado incorrecto.)'
+    modeladmin.message_user(request, msg)
+
+
+@admin.action(description='❌ Rechazar pago (liberar asientos)')
+def rechazar_pago_action(modeladmin, request, queryset):
+    """Rechaza las transacciones seleccionadas: asientos vuelven a 'disponible'."""
+    from django.utils import timezone
+    from .models import Asiento, Boleto, MovimientoAsiento
+    
+    rechazadas = 0
+    omitidas = 0
+    
+    for transaccion in queryset:
+        if transaccion.estado not in ('pendiente_verificacion', 'pendiente_pago'):
+            omitidas += 1
+            continue
+        
+        with transaction.atomic():
+            # 1. Actualizar transacción
+            transaccion.estado = 'rechazada'
+            transaccion.fecha_cancelacion = timezone.now()
+            transaccion.save()
+            
+            # 2. Liberar asientos y cancelar boletos
+            for boleto in transaccion.boletos.all():
+                asiento = boleto.asiento
+                
+                # Registrar auditoría
+                MovimientoAsiento.objects.create(
+                    asiento=asiento,
+                    tipo='liberacion_manual',
+                    estado_anterior=asiento.estado,
+                    estado_nuevo='disponible',
+                    usuario=request.user,
+                    motivo=f'Pago rechazado. Transacción {transaccion.codigo}',
+                    boleto_relacionado=boleto,
+                )
+                
+                asiento.estado = 'disponible'
+                asiento.reservado_hasta = None
+                asiento.reservado_por = None
+                asiento.save()
+                
+                boleto.estado = 'cancelado'
+                boleto.save()
+            
+            # 3. Actualizar pagos
+            transaccion.pagos.update(
+                estado='rechazado',
+                confirmado_por=request.user,
+                fecha_confirmacion=timezone.now(),
+            )
+        
+        rechazadas += 1
+    
+    msg = f'❌ {rechazadas} transacción(es) rechazada(s). Asientos liberados.'
+    if omitidas:
+        msg += f' ({omitidas} omitida(s) por estado incorrecto.)'
+    modeladmin.message_user(request, msg)
+
+
 @admin.register(Transaccion)
 class TransaccionAdmin(admin.ModelAdmin):
-    list_display = ('codigo', 'cliente', 'viaje', 'cantidad_boletos', 'monto_total_usd', 'monto_total_bs', 'estado', 'fecha_creacion')
+    list_display = ('codigo', 'get_cliente_nombre', 'get_pasajeros_resumen', 'viaje', 'cantidad_boletos', 'monto_total_usd', 'estado', 'fecha_creacion')
     list_filter = ('estado', 'fecha_creacion', 'viaje__ruta')
     search_fields = ('codigo', 'cliente__cedula', 'cliente__user__username')
     ordering = ('-fecha_creacion',)
-    # date_hierarchy = 'fecha_creacion'
     raw_id_fields = ('cliente', 'viaje', 'confirmada_por')
-    readonly_fields = ('fecha_creacion', 'fecha_confirmacion', 'fecha_cancelacion')
+    readonly_fields = ('fecha_creacion', 'fecha_confirmacion', 'fecha_cancelacion', 'get_pasajeros_detalle')
+    actions = [aprobar_pago_action, rechazar_pago_action]
+    
+    fieldsets = (
+        ('Información de la transacción', {
+            'fields': ('codigo', 'cliente', 'viaje', 'cantidad_boletos', 'estado')
+        }),
+        ('Pasajeros', {
+            'fields': ('get_pasajeros_detalle',),
+        }),
+        ('Montos', {
+            'fields': ('monto_total_usd', 'monto_total_bs', 'tasa_bcv')
+        }),
+        ('Fechas', {
+            'fields': ('fecha_creacion', 'fecha_confirmacion', 'fecha_cancelacion')
+        }),
+        ('Auditoría', {
+            'fields': ('confirmada_por', 'observacion'),
+            'classes': ('collapse',)
+        }),
+        ('Trazabilidad', {
+            'fields': ('vendido_por', 'oficina_venta', 'oficina_destino', 'dispositivo_venta', 'numero_liquidacion'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def get_pasajeros_detalle(self, obj):
+        """Muestra el listado de pasajeros con asiento, nombre, cédula y tipo."""
+        boletos = obj.boletos.all().order_by('asiento__numero')
+        if not boletos:
+            return '—'
+        
+        html = '<ul style="margin: 8px 0; padding-left: 0; list-style: none;">'
+        for b in boletos:
+            html += (
+                f'<li style="padding: 6px 0; border-bottom: 1px solid #eee;">'
+                f'<span style="display:inline-block; width: 110px;">'
+                f'<strong style="color: #003366;">Asiento {b.asiento.numero}</strong>'
+                f'</span> '
+                f'<span style="font-weight: 500;">{b.pasajero_nombre}</span> '
+                f'<span style="color: #666;">({b.pasajero_cedula})</span> '
+                f'<span style="color: #999; font-size: 0.85em;">— {b.get_tipo_pasajero_display()}</span>'
+                f'</li>'
+            )
+        html += '</ul>'
+        return mark_safe(html)
+    get_pasajeros_detalle.short_description = 'Pasajeros'
+    
+    def get_cliente_nombre(self, obj):
+        """Muestra el nombre completo del cliente que compró."""
+        if not obj.cliente:
+            return '—'
+        nombre = obj.cliente.user.get_full_name() or obj.cliente.user.username
+        return f"{nombre} ({obj.cliente.cedula})"
+    get_cliente_nombre.short_description = 'Cliente'
+    get_cliente_nombre.admin_order_field = 'cliente__user__first_name'
+    
+    def get_pasajeros_resumen(self, obj):
+        """Muestra los nombres de los pasajeros de los boletos."""
+        boletos = obj.boletos.all()
+        if not boletos:
+            return '—'
+        
+        nombres = [b.pasajero_nombre for b in boletos[:3]]
+        resumen = ', '.join(nombres)
+        
+        if boletos.count() > 3:
+            resumen += f' (+{boletos.count() - 3} más)'
+        
+        return resumen
+    get_pasajeros_resumen.short_description = 'Pasajeros'
 
 
 @admin.register(Pago)
