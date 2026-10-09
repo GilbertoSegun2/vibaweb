@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 
+{% load core_extras %}
 {% load l10n %}
 {% block content %}
 <div class="container my-5">
@@ -15,7 +16,7 @@
                     <!-- Resumen del Monto a Pagar -->
                     <div class="alert alert-light border mb-4 text-center">
                         <span class="text-muted d-block">Monto Total a Cancelar</span>
-                        <h2 class="text-success fw-bold mb-0">Bs. {{ total_bs|localize }}</h2>
+                        <h2 class="text-success fw-bold mb-0">Bs. {{ total_bs|formato_bs }}</h2>
                         <small class="text-muted">Equivalente a ${{ total_usd|floatformat:2 }} USD (Tasa BCV: {{ tasa_bcv }})</small>
                     </div>
 
@@ -70,7 +71,7 @@
 
                         <div class="d-grid gap-2 mt-4">
                             <button type="submit" class="p-3 btn btn-success fw-bold fs-5 shadow-sm">
-                                <i class="bi bi-check-circle-fill"></i> Pagar Bs. {{ total_bs|localize }}
+                                <i class="bi bi-check-circle-fill"></i> Pagar Bs. {{ total_bs|formato_bs }}
                             </button>
                             <a href="{% url 'core:seleccionar_metodo_pago' viaje.id %}?from=cancelar" class="btn btn-outline-secondary">
                                 <i class="bi bi-arrow-left"></i> Cambiar método de pago
@@ -110,4 +111,93 @@
         });
     })();
 </script>
+<!-- ============================================================ -->
+<!-- MÁSCARAS SIMPLES SIN LIBRERÍAS EXTERNAS                     -->
+<!-- ============================================================ -->
+<script>
+(function() {
+    function inicializarMascaras() {
+        console.log('=== MÁSCARAS: iniciando (versión vanilla) ===');
+        
+        // ============================================================
+        // 1. NÚMERO DE TARJETA: 0000-0000-0000-0000
+        // ============================================================
+        const elTarjeta = document.querySelector('input[name="numero_tarjeta"]');
+        if (elTarjeta) {
+            elTarjeta.addEventListener('input', function(e) {
+                let v = e.target.value.replace(/\D/g, '').substring(0, 16);
+                let formatted = v.match(/.{1,4}/g);
+                if (formatted) {
+                    e.target.value = formatted.join('-');
+                } else {
+                    e.target.value = '';
+                }
+            });
+            console.log('✅ Tarjeta inicializada');
+        }
+        
+        // ============================================================
+        // 2. VENCIMIENTO: MM/AA
+        // ============================================================
+        const elVencimiento = document.querySelector('input[name="vencimiento"]');
+        if (elVencimiento) {
+            elVencimiento.addEventListener('input', function(e) {
+                let v = e.target.value.replace(/\D/g, '').substring(0, 4);
+                if (v.length >= 3) {
+                    e.target.value = v.substring(0, 2) + '/' + v.substring(2);
+                } else {
+                    e.target.value = v;
+                }
+            });
+            console.log('✅ Vencimiento inicializado');
+        }
+        
+        // ============================================================
+        // 3. CVV: solo números
+        // ============================================================
+        const elCvv = document.querySelector('input[name="cvv"]');
+        if (elCvv) {
+            elCvv.addEventListener('input', function(e) {
+                e.target.value = e.target.value.replace(/\D/g, '').substring(0, 4);
+            });
+            console.log('✅ CVV inicializado');
+        }
+        
+        // ============================================================
+        // 4. CÉDULA: 12.345.678 (con puntos de miles)
+        // ============================================================
+        const elCedula = document.querySelector('input[name="cedula_tarjeta"]');
+        if (elCedula) {
+            elCedula.addEventListener('input', function(e) {
+                let v = e.target.value.replace(/\D/g, '').substring(0, 9);
+                if (v.length > 3) {
+                    v = v.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+                }
+                e.target.value = v;
+            });
+            console.log('✅ Cédula inicializada');
+        }
+        
+        //~ // ============================================================
+        //~ // 5. CLAVE SMS: solo números
+        //~ // ============================================================
+        const elClave = document.querySelector('input[name="clave_sms"]');
+        if (elClave) {
+            elClave.addEventListener('input', function(e) {
+                e.target.value = e.target.value.replace(/\D/g, '').substring(0, 10);
+            });
+            console.log('✅ Clave SMS inicializada');
+        }
+        
+        console.log('=== MÁSCARAS LISTAS ===');
+    }
+    
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', inicializarMascaras);
+    } else {
+        inicializarMascaras();
+    }
+})();
+</script>
+
 {% endblock %}

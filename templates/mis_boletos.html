@@ -57,7 +57,7 @@
                             <span class="badge bg-secondary">{{ boleto.asiento.get_lado_display }}</span>
                         </p>
                         <p class="mb-1 small"><strong>Pasajero:</strong> {{ boleto.pasajero_nombre }}</p>
-                        <p class="mb-1 small"><strong>Cédula:</strong> {{ boleto.pasajero_cedula }}</p>
+                        <p class="mb-1 small"><strong>Cédula:</strong> {{ boleto.pasajero_cedula|formato_cedula }}</p>
                         <p class="mb-1 small"><strong>Tipo:</strong> {{ boleto.get_tipo_pasajero_display }}</p>
                         <p class="mb-0 small text-muted">
                             <strong>QR:</strong>

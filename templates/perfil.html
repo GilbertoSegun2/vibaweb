@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-
+{% load core_extras %}
 {% block title %}Mi Perfil - Viba-Web{% endblock %}
 
 {% block content %}
@@ -17,8 +17,8 @@
                 <p><strong>Nombre:</strong> {{ user.get_full_name }}</p>
                 <p><strong>Email:</strong> {{ user.email }}</p>
                 {% if cliente %}
-                    <p><strong>Cédula:</strong> {{ cliente.cedula }}</p>
-                    <p><strong>Teléfono:</strong> {{ cliente.telefono }}</p>
+                    <p><strong>Cédula:</strong> {{ cliente.cedula|formato_cedula }}</p>
+                    <p><strong>Teléfono:</strong> {{ cliente.telefono|formato_telefono }}</p>
                     {% if cliente.whatsapp %}
                         <p><strong>WhatsApp:</strong> {{ cliente.whatsapp }}</p>
                     {% endif %}

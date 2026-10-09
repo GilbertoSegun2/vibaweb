@@ -19,6 +19,7 @@
                 
                 <form method="post">
                     {% csrf_token %}
+                    
                     <input type="hidden" name="next" value="{{ request.GET.next|default:'' }}">
 
                     <h6 class="text-muted mb-3">Datos de acceso</h6>
@@ -101,4 +102,77 @@
         </div>
     </div>
 </div>
+
+<!-- ============================================================ -->
+<!-- SCRIPTS: MÁSCARAS Y VISIBILIDAD DE CONTRASEÑA                -->
+<!-- ============================================================ -->
+<script>
+// Función global para alternar la visibilidad de la contraseña con el ícono del ojo
+function togglePassword(button) {
+    const input = button.previousElementSibling;
+    if (input) {
+        const type = input.getAttribute('type') === 'password' ? 'text' : 'password';
+        input.setAttribute('type', type);
+        
+        const icon = button.querySelector('i');
+        if (icon) {
+            icon.classList.toggle('bi-eye');
+            icon.classList.toggle('bi-eye-slash');
+        }
+    }
+}
+(function() {
+    function inicializarMascarasRegistro() {
+        // Cédula: V-12.345.678
+        const elCedula = document.querySelector('input[name="cedula"]');
+        if (elCedula) {
+            elCedula.addEventListener('input', function(e) {
+                let v = e.target.value.toUpperCase().trim();
+                let letra = '';
+                if (v && v[0].match(/[VEJG]/)) {
+                    letra = v[0];
+                    v = v.substring(1);
+                }
+                let nums = v.replace(/\D/g, '').substring(0, 9);
+                if (nums.length > 3) {
+                    nums = nums.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+                }
+                e.target.value = letra ? (letra + '-' + nums) : nums;
+            });
+        }
+        
+        // Teléfono: 0412-1234567
+        const elTelefono = document.querySelector('input[name="telefono"]');
+        if (elTelefono) {
+            elTelefono.addEventListener('input', function(e) {
+                let v = e.target.value.replace(/\D/g, '').substring(0, 11);
+                if (v.length > 4) {
+                    e.target.value = v.substring(0, 4) + '-' + v.substring(4);
+                } else {
+                    e.target.value = v;
+                }
+            });
+        }
+        
+        // WhatsApp: 0412-1234567
+        const elWhatsapp = document.querySelector('input[name="whatsapp"]');
+        if (elWhatsapp) {
+            elWhatsapp.addEventListener('input', function(e) {
+                let v = e.target.value.replace(/\D/g, '').substring(0, 11);
+                if (v.length > 4) {
+                    e.target.value = v.substring(0, 4) + '-' + v.substring(4);
+                } else {
+                    e.target.value = v;
+                }
+            });
+        }
+    }
+    
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', inicializarMascarasRegistro);
+    } else {
+        inicializarMascarasRegistro();
+    }
+})();
+</script>
 {% endblock %}
