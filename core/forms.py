@@ -1,5 +1,7 @@
 from django import forms
 from django.contrib.auth.models import User
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
 from .models import Cliente
 
 
@@ -10,48 +12,84 @@ class RegistroForm(forms.Form):
     username = forms.CharField(
         max_length=150,
         label="Nombre de usuario",
-        widget=forms.TextInput(attrs={'class': 'form-control'})
+        widget=forms.TextInput(attrs={
+            'class': 'form-control',
+            'autocomplete': 'off',
+            'autocapitalize': 'off',
+            'spellcheck': 'false',
+        })
     )
     email = forms.EmailField(
         label="Correo electrónico",
-        widget=forms.EmailInput(attrs={'class': 'form-control'})
+        widget=forms.EmailInput(attrs={
+            'class': 'form-control',
+            'autocomplete': 'off',
+        })
     )
+
     password1 = forms.CharField(
         label="Contraseña",
-        widget=forms.PasswordInput(attrs={'class': 'form-control'})
+        widget=forms.PasswordInput(attrs={
+            'class': 'form-control',
+            'autocomplete': 'new-password',
+            'readonly': 'readonly',
+            'onfocus': "this.removeAttribute('readonly');",
+        })
     )
     password2 = forms.CharField(
         label="Confirmar contraseña",
-        widget=forms.PasswordInput(attrs={'class': 'form-control'})
+        widget=forms.PasswordInput(attrs={
+            'class': 'form-control',
+            'autocomplete': 'new-password',
+            'readonly': 'readonly',
+            'onfocus': "this.removeAttribute('readonly');",
+        })
     )
-    
+
     # Datos personales
     first_name = forms.CharField(
         max_length=100,
         label="Nombres",
-        widget=forms.TextInput(attrs={'class': 'form-control'})
+        widget=forms.TextInput(attrs={
+            'class': 'form-control',
+            'autocomplete': 'off',
+        })
     )
     last_name = forms.CharField(
         max_length=100,
         label="Apellidos",
-        widget=forms.TextInput(attrs={'class': 'form-control'})
+        widget=forms.TextInput(attrs={
+            'class': 'form-control',
+            'autocomplete': 'off',
+        })
     )
     cedula = forms.CharField(
         max_length=20,
         label="Cédula",
-        widget=forms.TextInput(attrs={'class': 'form-control'})
+        widget=forms.TextInput(attrs={
+            'class': 'form-control',
+            'autocomplete': 'off',
+        })
     )
     telefono = forms.CharField(
         max_length=20,
         label="Teléfono",
-        widget=forms.TextInput(attrs={'class': 'form-control'})
+        widget=forms.TextInput(attrs={
+            'class': 'form-control',
+            'autocomplete': 'off',
+        })
     )
     whatsapp = forms.CharField(
         max_length=20,
         label="WhatsApp",
         required=False,
-        widget=forms.TextInput(attrs={'class': 'form-control'})
+        widget=forms.TextInput(attrs={
+            'class': 'form-control',
+            'autocomplete': 'off',
+        })
     )
+    
+# ... (los métodos clean_cedula, clean_telefono, clean_whatsapp, save)
     
     def clean_username(self):
         username = self.cleaned_data.get('username')
@@ -66,10 +104,54 @@ class RegistroForm(forms.Form):
         return email
     
     def clean_cedula(self):
-        cedula = self.cleaned_data.get('cedula')
-        if Cliente.objects.filter(cedula=cedula).exists():
+        """
+        Normaliza Y valida que no exista.
+        - Limpia puntos y guiones
+        - Verifica que no esté registrada
+        """
+        cedula = self.cleaned_data.get('cedula', '')
+        if not cedula:
+            return cedula
+        
+        # Normalizar
+        cedula_limpia = cedula.upper().strip()
+        letra = ''
+        if cedula_limpia and cedula_limpia[0].isalpha():
+            letra = cedula_limpia[0]
+            cedula_limpia = cedula_limpia[1:]
+        
+        solo_numeros = ''.join(c for c in cedula_limpia if c.isdigit())
+        cedula_normalizada = f"{letra}{solo_numeros}" if letra else solo_numeros
+        
+        # Validar duplicado
+        if Cliente.objects.filter(cedula=cedula_normalizada).exists():
             raise forms.ValidationError("Esta cédula ya está registrada.")
-        return cedula
+        
+        return cedula_normalizada
+    
+    def clean_telefono(self):
+        """Normaliza el teléfono: solo dígitos (sin guiones, paréntesis ni espacios)."""
+        telefono = self.cleaned_data.get('telefono', '')
+        if not telefono:
+            return telefono
+        return ''.join(c for c in telefono if c.isdigit())
+    
+    def clean_whatsapp(self):
+        """Normaliza el WhatsApp: solo dígitos."""
+        whatsapp = self.cleaned_data.get('whatsapp', '')
+        if not whatsapp:
+            return whatsapp
+        return ''.join(c for c in whatsapp if c.isdigit())
+        
+    def clean_password1(self):
+        """Valida que la contraseña cumpla con los requisitos de seguridad."""
+        password = self.cleaned_data.get('password1', '')
+        if password:
+            try:
+                validate_password(password)
+            except ValidationError as e:
+                raise forms.ValidationError(e.messages)
+        return password
     
     def clean(self):
         cleaned_data = super().clean()
@@ -139,6 +221,28 @@ class PasajeroForm(forms.Form):
         initial='normal',
         widget=forms.Select(attrs={'class': 'form-select'})
     )
+    
+    def clean_cedula(self):
+        """Normaliza la cédula: solo dígitos y letra V/E/J/G al inicio (sin puntos ni guiones)."""
+        cedula = self.cleaned_data.get('cedula', '')
+        if not cedula:
+            return cedula
+        
+        cedula_limpia = cedula.upper().strip()
+        letra = ''
+        if cedula_limpia and cedula_limpia[0].isalpha():
+            letra = cedula_limpia[0]
+            cedula_limpia = cedula_limpia[1:]
+        
+        solo_numeros = ''.join(c for c in cedula_limpia if c.isdigit())
+        return f"{letra}{solo_numeros}" if letra else solo_numeros
+    
+    def clean_telefono(self):
+        """Normaliza el teléfono: solo dígitos."""
+        telefono = self.cleaned_data.get('telefono', '')
+        if not telefono:
+            return telefono
+        return ''.join(c for c in telefono if c.isdigit())
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
