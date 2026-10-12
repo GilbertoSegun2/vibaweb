@@ -655,3 +655,32 @@ class PlantillaAsiento(models.Model):
         if self.tipo == 'asiento':
             return f"{self.plantilla.nombre} - Asiento {self.numero}"
         return f"{self.plantilla.nombre} - {self.get_tipo_display()} (f{self.fila}c{self.columna})"
+        
+# ============================================================
+# SESIÓN ÚNICA (seguridad usuario-web)
+# ============================================================
+
+class SesionActiva(models.Model):
+    """
+    Registra la sesión activa de cada usuario-web.
+    Solo puede haber UNA por usuario a la vez.
+    """
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='sesion_activa',
+        verbose_name="Usuario"
+    )
+    session_key = models.CharField(max_length=40, verbose_name="Session Key")
+    ip_address = models.GenericIPAddressField(null=True, blank=True, verbose_name="Dirección IP")
+    user_agent = models.CharField(max_length=250, blank=True, verbose_name="Dispositivo")
+    creado_en = models.DateTimeField(auto_now_add=True, verbose_name="Creado en")
+    ultima_actividad = models.DateTimeField(default=timezone.now, verbose_name="Última actividad")
+
+    class Meta:
+        verbose_name = "Sesión Activa"
+        verbose_name_plural = "Sesiones Activas"
+        ordering = ['-ultima_actividad']
+
+    def __str__(self):
+        return f"{self.user.username} - {self.session_key[:10]}..."

@@ -54,6 +54,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'core.middleware.SessionTimeoutMiddleware',
+    'core.middleware.SesionUnicaMiddleware',
 ]
 
 ROOT_URLCONF = 'vibaweb_proyecto.urls'

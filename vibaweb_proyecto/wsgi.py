@@ -1,11 +1,15 @@
 """
 WSGI config for vibaweb_proyecto project.
 
-It exposes the WSGI callable as a module-level variable named ``application``.
-
-For more information on this file, see
-https://docs.djangoproject.com/en/6.1/howto/deployment/wsgi/
+⭐ IMPORTANTE: El monkey patch de gevent DEBE ejecutarse ANTES
+de cualquier otra importación. Esto convierte las librerías
+bloqueantes (MySQL, socket, etc.) en cooperativas para que
+gevent pueda cambiar de tarea mientras esperan.
 """
+
+# ⭐ MONKEY PATCH - PRIMERA LÍNEA, ANTES DE TODO
+from gevent import monkey
+monkey.patch_all()
 
 import os
 

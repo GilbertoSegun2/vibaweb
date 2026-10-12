@@ -93,14 +93,20 @@ class RegistroForm(forms.Form):
     
     def clean_username(self):
         username = self.cleaned_data.get('username')
-        if User.objects.filter(username=username).exists():
-            raise forms.ValidationError("Este nombre de usuario ya está en uso.")
+        if User.objects.filter(username__iexact=username).exists():
+            raise forms.ValidationError(
+                "El nombre de usuario ingresado ya se encuentra registrado. "
+                "Por favor, elija uno diferente."
+            )
         return username
     
     def clean_email(self):
         email = self.cleaned_data.get('email')
-        if User.objects.filter(email=email).exists():
-            raise forms.ValidationError("Este correo ya está registrado.")
+        if User.objects.filter(email__iexact=email).exists():
+            raise forms.ValidationError(
+                "El correo electrónico ingresado ya se encuentra registrado. "
+                "Por favor, utilice otro o inicie sesión con su cuenta."
+            )
         return email
     
     def clean_cedula(self):
@@ -124,8 +130,11 @@ class RegistroForm(forms.Form):
         cedula_normalizada = f"{letra}{solo_numeros}" if letra else solo_numeros
         
         # Validar duplicado
-        if Cliente.objects.filter(cedula=cedula_normalizada).exists():
-            raise forms.ValidationError("Esta cédula ya está registrada.")
+        if Cliente.objects.filter(cedula__iexact=cedula_normalizada).exists():
+            raise forms.ValidationError(
+                "La cédula ingresada ya se encuentra registrada en nuestro sistema. "
+                "Si cree que es un error, por favor contacte a la empresa."
+            )
         
         return cedula_normalizada
     
@@ -150,7 +159,33 @@ class RegistroForm(forms.Form):
             try:
                 validate_password(password)
             except ValidationError as e:
-                raise forms.ValidationError(e.messages)
+                # Convertir los mensajes de Django a estilo banco
+                mensajes_traducidos = []
+                for msg in e.messages:
+                    msg_lower = msg.lower()
+                    if 'too common' in msg_lower or 'común' in msg_lower:
+                        mensajes_traducidos.append(
+                            "La contraseña es demasiado común. Por su seguridad, "
+                            "elija una contraseña más compleja."
+                        )
+                    elif 'entirely numeric' in msg_lower or 'numérica' in msg_lower:
+                        mensajes_traducidos.append(
+                            "La contraseña no puede contener solo números. "
+                            "Combine letras, números y símbolos."
+                        )
+                    elif 'too short' in msg_lower or 'corta' in msg_lower:
+                        mensajes_traducidos.append(
+                            "La contraseña es demasiado corta. "
+                            "Debe tener al menos 8 caracteres."
+                        )
+                    elif 'similar' in msg_lower:
+                        mensajes_traducidos.append(
+                            "La contraseña es muy similar a sus datos personales. "
+                            "Elija una contraseña diferente."
+                        )
+                    else:
+                        mensajes_traducidos.append(msg)
+                raise forms.ValidationError(mensajes_traducidos)
         return password
     
     def clean(self):
@@ -159,7 +194,10 @@ class RegistroForm(forms.Form):
         password2 = cleaned_data.get('password2')
         
         if password1 and password2 and password1 != password2:
-            raise forms.ValidationError("Las contraseñas no coinciden.")
+            raise forms.ValidationError(
+                "Las contraseñas ingresadas no coinciden. "
+                "Por favor, verifíquelas e intente nuevamente."
+            )
         
         return cleaned_data
     

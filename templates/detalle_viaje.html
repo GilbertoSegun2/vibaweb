@@ -784,7 +784,7 @@ if (elementosContador.length > 0 && segundosTotales > 0) {
         
         if (segundosTotales <= 0) {
             clearInterval(intervalo);
-            alert('Tu tiempo de reserva ha expirado. Los asientos han sido liberados.');
+            alert('⏰ Estimado cliente:\n\nSu tiempo de reserva ha finalizado. Los asientos han sido liberados automáticamente.\n\nSerá redirigido al inicio para comenzar de nuevo.\n\nGracias por preferirnos.');
             window.location.href = '/';
             return;
         }
@@ -795,6 +795,14 @@ if (elementosContador.length > 0 && segundosTotales > 0) {
         if (segundosTotales <= 120) {
             const wraps = document.querySelectorAll('#contador-wrap, .contador-wrap');
             wraps.forEach(wrap => wrap.classList.add('urgente'));
+            
+            // ⭐ Cambiar el texto cuando queda poco tiempo
+            const timerLabels = document.querySelectorAll('#timer-label');
+            timerLabels.forEach(label => {
+                if (label.textContent !== '🔴 Reserva por finalizar:') {
+                    label.textContent = '🔴 Reserva por finalizar:';
+                }
+            });
         }
     }, 1000);
 }
@@ -906,6 +914,13 @@ intervaloRenovacion = setInterval(renovarReserva, INTERVALO_RENOVACION);
 
 asientos.forEach(asiento => {
     asiento.addEventListener('click', function() {
+        // ⭐ Verificación: si el tiempo ya expiró
+        if (segundosTotales <= 0) {
+            alert('⏰ Tu tiempo de reserva ha expirado.\n\nSerás redirigido al inicio para seleccionar de nuevo.');
+            window.location.href = '/';
+            return;
+        }
+        
         const id = this.dataset.asientoId;
         
         if (seleccionados.has(id)) {

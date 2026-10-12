@@ -18,6 +18,57 @@ from decimal import Decimal
 from .utils import obtener_parametro, liberar_reservas_vencidas, generar_codigo_transaccion, generar_codigo_qr
 
 
+
+
+# ============================================================
+# SEGURIDAD: SESIÓN ÚNICA POR USUARIO-WEB
+# ============================================================
+
+def procesar_login_con_espera(request, user):
+    """
+    Verifica si el usuario-web puede iniciar sesión (sesión única).
+    
+    - Admin/staff: sin restricción
+    - Cliente: solo una sesión activa a la vez.
+      Si hay otra reciente → bloquea.
+      Si ya pasó el tiempo de espera (parámetro 142) → libera.
+    
+    Retorna: (exito: bool, mensaje: str)
+    """
+    from .models import SesionActiva
+    
+    # Admin/staff sin restricción
+    if user.is_staff or user.is_superuser:
+        return True, "OK"
+    
+    # Solo aplica a usuarios con perfil de Cliente
+    cliente = getattr(user, 'cliente', None)
+    if not cliente:
+        return True, "OK"
+    
+    minutos_espera = int(obtener_parametro('142', default=3))
+    
+    sesion_existente = SesionActiva.objects.filter(user=user).first()
+    
+    if sesion_existente:
+        inactividad = timezone.now() - sesion_existente.ultima_actividad
+        if inactividad < timedelta(minutes=minutos_espera):
+            minutos_restantes = minutos_espera - int(inactividad.total_seconds() / 60)
+            if minutos_restantes < 1:
+                minutos_restantes = 1
+            return False, (
+                f"Estimado cliente: su cuenta se encuentra activa en otro dispositivo. "
+                f"Por su seguridad, aguarde {minutos_restantes} minuto(s) antes de intentar nuevamente, "
+                f"o solicite un código de desbloqueo por correo electrónico. "
+                f"Gracias por su comprensión."
+            )
+        else:
+            # Sesión abandonada → liberar
+            sesion_existente.delete()
+    
+    return True, "OK"
+
+
 # ============================================================
 # FUNCIÓN AUXILIAR DE SEGURIDAD
 # ============================================================
@@ -385,12 +436,46 @@ def login_view(request):
             
             user = authenticate(request, username=username, password=password)
             if user is not None:
+                # ⭐ Verificar sesión única ANTES de hacer login
+                exito, mensaje = procesar_login_con_espera(request, user)
+                
+                if not exito:
+                    messages.warning(request, mensaje)
+                    return render(request, 'login.html', {
+                        'form': form,
+                        'mostrar_desbloqueo': True,
+                        'username_bloqueado': username,
+                    })
+                
+                # Login normal
                 auth_login(request, user)
-                messages.success(request, f"¡Bienvenido de nuevo, {user.first_name or user.username}!")
+                
+                # ⭐ Registrar sesión activa (solo cliente, no admin/staff)
+                from .models import SesionActiva
+                if not (user.is_staff or user.is_superuser) and getattr(user, 'cliente', None):
+                    SesionActiva.objects.update_or_create(
+                        user=user,
+                        defaults={
+                            'session_key': request.session.session_key,
+                            'ip_address': request.META.get('REMOTE_ADDR'),
+                            'user_agent': request.META.get('HTTP_USER_AGENT', '')[:250],
+                            'ultima_actividad': timezone.now(),
+                        }
+                    )
+                nombre = user.first_name or user.username
+                messages.success(
+                    request,
+                    f"Estimado cliente {nombre}: bienvenido nuevamente. "
+                    f"Es un gusto tenerlo de vuelta."
+                )
                 next_url = request.POST.get('next') or request.GET.get('next') or 'core:perfil'
                 return redirect(next_url)
             else:
-                messages.error(request, "Usuario o contraseña incorrectos.")
+                messages.error(
+                    request,
+                    "Estimado cliente: los datos ingresados no coinciden con nuestros registros. "
+                    "Por favor, verifique su usuario y contraseña e intente nuevamente."
+                )
     else:
         form = LoginForm()
     
@@ -428,11 +513,17 @@ def logout_view(request):
                 )
     
     # Limpiar la lista de seleccionados de la sesión
+        from .models import SesionActiva
+        SesionActiva.objects.filter(user=request.user).delete()
     request.session.pop('asientos_seleccionados', None)
     request.session.pop('reserva_inicio', None)
     
     auth_logout(request)
-    messages.info(request, "Has cerrado sesión correctamente.")
+    messages.info(
+        request,
+        "Estimado cliente: su sesión ha finalizado correctamente. "
+        "Gracias por preferirnos."
+    )
     return redirect('core:inicio')
 
 
@@ -1169,7 +1260,11 @@ def registro_usuario(request):
             
             # 3. Autenticar y redirigir al usuario inmediatamente
             login(request, user)
-            messages.success(request, f"¡Bienvenido a Viba-Web, {first_name}! Tu cuenta ha sido creada con éxito.")
+            messages.success(
+                request,
+                f"Estimado cliente {first_name}: su cuenta ha sido creada exitosamente. "
+                f"Te damos la más cordial bienvenida."
+            )
             next_url = request.POST.get('next') or request.GET.get('next') or 'core:inicio'
             return redirect(next_url)
     else:
