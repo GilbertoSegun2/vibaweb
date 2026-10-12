@@ -40,7 +40,8 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'django.contrib.humanize',   # ⭐ NUEVO: para intcomma y otros filtros
+    'django.contrib.humanize',
+    'pwa',
     'core',
 ]
 
@@ -228,3 +229,42 @@ else:
 # VISTA PERSONALIZADA DE ERROR CSRF
 # ============================================================
 CSRF_FAILURE_VIEW = 'core.views.mi_vista_error_csrf'
+
+
+
+# ============================================================
+# CONFIGURACIÓN DE PWA (Progressive Web App)
+# ============================================================
+PWA_APP_NAME = 'Viba-Web'
+PWA_APP_DESCRIPTION = "Venta Integrada de Boletos Automatizada-Web"
+PWA_APP_THEME_COLOR = '#003366'
+PWA_APP_BACKGROUND_COLOR = '#ffffff'
+PWA_APP_DISPLAY = 'standalone'
+PWA_APP_SCOPE = '/'
+PWA_APP_ORIENTATION = 'portrait'
+PWA_APP_START_URL = '/'
+PWA_APP_STATUS_BAR_COLOR = 'default'
+PWA_APP_DIR = 'ltr'
+PWA_APP_LANG = 'es-VE'
+
+# Íconos - se crean en static/img/pwa/
+PWA_APP_ICONS = [
+    {
+        'src': '/static/img/pwa/icon-192x192.png',
+        'sizes': '192x192',
+        'type': 'image/png'
+    },
+    {
+        'src': '/static/img/pwa/icon-512x512.png',
+        'sizes': '512x512',
+        'type': 'image/png'
+    },
+]
+
+PWA_APP_ICONS_APPLE = [
+    {
+        'src': '/static/img/pwa/icon-192x192.png',
+        'sizes': '192x192',
+        'type': 'image/png'
+    },
+]
