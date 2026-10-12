@@ -9,9 +9,9 @@
        MAPA DEL BUS - CONTENEDOR PRINCIPAL
        ============================================= */
     .mapa-bus {
-        max-width: 420px;
+        max-width: 290px;              /* ⭐ Reducido de 360 → 290 */
         margin: 0 auto;
-        background: 
+        background:
             linear-gradient(90deg,
                 #d9d9d9 0%,
                 #ffffff 4%,
@@ -19,29 +19,13 @@
                 #d9d9d9 100%);
         border: 3px solid #003366;
         border-radius: 16px;
-        padding: 12px;
+        padding: 10px;                  /* ⭐ 12 → 10 */
         position: relative;
-        box-shadow: 
+        box-shadow:
             0 8px 20px rgba(0, 51, 102, 0.15),
             inset 0 0 0 4px #ffffff,
             inset 0 0 0 6px #e7f0f7;
     }
-
-    /* Ruedas decorativas laterales del bus */
-    .mapa-bus::before,
-    .mapa-bus::after {
-        content: "";
-        position: absolute;
-        width: 12px;
-        height: 55px;
-        background: #1a1a1a;
-        border-radius: 6px;
-        top: 50%;
-        transform: translateY(-50%);
-        box-shadow: inset 0 0 4px rgba(255, 255, 255, 0.3);
-    }
-    .mapa-bus::before { left: -7px; }
-    .mapa-bus::after  { right: -7px; }
 
     /* =============================================
        FRENTE DEL BUS (conductor a la izquierda)
@@ -90,17 +74,14 @@
         75%  { transform: rotate(-15deg); }
         100% { transform: rotate(0deg); }
     }
-
+    
     .bus-frente__label {
         flex: 1;
         text-align: center;
-        font-size: 0.95rem;
+        font-size: 0.85rem;
         letter-spacing: 1.5px;
         color: #003366;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 6px;
+        font-weight: bold;
     }
 
     .bus-frente__espejo {
@@ -183,11 +164,11 @@
        ============================================= */
     .fila-asientos {
         display: flex;
-        justify-content: center;
-        gap: 6px;
+        justify-content: space-between;
+        gap: 4px;
         margin-bottom: 6px;
+        padding: 0;
     }
-
     .asiento {
         width: 42px;
         height: 42px;
@@ -276,8 +257,8 @@
     }
 
     .pasillo {
-        width: 25px;
-        min-width: 25px;
+        width: 20px;
+        min-width: 20px;
     }
 
     /* =============================================
@@ -286,10 +267,23 @@
     .leyenda {
         display: flex;
         flex-wrap: wrap;
-        gap: 12px;
+        gap: 10px;
         justify-content: center;
         font-size: 0.8rem;
-        margin-top: 15px;
+    }
+
+    /* Leyenda: ancho según dispositivo */
+    .leyenda-card {
+        max-width: 340px;      /* Móvil/tablet: ancho del bus */
+        margin-left: auto;
+        margin-right: auto;
+    }
+
+    /* Desktop/laptop: tarjeta más ancha, items en 1 fila */
+    @media (min-width: 992px) {
+        .leyenda-card {
+            max-width: 760px;
+        }
     }
 
     .leyenda-item {
@@ -299,7 +293,7 @@
     }
 
     .leyenda-cuadro {
-        width: 18px;
+        width: 16px;
         height: 18px;
         border-radius: 4px;
         border: 2px solid #adb5bd;
@@ -392,7 +386,6 @@
 {% block contador_flotante %}
 <!-- Contador flotante -->
 <div class="contador-flotante" id="contador-wrap">
-    <i class="bi bi-clock-history"></i>
     <span class="etiqueta">Tiempo restante:</span>
     <span id="contador" class="tiempo">--:--</span>
 </div>
@@ -609,12 +602,7 @@
                     </svg>
                 </span>
                 <span class="bus-frente__label">
-                    <i class="bi bi-bus-front-fill"></i>
                     FRENTE DEL BUS
-                    <i class="bi bi-bus-front-fill"></i>
-                </span>
-                <span class="bus-frente__espejo" title="Espejo">
-                    <i class="bi bi-eye-fill"></i>
                 </span>
             </div>
             
@@ -672,33 +660,39 @@
             <div class="bus-trasero">
                 <span class="bus-trasero__luz"></span>
                 <span class="bus-trasero__label">
-                    <i class="bi bi-bus-front-fill"></i>
                     PARTE TRASERA
-                    <i class="bi bi-bus-front-fill"></i>
                 </span>
                 <span class="bus-trasero__luz"></span>
             </div>
-            
-            <div class="leyenda">
-                <div class="leyenda-item">
-                    <div class="leyenda-cuadro" style="background: #d4edda; border-color: #28a745;"></div>
-                    <span>Disponible</span>
-                </div>
-                <div class="leyenda-item">
-                    <div class="leyenda-cuadro" style="background: #ffc107; border-color: #cc9a06;"></div>
-                    <span>Tu selección</span>
-                </div>
-                <div class="leyenda-item">
-                    <div class="leyenda-cuadro" style="background: #fd7e14; border-color: #e8590c;"></div>
-                    <span>Apartado temporal</span>
-                </div>
-                <div class="leyenda-item">
-                    <div class="leyenda-cuadro" style="background: #9b59b6; border-color: #7d3c98;"></div>
-                    <span>En verificación</span>
-                </div>
-                <div class="leyenda-item">
-                    <div class="leyenda-cuadro" style="background: #dc3545; border-color: #a71d2a;"></div>
-                    <span>Vendido</span>
+        </div>
+        
+        <!-- ⭐ LEYENDA - FUERA DEL BUS -->
+        <div class="card shadow-sm mt-3 leyenda-card">
+            <div class="card-body py-2 px-3">
+                <p class="mb-2 text-center small fw-bold" style="color: #003366;">
+                    <i class="bi bi-info-circle"></i> Estados de los asientos
+                </p>
+                <div class="leyenda">
+                    <div class="leyenda-item">
+                        <div class="leyenda-cuadro" style="background: #d4edda; border-color: #28a745;"></div>
+                        <span>Disponible</span>
+                    </div>
+                    <div class="leyenda-item">
+                        <div class="leyenda-cuadro" style="background: #ffc107; border-color: #cc9a06;"></div>
+                        <span>Tu selección</span>
+                    </div>
+                    <div class="leyenda-item">
+                        <div class="leyenda-cuadro" style="background: #fd7e14; border-color: #e8590c;"></div>
+                        <span>Apartado temporal</span>
+                    </div>
+                    <div class="leyenda-item">
+                        <div class="leyenda-cuadro" style="background: #9b59b6; border-color: #7d3c98;"></div>
+                        <span>En verificación</span>
+                    </div>
+                    <div class="leyenda-item">
+                        <div class="leyenda-cuadro" style="background: #dc3545; border-color: #a71d2a;"></div>
+                        <span>Vendido</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -799,8 +793,8 @@ if (elementosContador.length > 0 && segundosTotales > 0) {
             // ⭐ Cambiar el texto cuando queda poco tiempo
             const timerLabels = document.querySelectorAll('#timer-label');
             timerLabels.forEach(label => {
-                if (label.textContent !== '🔴 Reserva por finalizar:') {
-                    label.textContent = '🔴 Reserva por finalizar:';
+                if (label.textContent !== 'Reserva por finalizar:') {
+                    label.textContent = 'Reserva por finalizar:';
                 }
             });
         }
