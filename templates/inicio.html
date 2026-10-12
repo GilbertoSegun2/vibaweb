@@ -16,7 +16,14 @@
 
 <div class="text-center mb-5">
     <h1 class="display-4 fw-bold" style="color: #003366;">
-        <i class="bi bi-bus-front-fill"></i> Bienvenido a Viba-Web
+        {% if navbar_icono|slice:":3" == "bi-" %}
+            <i class="bi {{ navbar_icono }}"></i>
+        {% elif navbar_icono %}
+            <img src="/static/img/iconos/{{ navbar_icono }}" height="60" style="vertical-align: middle;">
+        {% else %}
+            <i class="bi bi-bus-front-fill"></i>
+        {% endif %}
+        Bienvenido a Viba-Web
     </h1>
     <p class="lead">Compra tus boletos de autobús de forma rápida y segura</p>
 </div>
