@@ -21,4 +21,5 @@ urlpatterns = [
     path('viajes/<int:viaje_id>/pasarela-virtual/', views.pasarela_virtual_view, name='pasarela_virtual'),
     path('confirmacion/<int:transaccion_id>/', views.confirmacion, name='confirmacion'),
     path('mis-boletos/', views.mis_boletos, name='mis_boletos'),
+    path('api/session-check/', views.session_check, name='session_check'),
 ]

@@ -23,7 +23,9 @@
 </head>
 <body>
     
-    <!-- Menú de navegación -->
+    <!-- ============================================================ -->
+    <!-- MENÚ DE NAVEGACIÓN                                            -->
+    <!-- ============================================================ -->
     <nav class="navbar navbar-expand-lg navbar-dark" style="background: linear-gradient(90deg, {{ navbar_color_1 }}, {{ navbar_color_2 }});">
         <div class="container">
             <a class="navbar-brand fw-bold" href="/">
@@ -43,10 +45,11 @@
                 <ul class="navbar-nav ms-auto">
                     <li class="nav-item"><a class="nav-link" href="/">Inicio</a></li>
                     <li class="nav-item"><a class="nav-link" href="/viajes/">Comprar Boletos</a></li>
-                    <!--Botón para instalar la PWA -->
+                    
+                    <!-- Botón para instalar la PWA (oculto hasta que el navegador lo permita) -->
                     <li class="nav-item d-none" id="btn-instalar-pwa-li">
-                        <a class="nav-link" href="#" id="btn-instalar-pwa" style="color: #FFD700;">
-                            <i class="bi bi-download"></i> Instalar App
+                        <a class="nav-link" href="#" id="btn-instalar-pwa" style="color: #d6e6cf;">
+                            <i class="bi bi-download"></i> Descargar app
                         </a>
                     </li>
                     
@@ -77,7 +80,9 @@
         </div>
     </nav>
     
-    <!-- Contador flotante global -->
+    <!-- ============================================================ -->
+    <!-- CONTADOR FLOTANTE GLOBAL                                      -->
+    <!-- ============================================================ -->
     {% if expiracion_iso %}
     <div id="timer-box" class="position-fixed shadow rounded bg-dark px-2 py-1 border border-warning"
          style="top: 105px; left: 15px; z-index: 1050; font-size: 0.75rem;">
@@ -89,7 +94,9 @@
     </div>
     {% endif %}
     
-    <!-- Contenido principal -->
+    <!-- ============================================================ -->
+    <!-- CONTENIDO PRINCIPAL                                           -->
+    <!-- ============================================================ -->
     <main class="container my-4">
         
         <!-- MENSAJES DE DJANGO -->
@@ -115,18 +122,26 @@
         {% endblock %}
     </main>
     
-    <!-- Pie de página -->
+    <!-- ============================================================ -->
+    <!-- PIE DE PÁGINA                                                 -->
+    <!-- ============================================================ -->
     <footer class="text-center text-muted py-3 mt-5 border-top">
         <div class="container">
             <small>© 2026 Viba-Web - Venta Integrada de Boletos Automatizada-Web</small>
         </div>
     </footer>
     
+    <!-- ============================================================ -->
+    <!-- SCRIPTS                                                        -->
+    <!-- ============================================================ -->
+    
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     
+    <!-- ⭐ CONTADOR DE TIEMPO DE RESERVA (solo si aplica) -->
     {% if expiracion_iso %}
     <script>
+    (function() {
         const expirationTime = new Date("{{ expiracion_iso }}").getTime();
         const timerBox = document.getElementById("timer-box");
         const contadorEl = document.getElementById("contador-global");
@@ -172,10 +187,11 @@
 
         const timerInterval = setInterval(actualizarContador, 1000);
         actualizarContador();
+    })();
     </script>
     {% endif %}
     
-    <!-- Función global para mostrar/ocultar contraseñas -->
+    <!-- ⭐ FUNCIÓN GLOBAL: MOSTRAR/OCULTAR CONTRASEÑA (ojito) -->
     <script>
     function togglePassword(btn) {
         const input = btn.previousElementSibling;
@@ -190,7 +206,77 @@
         }
     }
     </script>
-    <!-- PWA: Manejo del botón "Instalar App" -->
+    
+    <!-- ⭐ SEGURIDAD: VERIFICAR SESIÓN + LOGOUT SEGURO -->
+    <script>
+    (function() {
+        // ------------------------------------------------------------
+        // 1. Verificar sesión cuando el navegador muestra una página
+        //    cacheada (botón atrás)
+        // ------------------------------------------------------------
+        window.addEventListener('pageshow', function(event) {
+            // ⭐ Solo verificar sesión si estamos en una página PROTEGIDA
+            // (las páginas públicas como inicio, login, registro, búsqueda
+            //  no requieren autenticación y no deben redirigir)
+            const rutasProtegidas = [
+                '/perfil/',
+                '/mis-boletos/',
+                '/pasajeros/',
+                '/pago/',
+                '/pasarela-virtual/',
+                '/seleccionar-pago/',
+                '/confirmacion/',
+            ];
+            
+            const path = window.location.pathname;
+            const esRutaProtegida = rutasProtegidas.some(function(ruta) {
+                return path.indexOf(ruta) === 0;
+            });
+            
+            // Solo verificar si estamos en una ruta protegida
+            if (!esRutaProtegida) {
+                return;
+            }
+            
+            // Consultar al servidor si seguimos autenticados
+            fetch('/api/session-check/', {
+                method: 'GET',
+                credentials: 'same-origin',
+                cache: 'no-store'
+            }).then(function(response) {
+                // Si el servidor dice "no autenticado" → ir al login
+                if (response.status === 401) {
+                    window.location.href = '/login/?next=' + encodeURIComponent(path);
+                }
+            }).catch(function() {
+                // Si falla la red (offline) → no hacer nada
+            });
+        });
+        
+        // ------------------------------------------------------------
+        // 2. Logout seguro: limpiar historial al hacer clic en "Salir"
+        // ------------------------------------------------------------
+        const linksLogout = document.querySelectorAll('a[href="/logout/"]');
+        linksLogout.forEach(function(link) {
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                
+                // Reemplazar el estado actual por el inicio
+                // Así el botón "Atrás" no muestra las páginas anteriores
+                try {
+                    window.history.replaceState(null, '', '/');
+                } catch(err) {
+                    console.warn('history.replaceState no soportado:', err);
+                }
+                
+                // Navegar al logout
+                window.location.href = '/logout/';
+            });
+        });
+    })();
+    </script>
+    
+    <!-- ⭐ PWA: BOTÓN "DESCARGAR APP" -->
     <script>
     (function() {
         let promptDiferido = null;

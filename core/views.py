@@ -118,6 +118,9 @@ def inicio(request):
     # Resetear el tiempo de reserva al volver al inicio
     request.session.pop('reserva_inicio', None)
     
+    # ⭐ Detectar si venimos de un logout reciente
+    logout_reciente = request.session.pop('logout_reciente', False)
+    
     # Liberar los asientos que el cliente tenía reservados (por si acaso)
     cliente = None
     if request.user.is_authenticated:
@@ -147,11 +150,11 @@ def inicio(request):
                 reservado_hasta=None,
                 reservado_por=None
             )
-    
     oficinas = Oficina.objects.filter(activa=True).order_by('nombre')
     return render(request, 'inicio.html', {
         'oficinas': oficinas,
-    })
+        'logout_reciente': logout_reciente,
+    })    
 
 
 def buscar_viajes(request):
@@ -524,7 +527,13 @@ def logout_view(request):
         "Estimado cliente: su sesión ha finalizado correctamente. "
         "Gracias por preferirnos."
     )
-    return redirect('core:inicio')
+
+    # Marcar la sesión con un flag para bloquear el botón atrás
+    # El JavaScript en inicio.html leerá esto
+    request.session['logout_reciente'] = True
+    response = redirect('core:inicio')
+    response.status_code = 303
+    return response
 
 
 @login_required
@@ -1585,3 +1594,22 @@ def mis_boletos(request):
         'cliente': cliente,
         'transacciones_con_boletos': transacciones_con_boletos,
     })
+
+
+# ============================================================
+# API: Verificar estado de sesión
+# ============================================================
+
+def session_check(request):
+    """
+    Endpoint ligero que devuelve:
+    - 200 + {"authenticated": true} si el usuario está logueado
+    - 401 + {"authenticated": false} si no lo está
+    
+    El JS del navegador lo consulta para detectar si la sesión
+    se cerró mientras el usuario navega o al usar el botón atrás.
+    """
+    from django.http import JsonResponse
+    return JsonResponse({
+        'authenticated': request.user.is_authenticated
+    }, status=200 if request.user.is_authenticated else 401)

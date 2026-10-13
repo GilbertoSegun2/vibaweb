@@ -7,34 +7,36 @@ class SessionTimeoutMiddleware:
     
     - Si el parámetro es 0: la sesión muere al cerrar el navegador.
     - Si es mayor a 0: la sesión muere tras N minutos de inactividad.
-    - Cada clic del usuario renueva el reloj (SESSION_SAVE_EVERY_REQUEST).
     """
     
     def __init__(self, get_response):
         self.get_response = get_response
     
     def __call__(self, request):
+        # ⭐ EXCLUIR rutas de autenticación
+        # El login/logout cambian el sessionid durante la petición,
+        # y modificar la sesión aquí rompe el guardado.
+        rutas_excluidas = ['/login/', '/logout/', '/registro/']
+        if any(request.path.startswith(ruta) for ruta in rutas_excluidas):
+            return self.get_response(request)
+        
         if request.user.is_authenticated:
             try:
                 minutos = int(obtener_parametro('140', default=120))
             except (ValueError, TypeError):
-                minutos = 120  # fallback seguro
+                minutos = 120
             
             if minutos <= 0:
-                request.session.set_expiry(0)  # muere al cerrar navegador
+                request.session.set_expiry(0)
             else:
-                request.session.set_expiry(minutos * 60)  # muere tras N min
+                request.session.set_expiry(minutos * 60)
         
         return self.get_response(request)
-
 
 
 class SesionUnicaMiddleware:
     """
     Garantiza que cada usuario-web tenga solo una sesión activa.
-    
-    Si el usuario abre sesión en otro dispositivo, la sesión antigua
-    se cierra automáticamente con un mensaje al usuario.
     
     Exento: admin/staff (pueden tener múltiples sesiones)
     """
@@ -43,6 +45,11 @@ class SesionUnicaMiddleware:
         self.get_response = get_response
     
     def __call__(self, request):
+        # ⭐ EXCLUIR rutas que manejan su propia sesión
+        rutas_excluidas = ['/login/', '/logout/', '/registro/', '/admin/']
+        if any(request.path.startswith(ruta) for ruta in rutas_excluidas):
+            return self.get_response(request)
+        
         if request.user.is_authenticated:
             user = request.user
             
@@ -73,17 +80,42 @@ class SesionUnicaMiddleware:
                         request,
                         "Estimado cliente: su cuenta fue abierta en otro dispositivo. "
                         "Por seguridad, esta sesión ha sido cerrada automáticamente. "
-                        "Si no reconoce esta acción, por favor contactenos."
+                        "Si no reconoce esta acción, por favor contacte a la empresa."
                     )
                     return redirect('core:login')
                 
-                # Actualizar última actividad (sin reescribir todo el objeto)
+                # Actualizar última actividad
                 if sesion:
                     SesionActiva.objects.filter(pk=sesion.pk).update(
                         ultima_actividad=timezone.now()
                     )
             except Exception:
-                # Si algo falla, no bloquear la navegación
                 pass
         
         return self.get_response(request)
+
+
+class NoCacheMiddleware:
+    """
+    Agrega headers anti-caché a todas las páginas HTML.
+    
+    Esto evita que el navegador (especialmente en celulares)
+    guarde las páginas en caché y las muestre al dar "Atrás"
+    después de cerrar sesión.
+    """
+    
+    def __init__(self, get_response):
+        self.get_response = get_response
+    
+    def __call__(self, request):
+        response = self.get_response(request)
+        
+        # Solo agregar headers a páginas HTML
+        content_type = response.get('Content-Type', '')
+        if 'text/html' in content_type:
+            response['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
+            response['Pragma'] = 'no-cache'
+            response['Expires'] = '0'
+        
+        return response
+        

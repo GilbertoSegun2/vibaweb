@@ -129,4 +129,22 @@
         }
     });
 </script>
+
+{% if logout_reciente %}
+<!-- Bloquear botón atrás después de logout -->
+<script>
+(function() {
+    // Solo se ejecuta si venimos de un logout reciente
+    if (window.history && window.history.pushState) {
+        // Reemplazar el estado actual (no permite volver atrás)
+        window.history.pushState(null, null, window.location.href);
+        
+        // Cada vez que el usuario intenta volver atrás, empujarlo hacia adelante
+        window.addEventListener('popstate', function() {
+            window.history.pushState(null, null, window.location.href);
+        });
+    }
+})();
+</script>
+{% endif %}
 {% endblock %}
