@@ -151,10 +151,17 @@ def inicio(request):
                 reservado_por=None
             )
     oficinas = Oficina.objects.filter(activa=True).order_by('nombre')
+    
+    # ⭐ Leer parámetros para personalizar la pantalla de inicio
+    bienvenida_titulo = obtener_parametro('160', default='Bienvenido a Viba-Web')
+    bienvenida_subtitulo = obtener_parametro('161', default='Compra tus boletos de autobús de forma rápida y segura')
+    
     return render(request, 'inicio.html', {
         'oficinas': oficinas,
         'logout_reciente': logout_reciente,
-    })    
+        'bienvenida_titulo': bienvenida_titulo,
+        'bienvenida_subtitulo': bienvenida_subtitulo,
+    }) 
 
 
 def buscar_viajes(request):
@@ -1613,3 +1620,36 @@ def session_check(request):
     return JsonResponse({
         'authenticated': request.user.is_authenticated
     }, status=200 if request.user.is_authenticated else 401)
+
+def ayuda(request):
+    """
+    Página de Ayuda - Estilo Banesco
+    Lee datos de contacto desde parámetros (1-5) y (120-124)
+    """
+    from .models import Parametro
+    
+    # Función auxiliar para leer parámetros de texto
+    def ptexto(codigo, default=''):
+        try:
+            p = Parametro.objects.get(codigo=codigo, activo=True)
+            return p.valor_texto or default
+        except Parametro.DoesNotExist:
+            return default
+    
+    # Datos de la empresa (parámetros 1-5)
+    contexto = {
+        'empresa_nombre': ptexto(1, 'Viba-Web'),
+        'empresa_rif': ptexto(2, ''),
+        'empresa_direccion': ptexto(3, ''),
+        'empresa_telefono': ptexto(4, ''),
+        'empresa_email': ptexto(5, ''),
+        
+        # Datos de Pago Móvil (parámetros 120-124)
+        'banco_empresa': ptexto(120, ''),
+        'telefono_pago_movil': ptexto(121, ''),
+        'cedula_pago_movil': ptexto(122, ''),
+        'cuenta_bancaria': ptexto(123, ''),
+        'titular_cuenta': ptexto(124, ''),
+    }
+    
+    return render(request, 'ayuda.html', contexto)

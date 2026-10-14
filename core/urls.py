@@ -22,4 +22,5 @@ urlpatterns = [
     path('confirmacion/<int:transaccion_id>/', views.confirmacion, name='confirmacion'),
     path('mis-boletos/', views.mis_boletos, name='mis_boletos'),
     path('api/session-check/', views.session_check, name='session_check'),
+    path('ayuda/', views.ayuda, name='ayuda'),
 ]

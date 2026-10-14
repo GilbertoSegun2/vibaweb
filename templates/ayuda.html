@@ -1,0 +1,150 @@
+{% extends 'base.html' %}
+
+{% block title %}Ayuda - Viba-Web{% endblock %}
+
+{% block content %}
+
+<div class="container my-4" style="max-width: 720px;">
+
+    <!-- Encabezado -->
+    <div class="d-flex align-items-center mb-4">
+        <a href="{% url 'core:inicio' %}" class="btn btn-outline-secondary btn-sm me-3">
+            <i class="bi bi-arrow-left"></i>
+        </a>
+        <h2 class="mb-0">
+            <i class="bi bi-headset text-primary"></i> Ayuda
+        </h2>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- SECCIÓN: CONTÁCTANOS                                          -->
+    <!-- ============================================================ -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <h4 class="card-title mb-4">
+                <i class="bi bi-telephone text-success"></i> Contáctanos
+            </h4>
+
+            <!-- Número telefónico -->
+            <div class="mb-4">
+                <h6 class="text-muted mb-2">Número telefónico</h6>
+                
+                {% if empresa_telefono %}
+                <p class="mb-2">
+                    <i class="bi bi-telephone-fill text-success me-2"></i>
+                    <a href="tel:{{ empresa_telefono }}" class="text-decoration-none">
+                        {{ empresa_telefono }}
+                    </a>
+                </p>
+                {% endif %}
+                
+                {% if telefono_pago_movil %}
+                <p class="mb-2">
+                    <i class="bi bi-phone-fill text-success me-2"></i>
+                    <a href="tel:{{ telefono_pago_movil }}" class="text-decoration-none">
+                        {{ telefono_pago_movil }}
+                    </a>
+                    <small class="text-muted">(Pago Móvil)</small>
+                </p>
+                {% endif %}
+            </div>
+
+            <!-- Correo electrónico -->
+            <div class="mb-3">
+                <h6 class="text-muted mb-2">Correo electrónico</h6>
+                {% if empresa_email %}
+                <p class="mb-2">
+                    <i class="bi bi-envelope-fill text-primary me-2"></i>
+                    <a href="mailto:{{ empresa_email }}" class="text-decoration-none">
+                        {{ empresa_email }}
+                    </a>
+                </p>
+                {% endif %}
+            </div>
+
+            <!-- Dirección -->
+            {% if empresa_direccion %}
+            <div class="mb-0">
+                <h6 class="text-muted mb-2">Dirección</h6>
+                <p class="mb-0">
+                    <i class="bi bi-geo-alt-fill text-danger me-2"></i>
+                    {{ empresa_direccion }}
+                </p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- SECCIÓN: DATOS BANCARIOS                                      -->
+    <!-- ============================================================ -->
+    {% if banco_empresa %}
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <h4 class="card-title mb-4">
+                <i class="bi bi-bank text-primary"></i> Datos para Pago Móvil
+            </h4>
+
+            <div class="row">
+                <div class="col-sm-6 mb-3">
+                    <small class="text-muted d-block">Banco</small>
+                    <strong>{{ banco_empresa }}</strong>
+                </div>
+                <div class="col-sm-6 mb-3">
+                    <small class="text-muted d-block">Teléfono</small>
+                    <strong>{{ telefono_pago_movil }}</strong>
+                </div>
+                <div class="col-sm-6 mb-3">
+                    <small class="text-muted d-block">Cédula / RIF</small>
+                    <strong>{{ cedula_pago_movil }}</strong>
+                </div>
+                <div class="col-sm-6 mb-3">
+                    <small class="text-muted d-block">Titular</small>
+                    <strong>{{ titular_cuenta }}</strong>
+                </div>
+                <div class="col-12 mb-0">
+                    <small class="text-muted d-block">Cuenta bancaria</small>
+                    <strong>{{ cuenta_bancaria }}</strong>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- ============================================================ -->
+    <!-- SECCIÓN: INFORMACIÓN DE LA APP                                -->
+    <!-- ============================================================ -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <h4 class="card-title mb-4">
+                <i class="bi bi-info-circle text-info"></i> Información de la App
+            </h4>
+
+            <div class="row">
+                <div class="col-sm-6 mb-3">
+                    <small class="text-muted d-block">Nombre</small>
+                    <strong>Viba-Web</strong>
+                </div>
+                <div class="col-sm-6 mb-3">
+                    <small class="text-muted d-block">Versión</small>
+                    <strong>1.0.0</strong>
+                </div>
+                <div class="col-sm-6 mb-3">
+                    <small class="text-muted d-block">Empresa</small>
+                    <strong>{{ empresa_nombre }}</strong>
+                </div>
+                <div class="col-sm-6 mb-3">
+                    <small class="text-muted d-block">RIF</small>
+                    <strong>{{ empresa_rif }}</strong>
+                </div>
+                <div class="col-12 mb-0">
+                    <small class="text-muted d-block">Desarrollado por</small>
+                    <strong>Gilberto Romero</strong>
+                    <small class="text-muted">— 28 años de experiencia</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
