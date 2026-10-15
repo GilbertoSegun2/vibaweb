@@ -161,9 +161,8 @@ def inicio(request):
         'logout_reciente': logout_reciente,
         'bienvenida_titulo': bienvenida_titulo,
         'bienvenida_subtitulo': bienvenida_subtitulo,
-    }) 
-
-
+    })
+    
 def buscar_viajes(request):
     """Busca viajes según origen, destino y fecha"""
     origen_id = request.GET.get('origen')
