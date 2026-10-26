@@ -9,3 +9,4 @@ python-decouple==3.8
 dj-database-url==3.1.2
 gevent==26.9.0
 django-pwa==2.0.1
+python-dateutil==3.0.0
