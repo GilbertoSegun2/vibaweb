@@ -1,0 +1,136 @@
+{% extends 'base.html' %}
+{% block title %}Cobrar - Viba-Web{% endblock %}
+
+{% block content %}
+<div class="container mt-4" style="max-width: 800px;">
+    <h2><i class="bi bi-cash-coin"></i> Cobrar Boletos</h2>
+    <p class="text-muted">Ruta: {{ viaje.ruta.nombre }} | Tramo: {{ parada_origen.oficina.nombre }} a {{ parada_destino.oficina.nombre }}</p>
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <h5 class="card-title">Resumen de la Venta</h5>
+            <p><strong>Asientos:</strong> {{ asientos_seleccionados|join:", " }}</p>
+            <p><strong>Precio por boleto:</strong> ${{ tarifa.monto_usd }} + Seguro ${{ valor_seguro }}</p>
+            <h4 class="text-success">Total a cobrar: ${{ total_usd }} / Bs. {{ total_bs }}</h4>
+        </div>
+    </div>
+
+    <form method="post" action="{% url 'core:taquilla_cobrar' viaje.id %}?destino={{ parada_destino.oficina.id }}">
+        {% csrf_token %}
+        <!-- Campos ocultos para mantener los asientos seleccionados -->
+        {% for asiento in asientos_seleccionados %}
+            <input type="hidden" name="asientos[]" value="{{ asiento }}">
+        {% endfor %}
+        <input type="hidden" name="destino" value="{{ parada_destino.oficina.id }}">
+
+        <div class="card shadow-sm mb-4">
+            <div class="card-body">
+                <h5 class="card-title">Datos del Pasajero</h5>
+                
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Cédula (V-XXXX)</label>
+                        <input type="text" name="cedula" id="cedula" class="form-control" required placeholder="Ej: V-12345678" onblur="buscarPasajero()">
+                        <small class="text-muted" id="mensaje-cedula"></small>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Teléfono</label>
+                        <input type="text" name="telefono" id="telefono" class="form-control" placeholder="0414-1234567">
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Nombre y Apellido</label>
+                    <input type="text" name="nombre" id="nombre" class="form-control" required placeholder="Nombre completo del pasajero">
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Método de Pago</label>
+                    <select name="metodo_pago" class="form-select">
+                        <option value="efectivo_usd">Efectivo USD</option>
+                        <option value="efectivo_bs">Efectivo Bs.</option>
+                        <option value="pago_movil">Pago Móvil</option>
+                        <option value="punto_venta">Punto de Venta</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="d-flex justify-content-between">
+            <a href="{% url 'core:taquilla_mapa' viaje.id %}?destino={{ parada_destino.oficina.id }}" class="btn btn-secondary">Volver al Mapa</a>
+            <button type="submit" class="btn btn-success btn-lg"><i class="bi bi-check-circle"></i> Confirmar y Cobrar</button>
+        </div>
+    </form>
+</div>
+
+<script>
+    // Función para buscar al pasajero por cédula
+    function buscarPasajero() {
+        const cedula = document.getElementById('cedula').value;
+        const mensaje = document.getElementById('mensaje-cedula');
+        const nombreInput = document.getElementById('nombre');
+        const telefonoInput = document.getElementById('telefono');
+
+        if (!cedula) return;
+
+        mensaje.innerHTML = '<span class="text-info">Buscando...</span>';
+
+        // Hacemos una petición al servidor (endpoint que crearemos en el siguiente paso)
+        fetch(`/taquilla/buscar-pasajero/?cedula=${cedula}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.encontrado) {
+                    nombreInput.value = data.nombre;
+                    telefonoInput.value = data.telefono;
+                    mensaje.innerHTML = '<span class="text-success"><i class="bi bi-check-circle"></i> Pasajero encontrado</span>';
+                } else {
+                    mensaje.innerHTML = '<span class="text-warning">Pasajero nuevo, por favor complete los datos.</span>';
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                mensaje.innerHTML = '<span class="text-danger">Error al buscar.</span>';
+            });
+    }
+    
+{% block extra_js %}
+<script>
+    const URL_RENOVAR_RESERVA = "/renovar-reserva/";
+    const VIAJE_ID = "{{ viaje.id }}";
+    const ASIENTOS_IDS = [{% for a in asientos_seleccionados %}"{{ a }}",{% endfor %}];
+    const INTERVALO_RENOVACION = {{ intervalo_renovacion|default:20 }} * 1000;
+    
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+    
+    function renovarReservaTaquilla() {
+        if (ASIENTOS_IDS.length === 0) return;
+        
+        const formData = new FormData();
+        formData.append('viaje_id', VIAJE_ID);
+        ASIENTOS_IDS.forEach(id => formData.append('asientos[]', id));
+        
+        fetch(URL_RENOVAR_RESERVA, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') },
+            body: formData
+        })
+        .then(response => response.json())
+        .catch(error => console.warn('Error al renovar reserva (taquilla):', error));
+    }
+    
+    setInterval(renovarReservaTaquilla, INTERVALO_RENOVACION);
+</script>
+{% endblock %}

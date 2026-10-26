@@ -57,6 +57,7 @@ MIDDLEWARE = [
     'core.middleware.SessionTimeoutMiddleware',
     'core.middleware.SesionUnicaMiddleware',
     'core.middleware.NoCacheMiddleware',
+    'core.middleware.SuscripcionMiddleware',
 ]
 
 ROOT_URLCONF = 'vibaweb_proyecto.urls'

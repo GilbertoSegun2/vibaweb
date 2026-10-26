@@ -1,8 +1,12 @@
 from django.contrib import admin
 from django.db import transaction
 from django.utils.safestring import mark_safe
-from .models import Oficina, Empresa, Parametro, Bus, Tarifa, Ruta, Cliente, Viaje, Asiento, Boleto, Credito, MovimientoAsiento, PlantillaBus, PlantillaAsiento
-
+from .models import (
+    Oficina, Empresa, Parametro, Bus, Tarifa, Ruta, Cliente, 
+    Viaje, Asiento, Boleto, Credito, MovimientoAsiento, 
+    PlantillaBus, PlantillaAsiento, RutaParada, Suscripcion, 
+    Transaccion, Pago, UsuarioEmpresa
+)
 
 
 @admin.register(Oficina)
@@ -75,15 +79,49 @@ class TarifaAdmin(admin.ModelAdmin):
     ordering = ('origen', 'destino')
 
 
+class RutaParadaInline(admin.TabularInline):
+    model = RutaParada
+    extra = 3
+    ordering = ['orden']
+
 @admin.register(Ruta)
 class RutaAdmin(admin.ModelAdmin):
-    list_display = ('nombre', 'origen', 'activa')
-    list_filter = ('activa', 'origen')
-    search_fields = ('nombre', 'origen__codigo', 'origen__nombre')
-    filter_horizontal = ('destinos',)
-    ordering = ('nombre',)
+    # Agregamos el destino final y el recorrido
+    list_display = ('nombre', 'origen', 'destino_final', 'ver_recorrido')
+    search_fields = ('nombre', 'origen__nombre', 'paradas__oficina__nombre')
+    inlines = [RutaParadaInline]
+
+    def destino_final(self, obj):
+        """
+        Devuelve el nombre de la oficina de la última parada.
+        """
+        ultima_parada = obj.paradas.order_by('-orden').first()
+        if ultima_parada:
+            return ultima_parada.oficina.nombre
+        return "⚠️ Sin configurar"
     
-    
+    destino_final.short_description = 'Destino Final'
+    destino_final.admin_order_field = 'paradas__oficina__nombre'
+
+    def ver_recorrido(self, obj):
+        """
+        Muestra el recorrido ordenado de la ruta.
+        Ejemplo: CARACAS → MARACAY → VALENCIA → SAN CRISTÓBAL
+        """
+        paradas = obj.paradas.all().order_by('orden')
+        
+        if not paradas.exists():
+            return "⚠️ Sin paradas configuradas"
+        
+        nombres = [p.oficina.nombre for p in paradas]
+        
+        if nombres[0] != obj.origen.nombre:
+            nombres.insert(0, obj.origen.nombre)
+            
+        return " ➔ ".join(nombres)
+
+    ver_recorrido.short_description = 'Recorrido de la Ruta'
+
 @admin.register(Cliente)
 class ClienteAdmin(admin.ModelAdmin):
     list_display = ('cedula', 'get_nombre_completo', 'telefono', 'whatsapp', 'es_discapacitado', 'es_tercera_edad')
@@ -479,3 +517,30 @@ def actualizar_bcv_view(request):
         'fecha_actualizacion': fecha_actualizacion,
         'resultado': resultado,
     })
+
+from django.contrib import admin, messages
+from .models import Suscripcion
+
+@admin.register(Suscripcion)
+class SuscripcionAdmin(admin.ModelAdmin):
+    list_display = ('empresa', 'fecha_vencimiento', 'dias_para_vencer', 'activa', 'monto_mensual')
+    list_filter = ('activa',)
+    readonly_fields = ('fecha_inicio', 'ultimo_pago', 'dias_para_vencer')
+    actions = ['renovar_suscripcion']
+
+    @admin.action(description='✅ Registrar Pago (Renovar 1 mes)')
+    def renovar_suscripcion(self, request, queryset):
+        for suscripcion in queryset:
+            suscripcion.renovar_mes()
+        self.message_user(request, f"Suscripciones renovadas exitosamente.", level=messages.SUCCESS)
+        
+@admin.register(UsuarioEmpresa)
+class UsuarioEmpresaAdmin(admin.ModelAdmin):
+    list_display = ('cedula', 'get_nombre_completo', 'rol', 'oficina', 'activo')
+    list_filter = ('rol', 'oficina', 'activo')
+    search_fields = ('cedula', 'user__username', 'user__first_name', 'user__last_name')
+    raw_id_fields = ('user',)
+
+    def get_nombre_completo(self, obj):
+        return obj.user.get_full_name() or obj.user.username
+    get_nombre_completo.short_description = 'Nombre'

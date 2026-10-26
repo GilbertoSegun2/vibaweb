@@ -203,3 +203,22 @@ def generar_codigo_qr():
     import uuid
     return uuid.uuid4().hex[:16].upper()
     
+def asiento_esta_disponible_en_tramo(asiento_id, viaje_id, nuevo_orden_origen, nuevo_orden_destino):
+    """
+    Verifica si un asiento está disponible para un tramo específico.
+    Aplica la regla de choque de tramos.
+    """
+    from .models import Boleto
+    
+    # Buscamos si hay algún boleto vendido en este asiento para este viaje
+    # que choque con el tramo que queremos vender.
+    choque = Boleto.objects.filter(
+        viaje_id=viaje_id,
+        asiento_id=asiento_id,
+        estado__in=['vendido', 'pendiente_verificacion'],
+        orden_origen__lt=nuevo_orden_destino,   # El viejo se sube antes de que el nuevo se baje
+        orden_destino__gt=nuevo_orden_origen    # El viejo se baja después de que el nuevo se sube
+    ).exists()
+    
+    return not choque # Si hay choque, devuelve False (Ocupado). Si no, True (Libre).
+    

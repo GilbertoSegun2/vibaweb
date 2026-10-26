@@ -1,0 +1,199 @@
+{% extends 'base.html' %}
+{% block title %}Vender - {{ viaje.ruta.nombre }}{% endblock %}
+
+{% block content %}
+<style>
+    /* Estilos idénticos a la web del cliente */
+    .bus-container {
+        background: #f8f9fa;
+        border: 2px solid #003366;
+        border-radius: 20px;
+        padding: 20px 15px;
+        max-width: 320px;
+        margin: 0 auto;
+        position: relative;
+    }
+    .bus-front {
+        text-align: center;
+        border-bottom: 2px dashed #ccc;
+        padding-bottom: 15px;
+        margin-bottom: 15px;
+    }
+    .fila {
+        display: flex;
+        justify-content: center;
+        gap: 10px;
+        margin-bottom: 8px;
+    }
+    .asiento {
+        width: 36px;
+        height: 36px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.8rem;
+        font-weight: bold;
+        cursor: pointer;
+        user-select: none;
+        border: 1px solid transparent;
+        transition: 0.2s;
+    }
+    .asiento-disponible {
+        background-color: #d4edda;
+        color: #155724;
+        border-color: #c3e6cb;
+    }
+    .asiento-disponible:hover {
+        background-color: #c3e6cb;
+    }
+    .asiento-seleccionado {
+        background-color: #ffc107 !important;
+        color: #000 !important;
+        border-color: #ffc107 !important;
+        transform: scale(1.1);
+    }
+    .asiento-ocupado {
+        background-color: #f8d7da;
+        color: #721c24;
+        border-color: #f5c6cb;
+        cursor: not-allowed;
+    }
+    .asiento-vacio {
+        width: 36px;
+        height: 36px;
+        visibility: hidden;
+    }
+    .pasillo {
+        width: 20px;
+    }
+</style>
+
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2><i class="bi bi-ticket-perforated"></i> Venta de Boletos</h2>
+            <p class="text-muted mb-0">
+                <strong>Ruta:</strong> {{ viaje.ruta.nombre }} | 
+                <strong>Tramo:</strong> {{ parada_origen.oficina.nombre }} a {{ parada_destino.oficina.nombre }}
+            </p>
+        </div>
+        <a href="{% url 'core:taquilla_inicio' %}" class="btn btn-outline-secondary btn-sm">Volver</a>
+    </div>
+
+    <div class="row">
+        <!-- Mapa de Asientos -->
+        <div class="col-md-8 text-center mb-4">
+            <div class="bus-container">
+                <div class="bus-front">
+                    <i class="bi bi-steering-wheel fs-3 text-secondary"></i>
+                    <div class="fw-bold mt-1 text-secondary">FRENTE DEL BUS</div>
+                </div>
+                
+                {% for piso, filas in asientos_por_piso.items %}
+                    <div class="text-center text-muted small mb-2 mt-3">Piso {{ piso }}</div>
+                    
+                    {% for fila, asientos in filas.items %}
+                        <div class="fila">
+                            {% for asiento in asientos %}
+                                {% if forloop.counter == 3 %}
+                                    <div class="pasillo"></div>
+                                {% endif %}
+
+                                {% if asiento.tipo == 'asiento' %}
+                                    <div class="asiento {% if asiento.disponible_para_tramo %}asiento-disponible{% else %}asiento-ocupado{% endif %}" 
+                                         data-id="{{ asiento.id }}"
+                                         data-numero="{{ asiento.numero }}"
+                                         onclick="toggleAsiento(this)">
+                                        {{ asiento.numero }}
+                                    </div>
+                                {% else %}
+                                    <div class="asiento-vacio"></div>
+                                {% endif %}
+                            {% endfor %}
+                        </div>
+                    {% endfor %}
+                {% endfor %}
+                
+                <div class="bus-front mt-3 mb-0" style="border-bottom: none; border-top: 2px dashed #ccc; padding-top: 10px; padding-bottom: 0;">
+                    <div class="fw-bold text-secondary">PARTE TRASERA</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Panel de Venta -->
+        <div class="col-md-4">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title">Tu Venta</h5>
+                    <hr>
+                    <p class="mb-2"><strong>Asientos:</strong> <span id="asientos-lista">Ninguno</span></p>
+                    <p class="mb-2"><strong>Cantidad:</strong> <span id="cantidad">0</span></p>
+                    
+                    <div class="alert alert-success mt-3">
+                        <h6>Total estimado (USD):</h6>
+                        <h4 class="mb-0">$ <span id="total-usd">0.00</span></h4>
+                        <hr class="my-1">
+                        <small>Total en Bs.: <strong>Bs. <span id="total-bs">0.00</span></strong></small>
+                    </div>
+                    <button class="btn btn-success w-100" id="btn-vender" disabled onclick="irACobrar()">
+                        <i class="bi bi-cash-coin"></i> Cobrar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Datos de la tarifa desde el servidor
+    const precioUSD = parseFloat("{{ tarifa.monto_usd }}") || 0;
+    const seguroUSD = parseFloat("{{ valor_seguro }}") || 0;
+    const tasaBCV = parseFloat("{{ tasa_bcv }}") || 0;
+    
+    let asientosSeleccionados = [];
+
+    function toggleAsiento(el) {
+        if (el.classList.contains('asiento-ocupado')) return;
+        const id = el.getAttribute('data-id');
+        const numero = el.getAttribute('data-numero');
+        const index = asientosSeleccionados.findIndex(a => a.id === id);
+
+        if (index > -1) {
+            asientosSeleccionados.splice(index, 1);
+            el.classList.remove('asiento-seleccionado');
+        } else {
+            asientosSeleccionados.push({id: id, numero: numero});
+            el.classList.add('asiento-seleccionado');
+        }
+        actualizarPanel();
+    }
+
+    function actualizarPanel() {
+        const cantidad = asientosSeleccionados.length;
+        const lista = asientosSeleccionados.map(a => a.numero).join(', ');
+        
+        document.getElementById('cantidad').innerText = cantidad;
+        document.getElementById('asientos-lista').innerText = lista || 'Ninguno';
+        
+        const totalUSD = (precioUSD + seguroUSD) * cantidad;
+        const totalBs = totalUSD * tasaBCV;
+        
+        document.getElementById('total-usd').innerText = totalUSD.toFixed(2);
+        document.getElementById('total-bs').innerText = totalBs.toLocaleString('es-VE', {minimumFractionDigits: 2});
+        
+        document.getElementById('btn-vender').disabled = cantidad === 0;
+    }
+
+function irACobrar() {
+    if (asientosSeleccionados.length === 0) return;
+    
+    const url = new URL(window.location.href);
+    url.pathname = url.pathname.replace(/\/$/, '') + '/cobrar/';
+    
+    asientosSeleccionados.forEach(a => url.searchParams.append('asientos[]', a.id));
+    
+    window.location.href = url.toString();
+}
+</script>
+{% endblock %}

@@ -50,7 +50,7 @@
                             <i class="bi bi-question-circle"></i> Ayuda
                         </a>
                     </li>
-                    <!-- Botón para instalar la PWA (oculto hasta que el navegador lo permita) -->
+                    <!-- Botón para instalar la PWA -->
                     <li class="nav-item d-none" id="btn-instalar-pwa-li">
                         <a class="nav-link" href="#" id="btn-instalar-pwa" style="color: #d6e6cf;">
                             <i class="bi bi-download"></i> Descargar app
@@ -142,6 +142,13 @@
                     <i class="bi bi-shield-check"></i> Sitio protegido - Viba-Web
                 </small>
             </div>
+            <div class="mt-2">
+                <small>
+                    <a href="{% url 'core:login' %}?next=/taquilla/" class="text-muted text-decoration-none">
+                        <i class="bi bi-shield-lock"></i> Acceso Taquilla
+                    </a>
+                </small>
+            </div>
         </div>
     </footer>
     
@@ -152,7 +159,7 @@
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     
-    <!-- ⭐ CONTADOR DE TIEMPO DE RESERVA (solo si aplica) -->
+    <!-- ⭐ CONTADOR DE TIEMPO DE RESERVA -->
     {% if expiracion_iso %}
     <script>
     (function() {
@@ -224,66 +231,23 @@
     <!-- ⭐ SEGURIDAD: VERIFICAR SESIÓN + LOGOUT SEGURO -->
     <script>
     (function() {
-        // ------------------------------------------------------------
-        // 1. Verificar sesión cuando el navegador muestra una página
-        //    cacheada (botón atrás)
-        // ------------------------------------------------------------
         window.addEventListener('pageshow', function(event) {
-            // ⭐ Solo verificar sesión si estamos en una página PROTEGIDA
-            // (las páginas públicas como inicio, login, registro, búsqueda
-            //  no requieren autenticación y no deben redirigir)
-            const rutasProtegidas = [
-                '/perfil/',
-                '/mis-boletos/',
-                '/pasajeros/',
-                '/pago/',
-                '/pasarela-virtual/',
-                '/seleccionar-pago/',
-                '/confirmacion/',
-            ];
-            
+            const rutasProtegidas = ['/perfil/', '/mis-boletos/', '/pasajeros/', '/pago/', '/pasarela-virtual/', '/seleccionar-pago/', '/confirmacion/'];
             const path = window.location.pathname;
-            const esRutaProtegida = rutasProtegidas.some(function(ruta) {
-                return path.indexOf(ruta) === 0;
-            });
-            
-            // Solo verificar si estamos en una ruta protegida
-            if (!esRutaProtegida) {
-                return;
-            }
-            
-            // Consultar al servidor si seguimos autenticados
-            fetch('/api/session-check/', {
-                method: 'GET',
-                credentials: 'same-origin',
-                cache: 'no-store'
-            }).then(function(response) {
-                // Si el servidor dice "no autenticado" → ir al login
+            const esRutaProtegida = rutasProtegidas.some(function(ruta) { return path.indexOf(ruta) === 0; });
+            if (!esRutaProtegida) return;
+            fetch('/api/session-check/', { method: 'GET', credentials: 'same-origin', cache: 'no-store' }).then(function(response) {
                 if (response.status === 401) {
                     window.location.href = '/login/?next=' + encodeURIComponent(path);
                 }
-            }).catch(function() {
-                // Si falla la red (offline) → no hacer nada
-            });
+            }).catch(function() {});
         });
         
-        // ------------------------------------------------------------
-        // 2. Logout seguro: limpiar historial al hacer clic en "Salir"
-        // ------------------------------------------------------------
         const linksLogout = document.querySelectorAll('a[href="/logout/"]');
         linksLogout.forEach(function(link) {
             link.addEventListener('click', function(e) {
                 e.preventDefault();
-                
-                // Reemplazar el estado actual por el inicio
-                // Así el botón "Atrás" no muestra las páginas anteriores
-                try {
-                    window.history.replaceState(null, '', '/');
-                } catch(err) {
-                    console.warn('history.replaceState no soportado:', err);
-                }
-                
-                // Navegar al logout
+                try { window.history.replaceState(null, '', '/'); } catch(err) {}
                 window.location.href = '/logout/';
             });
         });
@@ -298,41 +262,26 @@
         const boton = document.getElementById('btn-instalar-pwa');
         const esIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
 
-        // 1. El navegador dispara este evento cuando la app es instalable (Android)
         window.addEventListener('beforeinstallprompt', function(e) {
             e.preventDefault();
             promptDiferido = e;
             if (botonLi) botonLi.classList.remove('d-none');
         });
 
-        // 2. Cuando el cliente hace clic en el botón
         if (boton) {
             boton.addEventListener('click', function(e) {
                 e.preventDefault();
-                
-                // Caso especial: iPhone (Safari no soporta el prompt)
                 if (esIOS) {
-                    alert(
-                        '📱 Para instalar Viba-Web en su iPhone:\n\n' +
-                        '1. Toque el botón "Compartir" (cuadrado con flecha)\n' +
-                        '2. Desplácese y elija "Añadir a pantalla de inicio"\n' +
-                        '3. Toque "Añadir"\n\n' +
-                        '¡Listo! Tendrá Viba-Web como una app.'
-                    );
+                    alert('📱 Para instalar Viba-Web en su iPhone:\n\n1. Toque "Compartir"\n2. Elija "Añadir a pantalla de inicio"\n3. Toque "Añadir"');
                     return;
                 }
-                
-                // Android/Chrome: usar el prompt nativo
                 if (!promptDiferido) {
-                    alert('Para instalar la aplicación, abra el menú del navegador y seleccione "Instalar aplicación" o "Añadir a pantalla de inicio".');
+                    alert('Para instalar la app, abra el menú del navegador y seleccione "Instalar aplicación".');
                     return;
                 }
-                
                 promptDiferido.prompt();
-                
                 promptDiferido.userChoice.then(function(choiceResult) {
                     if (choiceResult.outcome === 'accepted') {
-                        console.log('Viba-Web instalada por el usuario');
                         if (botonLi) botonLi.classList.add('d-none');
                     }
                     promptDiferido = null;
@@ -340,60 +289,29 @@
             });
         }
 
-        // 3. Si la app YA está instalada, ocultar el botón
         window.addEventListener('appinstalled', function() {
             if (botonLi) botonLi.classList.add('d-none');
         });
 
-        // 4. En iPhone, mostrar el botón siempre (con instrucciones manuales)
-        if (esIOS && botonLi) {
-            botonLi.classList.remove('d-none');
-        }
+        if (esIOS && botonLi) botonLi.classList.remove('d-none');
     })();
     </script>
     
     <!-- ⭐ VERIFICADOR DE CONEXIÓN A INTERNET -->
     <script>
     (function() {
-        // Crear el aviso flotante (oculto por defecto)
         const avisoOffline = document.createElement('div');
         avisoOffline.id = 'aviso-offline';
-        avisoOffline.innerHTML = 
-            '<i class="bi bi-wifi-off"></i> ' +
-            '<strong>Sin conexión a internet.</strong> ' +
-            'Verifica tu conexión e intenta de nuevo.';
-        avisoOffline.style.cssText = `
-            position: fixed;
-            top: 60px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: #dc3545;
-            color: white;
-            padding: 10px 20px;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-            z-index: 9999;
-            font-size: 0.9rem;
-            display: none;
-            text-align: center;
-            max-width: 90%;
-        `;
+        avisoOffline.innerHTML = '<i class="bi bi-wifi-off"></i> <strong>Sin conexión a internet.</strong> Verifica tu conexión.';
+        avisoOffline.style.cssText = `position: fixed; top: 60px; left: 50%; transform: translateX(-50%); background: #dc3545; color: white; padding: 10px 20px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 9999; font-size: 0.9rem; display: none; text-align: center; max-width: 90%;`;
         document.body.appendChild(avisoOffline);
 
-        // Función para mostrar/ocultar el aviso
         function actualizarEstado() {
-            if (navigator.onLine) {
-                avisoOffline.style.display = 'none';
-            } else {
-                avisoOffline.style.display = 'block';
-            }
+            avisoOffline.style.display = navigator.onLine ? 'none' : 'block';
         }
 
-        // Escuchar los eventos del navegador (no consume recursos)
         window.addEventListener('online', actualizarEstado);
         window.addEventListener('offline', actualizarEstado);
-
-        // Verificar al cargar la página
         actualizarEstado();
     })();
     </script>

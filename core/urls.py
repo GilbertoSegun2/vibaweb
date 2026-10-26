@@ -22,5 +22,8 @@ urlpatterns = [
     path('confirmacion/<int:transaccion_id>/', views.confirmacion, name='confirmacion'),
     path('mis-boletos/', views.mis_boletos, name='mis_boletos'),
     path('api/session-check/', views.session_check, name='session_check'),
+    path('taquilla/', views.taquilla_inicio, name='taquilla_inicio'),
+    path('taquilla/viaje/<int:viaje_id>/', views.taquilla_mapa, name='taquilla_mapa'),
     path('ayuda/', views.ayuda, name='ayuda'),
+    path('taquilla/viaje/<int:viaje_id>/cobrar/', views.taquilla_cobrar, name='taquilla_cobrar'),
 ]

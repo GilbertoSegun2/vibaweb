@@ -288,7 +288,7 @@ class Asiento(models.Model):
     estado = models.CharField(max_length=30, choices=ESTADOS, default='disponible', verbose_name="Estado")
     reservado_hasta = models.DateTimeField(null=True, blank=True, verbose_name="Reservado hasta")
     reservado_por = models.ForeignKey(
-        'Cliente',
+        'auth.User',
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
@@ -408,6 +408,15 @@ class Boleto(models.Model):
     )
     viaje = models.ForeignKey(Viaje, on_delete=models.PROTECT, related_name='boletos', verbose_name="Viaje")
     asiento = models.ForeignKey(Asiento, on_delete=models.PROTECT, verbose_name="Asiento")
+    
+    orden_origen = models.PositiveIntegerField(
+        null=True, blank=True, 
+        help_text="Orden de la parada donde se sube el pasajero"
+    )
+    orden_destino = models.PositiveIntegerField(
+        null=True, blank=True, 
+        help_text="Orden de la parada donde se baja el pasajero"
+    )
     
     # Datos del pasajero (desnormalizados para histórico)
     pasajero_cedula = models.CharField(max_length=20, db_index=True, verbose_name="Cédula del pasajero")
@@ -684,3 +693,93 @@ class SesionActiva(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - {self.session_key[:10]}..."
+        
+from dateutil.relativedelta import relativedelta
+
+class Suscripcion(models.Model):
+    """
+    Controla el pago mensual (prepago) de la empresa.
+    """
+    empresa = models.OneToOneField(Empresa, on_delete=models.CASCADE, related_name='suscripcion')
+    fecha_inicio = models.DateField(auto_now_add=True, help_text="Fecha en que comenzó el servicio")
+    fecha_vencimiento = models.DateField(help_text="Fecha en que se debe renovar el pago")
+    activa = models.BooleanField(default=True, help_text="Si se desmarca, el sistema se apaga de inmediato")
+    ultimo_pago = models.DateField(null=True, blank=True)
+    monto_mensual = models.DecimalField(max_digits=10, decimal_places=2, default=30.00)
+
+    def renovar_mes(self, meses=1):
+        """Suma los meses al vencimiento y registra el pago de hoy."""
+        from django.utils import timezone
+        
+        hoy = timezone.now().date()
+        # Si ya estaba vencido, la nueva fecha empieza desde hoy. Si no, se suma al vencimiento actual.
+        base = self.fecha_vencimiento if self.fecha_vencimiento > hoy else hoy
+        
+        self.fecha_vencimiento = base + relativedelta(months=meses)
+        self.ultimo_pago = hoy
+        self.activa = True
+        self.save()
+
+    def dias_para_vencer(self):
+        from django.utils import timezone
+        if not self.activa:
+            return 0
+        # Si no hay fecha de vencimiento (porque estamos creando una nueva), devolvemos 0
+        if not self.fecha_vencimiento:
+            return 0
+        return (self.fecha_vencimiento - timezone.now().date()).days
+
+    def __str__(self):
+        return f"Suscripción {self.empresa.nombre} - Vence: {self.fecha_vencimiento}"
+        
+class RutaParada(models.Model):
+    """
+    Define el itinerario ordenado de una ruta (paradas intermedias).
+    Ejemplo: Caracas(1) -> Maracay(2) -> Valencia(3) -> San Cristóbal(4).
+    """
+    ruta = models.ForeignKey(Ruta, on_delete=models.CASCADE, related_name='paradas')
+    oficina = models.ForeignKey(Oficina, on_delete=models.CASCADE, verbose_name="Oficina / Parada")
+    orden = models.PositiveIntegerField(help_text="Orden de la parada (1=Origen, 2, 3...)")
+    hora_estimada = models.CharField(
+        max_length=20, 
+        blank=True, 
+        null=True, 
+        help_text="Hora estimada de paso (ej: 05:30 PM)"
+    )
+
+    class Meta:
+        verbose_name = "Parada de Ruta"
+        verbose_name_plural = "Paradas de Ruta"
+        ordering = ['ruta', 'orden']
+        unique_together = ('ruta', 'orden')
+
+    def __str__(self):
+        return f"{self.ruta.nombre} - Parada {self.orden}: {self.oficina.nombre}"
+        
+class UsuarioEmpresa(models.Model):
+    """
+    Perfil extendido para empleados de la empresa (taquilleros, supervisores, admin_oficina).
+    """
+    ROLES = [
+        ('taquillero', 'Taquillero'),
+        ('supervisor', 'Supervisor'),
+        ('admin_oficina', 'Administrador de Oficina'),
+    ]
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='usuarioempresa', verbose_name="Usuario de Django")
+    cedula = models.CharField(max_length=20, unique=True, verbose_name="Cédula")
+    telefono = models.CharField(max_length=20, blank=True, verbose_name="Teléfono")
+    rol = models.CharField(max_length=20, choices=ROLES, default='taquillero', verbose_name="Rol")
+    oficina = models.ForeignKey(Oficina, on_delete=models.PROTECT, verbose_name="Oficina asignada")
+    codigo_empleado = models.CharField(max_length=20, unique=True, blank=True, verbose_name="Código de empleado")
+    activo = models.BooleanField(default=True, verbose_name="Activo")
+    fecha_ingreso = models.DateField(auto_now_add=True, verbose_name="Fecha de ingreso")
+
+    class Meta:
+        verbose_name = "Usuario de Empresa"
+        verbose_name_plural = "Usuarios de Empresa"
+        ordering = ['oficina', 'user__first_name']
+
+    def __str__(self):
+        nombre = self.user.get_full_name() or self.user.username
+        return f"{nombre} - {self.get_rol_display()} ({self.oficina.nombre})"
