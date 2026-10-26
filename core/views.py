@@ -319,7 +319,7 @@ def reservar_asientos(request):
             if no_disponibles: return JsonResponse({'ok': False, 'error': f'Los asientos {", ".join(no_disponibles)} ya no están disponibles.'}, status=400)
             minutos = int(obtener_parametro('101', default=10))
             vence = timezone.now() + timedelta(minutes=minutos)
-            Asiento.objects.filter(id__in=asientos_ids).update(estado='reservado', reservado_hasta=vence, reservado_por=cliente)
+            Asiento.objects.filter(id__in=asientos_ids).update(estado='reservado', reservado_hasta=vence, reservado_por=request.user)
         return JsonResponse({'ok': True, 'vence': vence.isoformat(), 'minutos': minutos, 'cantidad': len(asientos_ids)})
     except Exception as e: return JsonResponse({'ok': False, 'error': str(e)}, status=500)
 
@@ -332,7 +332,7 @@ def liberar_asientos(request):
     if not cliente: return JsonResponse({'ok': False, 'error': 'Sin cliente.'}, status=400)
     try:
         with transaction.atomic():
-            asientos = Asiento.objects.select_for_update().filter(id__in=asientos_ids, estado='reservado', reservado_por=cliente)
+            asientos = Asiento.objects.select_for_update().filter(id__in=asientos_ids, estado='reservado', reservado_por=request.user)
             for asiento in asientos:
                 MovimientoAsiento.objects.create(asiento=asiento, tipo='liberacion_manual', estado_anterior='reservado', estado_nuevo='disponible', usuario=request.user, motivo='El cliente liberó el asiento.')
             asientos.update(estado='disponible', reservado_hasta=None, reservado_por=None)
@@ -380,9 +380,9 @@ def pasajeros(request, viaje_id):
     valor_seguro = obtener_parametro('100', default=0)
     asientos_sesion = request.session.get('asientos_seleccionados', [])
     if asientos_sesion:
-        asientos = Asiento.objects.filter(id__in=asientos_sesion, viaje=viaje, estado='reservado', reservado_por=cliente, reservado_hasta__gt=timezone.now()).order_by('numero')
+        asientos = Asiento.objects.filter(id__in=asientos_sesion, viaje=viaje, estado='reservado', reservado_por=request.user, reservado_hasta__gt=timezone.now()).order_by('numero')
     else:
-        asientos = Asiento.objects.filter(viaje=viaje, estado='reservado', reservado_por=cliente, reservado_hasta__gt=timezone.now()).order_by('numero')
+        asientos = Asiento.objects.filter(viaje=viaje, estado='reservado', reservado_por=request.user, reservado_hasta__gt=timezone.now()).order_by('numero')
     if not asientos.exists():
         messages.warning(request, "No tienes asientos reservados. Selecciona asientos primero.")
         return redirect('core:detalle_viaje', viaje_id=viaje.id)
@@ -447,7 +447,7 @@ def pago(request, viaje_id):
         messages.warning(request, "No hay datos de pasajeros. Completa el formulario primero.")
         return redirect('core:pasajeros', viaje_id=viaje.id)
     asientos_ids = [p['asiento_id'] for p in pasajeros_data]
-    asientos = Asiento.objects.filter(id__in=asientos_ids, viaje=viaje, estado='reservado', reservado_por=cliente)
+    asientos = Asiento.objects.filter(id__in=asientos_ids, viaje=viaje, estado='reservado', reservado_por=request.user)
     if asientos.count() != len(asientos_ids):
         messages.warning(request, "Algunos asientos ya no están disponibles. Selecciona de nuevo.")
         return redirect('core:detalle_viaje', viaje_id=viaje.id)
@@ -588,7 +588,7 @@ def pasarela_virtual_view(request, viaje_id):
         messages.warning(request, "No hay datos de pasajeros. Completa el formulario primero.")
         return redirect('core:pasajeros', viaje_id=viaje.id)
     asientos_ids = [p['asiento_id'] for p in pasajeros_data]
-    asientos = Asiento.objects.filter(id__in=asientos_ids, viaje=viaje, estado='reservado', reservado_por=cliente)
+    asientos = Asiento.objects.filter(id__in=asientos_ids, viaje=viaje, estado='reservado', reservado_por=request.user)
     if asientos.count() != len(asientos_ids):
         messages.warning(request, "Algunos asientos ya no están disponibles.")
         return redirect('core:detalle_viaje', viaje_id=viaje.id)
