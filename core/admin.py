@@ -544,3 +544,12 @@ class UsuarioEmpresaAdmin(admin.ModelAdmin):
     def get_nombre_completo(self, obj):
         return obj.user.get_full_name() or obj.user.username
     get_nombre_completo.short_description = 'Nombre'
+    
+from .models import Banco
+
+@admin.register(Banco)
+class BancoAdmin(admin.ModelAdmin):
+    list_display = ('codigo', 'nombre', 'activo')
+    list_filter = ('activo',)
+    search_fields = ('codigo', 'nombre')
+    ordering = ('codigo',)
