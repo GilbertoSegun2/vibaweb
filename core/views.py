@@ -702,10 +702,17 @@ def taquilla_inicio(request):
             fecha = datetime.strptime(fecha_str, '%Y-%m-%d').date()
             oficina_origen = Oficina.objects.get(id=origen_id)
             
-            # Buscar viajes que salgan de ese origen y vayan a ese destino
+            from django.utils import timezone
+            hoy = timezone.localtime(timezone.now()).date()
+            ahora = timezone.localtime(timezone.now()).time()
+
             viajes_del_dia = Viaje.objects.filter(
                 fecha=fecha, estado='programado', cerrado_venta=False
             ).select_related('ruta', 'bus')
+
+            # ⭐ FILTRO POR HORA: si es hoy, solo mostrar viajes que aún no han salido
+            if fecha == hoy:
+                viajes_del_dia = viajes_del_dia.filter(hora__gt=ahora)
 
             for viaje in viajes_del_dia:
                 pasa_por_origen = viaje.ruta.paradas.filter(oficina=oficina_origen).exists()
@@ -806,7 +813,6 @@ def taquilla_mapa(request, viaje_id):
         'destino_id': destino_id,
     })
 
-@login_required
 def taquilla_cobrar(request, viaje_id):
     if not request.user.is_authenticated:
         return redirect('core:login')
@@ -837,8 +843,15 @@ def taquilla_cobrar(request, viaje_id):
         messages.error(request, "No hay tarifa configurada para este tramo.")
         return redirect('core:taquilla_inicio')
 
-    asientos_seleccionados = request.GET.getlist('asientos[]')
-    cantidad = len(asientos_seleccionados)
+    # ⭐ CONVERTIR IDs A NÚMEROS DE ASIENTO (para mostrar en el template)
+    asientos_ids = request.GET.getlist('asientos[]')
+    asientos_seleccionados = list(
+        Asiento.objects.filter(id__in=asientos_ids)
+        .values_list('numero', flat=True)
+        .order_by('numero')
+    )
+    
+    cantidad = len(asientos_ids)
     precio_unitario = tarifa.monto_usd + valor_seguro
     total_usd = precio_unitario * cantidad
     total_bs = (total_usd * tasa_bcv).quantize(Decimal('0.01')) if tasa_bcv else 0
@@ -856,10 +869,10 @@ def taquilla_cobrar(request, viaje_id):
                 'empleado': empleado, 'viaje': viaje, 'parada_origen': parada_origen,
                 'parada_destino': parada_destino, 'tarifa': tarifa, 'tasa_bcv': tasa_bcv,
                 'valor_seguro': valor_seguro, 'destino_id': destino_id, 'origen_id': origen_id,
-                'asientos_seleccionados': asientos_ids,
+                'asientos_seleccionados': asientos_seleccionados, # ⭐ AHORA ES NÚMEROS
                 'nombre': nombre, 'cedula': cedula, 'telefono': telefono,
                 'total_usd': total_usd, 'total_bs': total_bs,
-                'intervalo_renovacion': intervalo_renovacion, # ⭐ AHORA SÍ ESTÁ DEFINIDO
+                'intervalo_renovacion': intervalo_renovacion,
             })
 
         try:

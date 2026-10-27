@@ -322,7 +322,8 @@ class Transaccion(models.Model):
     codigo = models.CharField(max_length=30, unique=True, verbose_name="Código")
     cliente = models.ForeignKey(
         Cliente, on_delete=models.PROTECT,
-        related_name='transacciones', verbose_name="Cliente"
+        related_name='transacciones', verbose_name="Cliente",
+        null=True, blank=True
     )
     viaje = models.ForeignKey(
         Viaje, on_delete=models.PROTECT,
@@ -783,3 +784,16 @@ class UsuarioEmpresa(models.Model):
     def __str__(self):
         nombre = self.user.get_full_name() or self.user.username
         return f"{nombre} - {self.get_rol_display()} ({self.oficina.nombre})"
+        
+class Banco(models.Model):
+    codigo = models.CharField(max_length=4, unique=True, verbose_name="Código Sudeban")
+    nombre = models.CharField(max_length=100, verbose_name="Nombre del Banco")
+    activo = models.BooleanField(default=True, verbose_name="Activo")
+
+    class Meta:
+        verbose_name = "Banco"
+        verbose_name_plural = "Bancos"
+        ordering = ['codigo']
+
+    def __str__(self):
+        return f"{self.codigo} - {self.nombre}"

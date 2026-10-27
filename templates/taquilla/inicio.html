@@ -3,6 +3,7 @@
 
 {% block content %}
 <div class="container mt-4">
+    <!-- Encabezado de la Taquilla -->
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
             <h2><i class="bi bi-shop"></i> Taquilla Virtual</h2>
@@ -11,16 +12,21 @@
                 Taquillero: <strong>{{ empleado.user.first_name }}</strong>
             </p>
         </div>
-        <a href="/" class="btn btn-outline-secondary btn-sm">Salir al Inicio</a>
+        <a href="/logout/" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-box-arrow-right"></i> Cerrar Sesión
+        </a>
     </div>
 
-    <!-- Formulario de Búsqueda del Taquillero -->
+    <!-- Formulario de Búsqueda -->
     <div class="card shadow-sm mb-4">
         <div class="card-body">
             <h5 class="card-title mb-3">Buscar Viajes</h5>
-            <form method="get" class="row g-3">
+            <form method="get" class="row g-3 align-items-end">
                 <div class="col-md-3">
-                    <label class="form-label">Origen</label>
+                    <label class="form-label">
+                        Origen 
+                        <small class="text-muted" style="font-size: 0.7rem;">(Por defecto: {{ empleado.oficina.nombre }})</small>
+                    </label>
                     <select name="origen" class="form-select" required>
                         {% for oficina in oficinas %}
                             <option value="{{ oficina.id }}" {% if origen_seleccionado == oficina.id %}selected{% endif %}>
@@ -28,7 +34,6 @@
                             </option>
                         {% endfor %}
                     </select>
-                    <small class="text-muted" style="font-size:0.75rem;">Por defecto: {{ empleado.oficina.nombre }}</small>
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">Destino</label>
@@ -47,8 +52,8 @@
                     <label class="form-label">Fecha</label>
                     <input type="date" name="fecha" class="form-control" value="{{ fecha_seleccionada }}" required>
                 </div>
-                <div class="col-md-3 d-flex align-items-end">
-                    <button type="submit" class="btn btn-primary w-100">
+                <div class="col-md-3">
+                    <button type="submit" class="btn btn-primary w-100" style="height: 38px;">
                         <i class="bi bi-search"></i> Buscar
                     </button>
                 </div>
@@ -79,7 +84,7 @@
                         <!-- Información del Tramo -->
                         <p class="mb-2">
                             <i class="bi bi-geo-alt-fill text-danger"></i> 
-                            Desde <strong>{{ empleado.oficina.nombre }}</strong> (hacia {{ item.viaje.ruta.nombre }})
+                            Desde <strong>{{ empleado.oficina.nombre }}</strong>
                         </p>
 
                         <!-- Hora, Fecha y Bus -->

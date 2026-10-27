@@ -43,23 +43,26 @@
             </button>
             <div class="collapse navbar-collapse" id="menuPrincipal">
                 <ul class="navbar-nav ms-auto">
-                    <li class="nav-item"><a class="nav-link" href="/">Inicio</a></li>
-                    <li class="nav-item"><a class="nav-link" href="/viajes/">Comprar Boletos</a></li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/ayuda/">
-                            <i class="bi bi-question-circle"></i> Ayuda
-                        </a>
+                        <a class="nav-link" href="{% if user.usuarioempresa %}/taquilla/{% else %}/{% endif %}">Inicio</a>
                     </li>
-                    <!-- Botón para instalar la PWA -->
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% if user.usuarioempresa %}/taquilla/{% else %}/viajes/{% endif %}">Comprar Boletos</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/ayuda/"><i class="bi bi-question-circle"></i> Ayuda</a>
+                    </li>
+                    
+                    <!-- Botón PWA -->
                     <li class="nav-item d-none" id="btn-instalar-pwa-li">
                         <a class="nav-link" href="#" id="btn-instalar-pwa" style="color: #d6e6cf;">
                             <i class="bi bi-download"></i> Descargar app
                         </a>
                     </li>
-                    
+
                     {% if user.is_authenticated %}
                         <li class="nav-item">
-                            <a class="nav-link" href="/perfil/">
+                            <a class="nav-link" href="{% if user.usuarioempresa %}/taquilla/{% else %}/perfil/{% endif %}">
                                 <i class="bi bi-person-circle"></i> {{ user.first_name|default:user.username }}
                             </a>
                         </li>

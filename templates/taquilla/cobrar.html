@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load humanize %}
 {% block title %}Cobrar - Viba-Web{% endblock %}
 
 {% block content %}
@@ -10,18 +11,23 @@
         <div class="card-body">
             <h5 class="card-title">Resumen de la Venta</h5>
             <p><strong>Asientos:</strong> {{ asientos_seleccionados|join:", " }}</p>
-            <p><strong>Precio por boleto:</strong> ${{ tarifa.monto_usd }} + Seguro ${{ valor_seguro }}</p>
-            <h4 class="text-success">Total a cobrar: ${{ total_usd }} / Bs. {{ total_bs }}</h4>
+            <p><strong>Precio por boleto:</strong> ${{ tarifa.monto_usd|floatformat:2|intcomma }} + Seguro ${{ valor_seguro|floatformat:2|intcomma }}</p>
+            <h4 class="text-success">
+                Total a cobrar: 
+                ${{ total_usd|floatformat:2|intcomma }} / 
+                Bs. {{ total_bs|floatformat:2|intcomma }}
+            </h4>
         </div>
     </div>
 
-    <form method="post" action="{% url 'core:taquilla_cobrar' viaje.id %}?destino={{ parada_destino.oficina.id }}">
+    <form method="post" action="{% url 'core:taquilla_cobrar' viaje.id %}?destino={{ parada_destino.oficina.id }}&origen={{ parada_origen.oficina.id }}">
         {% csrf_token %}
         <!-- Campos ocultos para mantener los asientos seleccionados -->
-        {% for asiento in asientos_seleccionados %}
-            <input type="hidden" name="asientos[]" value="{{ asiento }}">
+        {% for asiento_id in asientos_ids %}
+            <input type="hidden" name="asientos[]" value="{{ asiento_id }}">
         {% endfor %}
         <input type="hidden" name="destino" value="{{ parada_destino.oficina.id }}">
+        <input type="hidden" name="origen" value="{{ parada_origen.oficina.id }}">
 
         <div class="card shadow-sm mb-4">
             <div class="card-body">
@@ -57,12 +63,14 @@
         </div>
 
         <div class="d-flex justify-content-between">
-            <a href="{% url 'core:taquilla_mapa' viaje.id %}?destino={{ parada_destino.oficina.id }}" class="btn btn-secondary">Volver al Mapa</a>
+            <a href="{% url 'core:taquilla_mapa' viaje.id %}?destino={{ parada_destino.oficina.id }}&origen={{ parada_origen.oficina.id }}" class="btn btn-secondary">Volver al Mapa</a>
             <button type="submit" class="btn btn-success btn-lg"><i class="bi bi-check-circle"></i> Confirmar y Cobrar</button>
         </div>
     </form>
 </div>
+{% endblock %}
 
+{% block extra_js %}
 <script>
     // Función para buscar al pasajero por cédula
     function buscarPasajero() {
@@ -75,7 +83,6 @@
 
         mensaje.innerHTML = '<span class="text-info">Buscando...</span>';
 
-        // Hacemos una petición al servidor (endpoint que crearemos en el siguiente paso)
         fetch(`/taquilla/buscar-pasajero/?cedula=${cedula}`)
             .then(response => response.json())
             .then(data => {
@@ -89,19 +96,16 @@
             })
             .catch(error => {
                 console.error('Error:', error);
-                mensaje.innerHTML = '<span class="text-danger">Error al buscar.</span>';
+                mensaje.innerHTML = '';
             });
     }
-</script>
-{% endblock %}
 
-{% block extra_js %}
-<script>
+    // Renovación automática del bloqueo
     const URL_RENOVAR_RESERVA = "/renovar-reserva/";
     const VIAJE_ID = "{{ viaje.id }}";
-    const ASIENTOS_IDS = [{% for a in asientos_seleccionados %}"{{ a }}",{% endfor %}];
+    const ASIENTOS_IDS = [{% for id in asientos_ids %}"{{ id }}",{% endfor %}];
     const INTERVALO_RENOVACION = {{ intervalo_renovacion|default:20 }} * 1000;
-    
+
     function getCookie(name) {
         let cookieValue = null;
         if (document.cookie && document.cookie !== '') {
@@ -116,14 +120,12 @@
         }
         return cookieValue;
     }
-    
+
     function renovarReservaTaquilla() {
         if (ASIENTOS_IDS.length === 0) return;
-        
         const formData = new FormData();
         formData.append('viaje_id', VIAJE_ID);
         ASIENTOS_IDS.forEach(id => formData.append('asientos[]', id));
-        
         fetch(URL_RENOVAR_RESERVA, {
             method: 'POST',
             headers: { 'X-CSRFToken': getCookie('csrftoken') },
@@ -132,7 +134,7 @@
         .then(response => response.json())
         .catch(error => console.warn('Error al renovar reserva (taquilla):', error));
     }
-    
+
     setInterval(renovarReservaTaquilla, INTERVALO_RENOVACION);
 </script>
 {% endblock %}
