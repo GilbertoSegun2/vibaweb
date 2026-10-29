@@ -5,7 +5,7 @@
 
 {% block extra_css %}
 <style>
-    /* ... (Todo tu CSS del mapa se mantiene igual, no lo toco para no dañarlo) ... */
+    /* ... (Todo tu CSS del mapa se mantiene igual) ... */
     .mapa-bus { max-width: 290px; margin: 0 auto; background: linear-gradient(90deg, #d9d9d9 0%, #ffffff 4%, #f8f9fa 96%, #d9d9d9 100%); border: 3px solid #003366; border-radius: 16px; padding: 10px; position: relative; box-shadow: 0 8px 20px rgba(0, 51, 102, 0.15), inset 0 0 0 4px #ffffff, inset 0 0 0 6px #e7f0f7; }
     .bus-frente { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; background: linear-gradient(180deg, #e7f0f7 0%, #c9dced 100%); border: 2px solid #003366; border-bottom: none; border-radius: 14px 14px 4px 4px; margin-bottom: 0; color: #003366; font-weight: bold; box-shadow: inset 0 -2px 6px rgba(0, 51, 102, 0.15); }
     .bus-frente__cabina { display: flex; align-items: center; justify-content: center; gap: 4px; background: #ffffff; padding: 6px 10px; border-radius: 20px; border: 2px solid #003366; box-shadow: 0 2px 4px rgba(0, 51, 102, 0.25); font-size: 1.2rem; color: #003366; }
@@ -180,11 +180,17 @@
                                         {% if asiento.estado == 'disponible' %}disponible{% endif %}
                                         {% if asiento.estado == 'vendido' %}vendido{% endif %}
                                         {% if asiento.estado == 'pendiente_verificacion' %}pendiente_verificacion{% endif %}
-                                        {% if asiento.estado == 'reservado' %}{% if asiento.reservado_por_id == cliente_id %}seleccionado{% else %}reservado{% endif %}{% endif %}
+                                        {% if asiento.estado == 'reservado' %}
+                                            {% if asiento.reservado_por_id == usuario_id %}
+                                                seleccionado
+                                            {% else %}
+                                                reservado
+                                            {% endif %}
+                                        {% endif %}
                                         {% if asiento.estado == 'bloqueado' %}bloqueado{% endif %}"
                                     data-asiento-id="{{ asiento.id }}" data-asiento-numero="{{ asiento.numero }}" data-asiento-lado="{{ asiento.lado }}"
-                                    {% if asiento.estado != 'disponible' and asiento.reservado_por_id != cliente_id %}disabled{% endif %}
-                                    title="Asiento {{ asiento.numero }} ({{ asiento.get_lado_display }}) — {% if asiento.estado == 'reservado' %}Apartado temporalmente{% else %}{{ asiento.get_estado_display }}{% endif %}">
+                                    {% if asiento.estado != 'disponible' and asiento.reservado_por_id != usuario_id %}disabled{% endif %}
+                                    title="Asiento {{ asiento.numero }} ({{ asiento.get_lado_display }}) — {% if asiento.estado == 'reservado' and asiento.reservado_por_id == usuario_id %}Tu selección{% elif asiento.estado == 'reservado' %}Apartado temporalmente{% else %}{{ asiento.get_estado_display }}{% endif %}">
                                     {{ asiento.numero }}
                                 </button>
                             {% elif asiento.tipo == 'escalera' %}
@@ -345,7 +351,6 @@ function reservarAsientoTemporal(asientoId) {
 
 function renovarReserva() {
     if (seleccionados.size === 0) return;
-    if (!usuarioActivo()) return;
     const formData = new FormData();
     formData.append('viaje_id', VIAJE_ID);
     seleccionados.forEach(id => formData.append('asientos[]', id));
@@ -360,32 +365,39 @@ intervaloRenovacion = setInterval(renovarReserva, INTERVALO_RENOVACION);
 
 asientos.forEach(asiento => {
     asiento.addEventListener('click', function() {
-        if (segundosTotales <= 0) {
-            clearInterval(intervalo);
-            
-            // ⭐ MENSAJE SEGÚN EL ROL
-            if (ES_TAQUILLA) {
-                alert('⏰ Estimado/a:\n\nEl tiempo de reserva ha finalizado. Los asientos han sido liberados.\n\nSerá redirigido a la taquilla para comenzar de nuevo.');
-            } else {
-                alert('⏰ Estimado cliente:\n\nSu tiempo de reserva ha finalizado. Los asientos han sido liberados automáticamente.\n\nSerá redirigido al inicio para comenzar de nuevo.\n\nGracias por preferirnos.');
-            }
-            
-            window.location.href = URL_REDIRECCION;
-            return;
-        }
         const id = this.dataset.asientoId;
         
+        // ⭐ SI EL ASIENTO YA ESTÁ SELECCIONADO (AMARILLO), LO LIBERAMOS
         if (seleccionados.has(id)) {
             seleccionados.delete(id);
             this.classList.remove('seleccionado');
             this.classList.add('disponible');
             actualizarResumen();
+            
             const formData = new FormData();
             formData.append('asientos[]', id);
-            fetch(URL_LIBERAR, { method: 'POST', headers: {'X-CSRFToken': getCookie('csrftoken')}, body: formData });
+            fetch(URL_LIBERAR, { 
+                method: 'POST', 
+                headers: {'X-CSRFToken': getCookie('csrftoken')}, 
+                body: formData 
+            });
             return;
         }
         
+        // ⭐ SI EL TIEMPO EXPIRÓ, NO PERMITIR SELECCIONAR
+        if (segundosTotales <= 0) {
+            clearInterval(intervalo);
+            if (ES_TAQUILLA) {
+                alert('⏰ Estimado/a:\n\nEl tiempo de reserva ha finalizado. Los asientos han sido liberados.\n\nSerá redirigido a la taquilla para comenzar de nuevo.');
+                window.location.href = '/taquilla/';
+            } else {
+                alert('⏰ Estimado cliente:\n\nSu tiempo de reserva ha finalizado. Los asientos han sido liberados automáticamente.\n\nSerá redirigido al inicio para comenzar de nuevo.\n\nGracias por preferirnos.');
+                window.location.href = '/logout/';
+            }
+            return;
+        }
+        
+        // ⭐ SI EL ASIENTO ESTÁ VERDE (DISPONIBLE), LO SELECCIONAMOS
         if (!USUARIO_AUTENTICADO) {
             window.location.href = URL_LOGIN;
             return;
@@ -430,7 +442,6 @@ function actualizarResumen() {
         totalBsEl.textContent = total_bs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
-    // ⭐ HABILITAR BOTÓN SEGÚN ROL
     if (ES_TAQUILLA && btnCobrarTaquilla) {
         btnCobrarTaquilla.disabled = false;
     } else if (btnContinuar) {
@@ -454,7 +465,7 @@ function abrirCobroTaquilla() {
 }
 
 // ============================================================
-// CONTADOR DE TIEMPO (Lógica original del cliente web - NO TOCAR)
+// RELOJ MAESTRO ÚNICO (Cliente Web y Taquilla)
 // ============================================================
 function formatearTiempo(segundos) {
     const m = Math.floor(segundos / 60);
@@ -462,70 +473,56 @@ function formatearTiempo(segundos) {
     return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-const elementosContador = document.querySelectorAll('.contador-tiempo, #contador, #contador-pasajero, [id*="contador"]');
-function actualizarTodos(texto) { elementosContador.forEach(el => { el.textContent = texto; }); }
+const expiracionStr = "{{ expiracion_iso|default:'' }}";
+if (expiracionStr) {
+    const fechaExpiracion = new Date(expiracionStr).getTime();
+    
+    // Identificar los elementos del DOM del reloj
+    const timerBoxTaquilla = document.getElementById("timer-box");
+    const contadorElTaquilla = document.getElementById("contador-global");
+    const contadorElWeb = document.getElementById("contador");
 
-if (elementosContador.length > 0 && segundosTotales > 0) {
-    const tiempoInicial = formatearTiempo(segundosTotales);
-    actualizarTodos(tiempoInicial);
-    const intervalo = setInterval(() => {
-        segundosTotales--;
-        if (segundosTotales <= 0) {
-            clearInterval(intervalo);
-            alert('⏰ Estimado cliente:\n\nSu tiempo de reserva ha finalizado. Los asientos han sido liberados automáticamente.');
-            window.location.href = '/';
+    function actualizarRelojMaestro() {
+        const ahora = new Date().getTime();
+        const segundosRestantes = Math.max(0, Math.floor((fechaExpiracion - ahora) / 1000));
+        const tiempoFormateado = formatearTiempo(segundosRestantes);
+
+        if (segundosRestantes <= 0) {
+            clearInterval(intervaloMaestro);
+            
+            if (ES_TAQUILLA) {
+                if (contadorElTaquilla) contadorElTaquilla.innerText = "0:00";
+                alert("⏰ El tiempo de reserva ha expirado. Los asientos han sido liberados.");
+                window.location.href = "/taquilla/"; // Taquilla: sin logout
+            } else {
+                if (contadorElWeb) contadorElWeb.innerText = "0:00";
+                alert("⏰ Estimado cliente:\n\nSu tiempo de reserva ha finalizado. Los asientos han sido liberados automáticamente.\n\nSerá redirigido al inicio para comenzar de nuevo.");
+                window.location.href = "/logout/"; // Cliente: CON logout real
+            }
             return;
         }
-        actualizarTodos(formatearTiempo(segundosTotales));
-        if (segundosTotales <= 120) {
-            const wraps = document.querySelectorAll('#contador-wrap, .contador-wrap');
-            wraps.forEach(wrap => wrap.classList.add('urgente'));
-        }
-    }, 1000);
-}
 
-// ============================================================
-// ⭐ RELOJ MAESTRO (SOLO PARA TAQUILLA)
-// ============================================================
-// Este bloque solo se ejecuta si el usuario es taquillero.
-// Toma la hora exacta de expiración del servidor (expiracion_iso)
-// y calcula el tiempo restante real, sin importar el retraso de red.
-if (ES_TAQUILLA) {
-    (function() {
-        const expiracionStr = "{{ expiracion_iso|default:'' }}";
-        if (!expiracionStr) return;
-
-        const fechaExpiracion = new Date(expiracionStr).getTime();
-        const timerBox = document.getElementById("timer-box");
-        const contadorEl = document.getElementById("contador-global");
-
-        if (contadorEl) {
-            function actualizarRelojTaquilla() {
-                const ahora = new Date().getTime();
-                const segundosRestantes = Math.max(0, Math.floor((fechaExpiracion - ahora) / 1000));
-
-                if (segundosRestantes <= 0) {
-                    clearInterval(intervaloTaquilla);
-                    contadorEl.innerText = "0:00";
-                    alert("⏰ El tiempo de reserva ha expirado. Los asientos han sido liberados.");
-                    window.location.href = "/taquilla/";
-                    return;
-                }
-
-                contadorEl.innerText = formatearTiempo(segundosRestantes);
-
-                if (timerBox) {
-                    timerBox.style.display = 'block';
-                }
-                if (segundosRestantes <= 120 && timerBox) {
-                    timerBox.className = "position-fixed shadow rounded bg-danger px-2 py-1 border border-white";
+        // Actualizar los contadores según el rol
+        if (ES_TAQUILLA) {
+            if (contadorElTaquilla) contadorElTaquilla.innerText = tiempoFormateado;
+            if (timerBoxTaquilla) {
+                timerBoxTaquilla.style.display = 'block';
+                if (segundosRestantes <= 120) {
+                    timerBoxTaquilla.className = "position-fixed shadow rounded bg-danger px-2 py-1 border border-white";
                 }
             }
-
-            actualizarRelojTaquilla();
-            const intervaloTaquilla = setInterval(actualizarRelojTaquilla, 1000);
+        } else {
+            if (contadorElWeb) contadorElWeb.innerText = tiempoFormateado;
+            if (segundosRestantes <= 120) {
+                const wraps = document.querySelectorAll('#contador-wrap, .contador-wrap');
+                wraps.forEach(wrap => wrap.classList.add('urgente'));
+            }
         }
-    })();
+    }
+
+    // Iniciar el reloj
+    actualizarRelojMaestro();
+    const intervaloMaestro = setInterval(actualizarRelojMaestro, 1000);
 }
 </script>
 {% endblock %}

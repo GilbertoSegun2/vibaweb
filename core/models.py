@@ -9,6 +9,11 @@ class Oficina(models.Model):
     direccion = models.TextField(blank=True, verbose_name="Dirección")
     telefono = models.CharField(max_length=20, blank=True, verbose_name="Teléfono")
     activa = models.BooleanField(default=True, verbose_name="Activa")
+    bloqueada_para_web = models.BooleanField(
+        default=False,
+        verbose_name="¿Bloqueada para venta web?",
+        help_text="Si está marcada, esta oficina no permite ventas web. Los clientes no verán viajes que salgan desde esta oficina."
+    )
 
     class Meta:
         verbose_name = "Oficina"

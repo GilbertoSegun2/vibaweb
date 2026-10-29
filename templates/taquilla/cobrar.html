@@ -91,7 +91,7 @@
                     </div>
                     <div class="col-md-3">
                         <label class="form-label fw-bold">Monto</label>
-                        <input type="number" id="monto_pago" class="form-control" step="0.01" min="0" placeholder="0.00">
+                        <input type="text" id="monto_pago" class="form-control" placeholder="0.00">
                     </div>
                     <div class="col-md-3" id="campo_referencia" style="display:none;">
                         <label class="form-label fw-bold">Referencia</label>
@@ -307,20 +307,40 @@
         document.getElementById('referencia_pago').value = '';
     }
 
-    // ⭐ FUNCIÓN MÁGICA: Llena el monto con lo que falta por cobrar
+// ⭐ FUNCIÓN MÁGICA: Llena el monto restante en Bs. (calculado de forma numérica y limpia)
     function llenarPagoExacto() {
-        const restanteTexto = document.getElementById('total-restante').innerText;
-        const restanteUSD = parseFloat(restanteTexto.replace(/\./g, '').replace(',', '.')) || 0;
-        
         const metodo = document.getElementById('metodo_pago').value;
-        const montoInput = document.getElementById('monto_pago');
         
-        if (metodo === 'efectivo_usd') {
-            montoInput.value = restanteUSD.toFixed(2);
+        // Solo actuamos si el método es Pago Móvil, Punto de Venta o Efectivo Bs.
+        if (metodo === 'pago_movil' || metodo === 'punto_venta' || metodo === 'efectivo_bs') {
+            // 1. Calculamos el total a cobrar numéricamente de forma interna
+            let totalCobrarStr = document.getElementById('total-cobrar').innerText;
+            // Limpiamos separadores de miles y estandarizamos el punto decimal
+            totalCobrarStr = totalCobrarStr.replace(/\./g, '').replace(',', '.');
+            const totalCobrarUSD = parseFloat(totalCobrarStr) || 0;
+            
+            // 2. Sumamos lo que ya se ha pagado en USD
+            const totalPagadoUSD = pagos.reduce((sum, p) => sum + parseFloat(p.monto_usd), 0);
+            
+            // 3. Obtenemos el restante real en USD de forma numérica
+            const restanteUSD = Math.max(0, totalCobrarUSD - totalPagadoUSD);
+            
+            // 4. Convertimos el restante USD directamente a Bolívares usando la tasa BCV
+            const restanteBs = restanteUSD * TASA_BCV;
+            
+            // 5. Redondeamos exactamente a 2 decimales
+            const montoLimpio = Math.round(restanteBs * 100) / 100;
+            
+            // 6. Llenamos el input usando punto como separador decimal estándar (ej: "17333.36")
+            const montoInput = document.getElementById('monto_pago');
+            montoInput.value = montoLimpio.toFixed(2);
+            
+            // 7. Si es Pago Móvil o Punto de Venta, mostramos el campo de referencia
+            if (metodo === 'pago_movil' || metodo === 'punto_venta') {
+                document.getElementById('campo_referencia').style.display = 'block';
+            }
         } else {
-            // Si es Bs, calculamos el equivalente
-            const restanteBs = Math.round((restanteUSD * TASA_BCV) * 100) / 100;
-            montoInput.value = restanteBs.toFixed(2);
+            alert('El botón "Llenar Monto Restante" solo funciona para pagos en Bolívares (Pago Móvil, Punto de Venta o Efectivo Bs.).');
         }
     }
 

@@ -92,29 +92,47 @@ def inicio(request):
 @login_required
 def detalle_viaje(request, viaje_id):
     viaje = get_object_or_404(Viaje, id=viaje_id)
-    liberar_reservas_vencidas(viaje=viaje)
+    
     minutos_reserva = int(obtener_parametro('101', default=10))
     reserva_inicio_str = request.session.get('reserva_inicio')
+    
     if reserva_inicio_str:
         try:
             reserva_inicio = datetime.fromisoformat(reserva_inicio_str)
             expira_en = reserva_inicio + timedelta(minutes=minutos_reserva)
+            
             if timezone.now() > expira_en:
                 liberar_reservas_vencidas(viaje=viaje)
                 request.session.pop('reserva_inicio', None)
                 messages.warning(request, "Tu tiempo de reserva ha expirado. Selecciona de nuevo.")
                 return redirect('core:inicio')
+            
             segundos_restantes = int((expira_en - timezone.now()).total_seconds())
+            
+            # ⭐ PROTECCIÓN AL REGRESAR DE PAGO/PASAJEROS:
+            # Refrescamos el tiempo en la base de datos para los asientos del usuario actual 
+            # asegurando que la limpieza global no los borre mientras navegaba por los formularios.
+            Asiento.objects.filter(
+                viaje=viaje,
+                estado='reservado',
+                reservado_por=request.user
+            ).update(reservado_hasta=expira_en)
+            
         except (ValueError, TypeError):
             request.session['reserva_inicio'] = timezone.now().isoformat()
             segundos_restantes = minutos_reserva * 60
     else:
         request.session['reserva_inicio'] = timezone.now().isoformat()
         segundos_restantes = minutos_reserva * 60
+
+    # Limpiamos únicamente las reservas vencidas de otros usuarios
+    liberar_reservas_vencidas(viaje=viaje)
+
     origen_id = None
     destino_id = None
     origen_sesion = request.session.get('busqueda_origen_id')
     destino_sesion = request.session.get('busqueda_destino_id')
+    
     if origen_sesion and destino_sesion:
         origen_id = origen_sesion
         destino_id = destino_sesion
@@ -130,6 +148,7 @@ def detalle_viaje(request, viaje_id):
                 request.session['busqueda_destino_id'] = destino_id
             elif not es_valido:
                 messages.warning(request, "La ruta solicitada no es válida para este viaje. Por favor, busca de nuevo.")
+                
     tarifa = None
     if origen_id and destino_id:
         tarifa, es_valido = validar_tarifa_para_viaje(viaje, origen_id, destino_id)
@@ -140,32 +159,50 @@ def detalle_viaje(request, viaje_id):
             origen_id = None
             destino_id = None
             messages.warning(request, "La ruta seleccionada no coincide con este viaje. Por favor, busca de nuevo.")
+            
     if not tarifa:
         messages.error(request, "Este viaje no tiene una tarifa configurada. Por favor, realiza la búsqueda desde el inicio.")
         return redirect('core:inicio')
+        
     valor_seguro = obtener_parametro('100', default=0)
     cliente = getattr(request.user, 'cliente', None)
     asientos = viaje.asientos.order_by('piso', 'fila', 'columna')
     asientos_por_piso = {}
+    
     for asiento in asientos:
         piso = asiento.piso
         if piso not in asientos_por_piso: asientos_por_piso[piso] = {}
         fila = asiento.fila
         if fila not in asientos_por_piso[piso]: asientos_por_piso[piso][fila] = []
         asientos_por_piso[piso][fila].append(asiento)
+        
     for piso in asientos_por_piso:
         asientos_por_piso[piso] = dict(sorted(asientos_por_piso[piso].items()))
+        
     if len(asientos_por_piso) > 1:
         asientos_por_piso = dict(reversed(list(asientos_por_piso.items())))
+        
     transaccion_reciente = None
     if cliente:
         hace_5_min = timezone.now() - timedelta(minutes=5)
         transaccion_reciente = Transaccion.objects.filter(cliente=cliente, viaje=viaje, fecha_creacion__gte=hace_5_min, estado__in=['pendiente_verificacion', 'confirmada']).order_by('-fecha_creacion').first()
     return render(request, 'detalle_viaje.html', {
-        'viaje': viaje, 'asientos_por_piso': asientos_por_piso, 'cliente_id': cliente.id if cliente else None,
-        'tarifa': tarifa, 'tiene_tarifa': tarifa is not None, 'seguro': valor_seguro,
-        'segundos_restantes': segundos_restantes, 'transaccion_reciente': transaccion_reciente,
+        'viaje': viaje, 
+        'asientos_por_piso': asientos_por_piso, 
+        'cliente_id': cliente.id if cliente else None,
+        'usuario_id': request.user.id if request.user.is_authenticated else None, # 👈 AÑADE ESTA LÍNEA
+        'tarifa': tarifa, 
+        'tiene_tarifa': tarifa is not None, 
+        'seguro': valor_seguro,
+        'segundos_restantes': segundos_restantes, 
+        'transaccion_reciente': transaccion_reciente,
     })
+    
+    # ~ return render(request, 'detalle_viaje.html', {
+        # ~ 'viaje': viaje, 'asientos_por_piso': asientos_por_piso, 'cliente_id': cliente.id if cliente else None,
+        # ~ 'tarifa': tarifa, 'tiene_tarifa': tarifa is not None, 'seguro': valor_seguro,
+        # ~ 'segundos_restantes': segundos_restantes, 'transaccion_reciente': transaccion_reciente,
+    # ~ })
 
 # ============================================================
 # VISTAS DE AUTENTICACIÓN
@@ -239,7 +276,7 @@ def logout_view(request):
             with transaction.atomic():
                 asientos_reservados = Asiento.objects.select_for_update().filter(estado='reservado', reservado_por=request.user)
                 for asiento in asientos_reservados:
-                    MovimientoAsiento.objects.create(asiento=asiento, tipo='liberacion_manual', estado_anterior='reservado', estado_nuevo='disponible', usuario=request.user, motivo='El cliente cerró sesión')
+                    MovimientoAsiento.objects.create(asiento=asiento, tipo='liberacion_manual', estado_anterior='reservado', estado_nuevo='disponible', usuario=request.user, motivo='El cliente cerró sesión por tiempo expirado.')
                 asientos_reservados.update(estado='disponible', reservado_por=None, reservado_hasta=None)
         from .models import SesionActiva
         SesionActiva.objects.filter(user=request.user).delete()
@@ -463,7 +500,8 @@ def pago(request, viaje_id):
                     asiento = Asiento.objects.select_for_update().get(id=p['asiento_id'])
                     asiento.estado = 'pendiente_verificacion'
                     asiento.reservado_hasta = vence_verificacion
-                    asiento.reservado_por = cliente
+                    # ~ asiento.reservado_por = cliente
+                    asiento.reservado_por = request.user
                     asiento.save()
                     monto_tarifa = tarifa.monto_usd if tarifa else 0
                     monto_seguro = valor_seguro if tarifa else 0
@@ -727,8 +765,42 @@ def taquilla_mapa(request, viaje_id):
         return redirect('core:inicio')
 
     viaje = get_object_or_404(Viaje, id=viaje_id)
-    liberar_reservas_vencidas(viaje=viaje)
     
+    # ⭐ CONTROL DEL TIEMPO Y PROTECCIÓN AL REGRESAR
+    minutos_reserva = int(obtener_parametro('171', default=5))
+    reserva_inicio_str = request.session.get('reserva_inicio')
+    
+    if not reserva_inicio_str:
+        reserva_inicio = timezone.now()
+        request.session['reserva_inicio'] = reserva_inicio.isoformat()
+    else:
+        try:
+            reserva_inicio = datetime.fromisoformat(reserva_inicio_str)
+        except (ValueError, TypeError):
+            reserva_inicio = timezone.now()
+            request.session['reserva_inicio'] = reserva_inicio.isoformat()
+
+    expira_en = reserva_inicio + timedelta(minutes=minutos_reserva)
+    tiempo_actual = timezone.now()
+
+    if tiempo_actual > expira_en:
+        Asiento.objects.filter(estado='reservado', reservado_por=request.user).update(
+            estado='disponible', reservado_por=None, reservado_hasta=None
+        )
+        request.session.pop('reserva_inicio', None)
+        messages.warning(request, "Tu tiempo de reserva ha expirado. Selecciona de nuevo.")
+        return redirect('core:taquilla_inicio')
+
+    # ⭐ Refrescamos el tiempo en la base de datos para los asientos del taquillero actual
+    Asiento.objects.filter(
+        viaje=viaje,
+        estado='reservado',
+        reservado_por=request.user
+    ).update(reservado_hasta=expira_en)
+
+    # Limpiamos únicamente las reservas vencidas de otros usuarios
+    liberar_reservas_vencidas(viaje=viaje)
+
     origen_id = request.GET.get('origen', empleado.oficina.id)
     destino_id = request.GET.get('destino')
     
@@ -770,35 +842,6 @@ def taquilla_mapa(request, viaje_id):
     if len(asientos_por_piso) > 1:
         asientos_por_piso = dict(reversed(list(asientos_por_piso.items())))
 
-    # ⭐ CONTROL DEL TIEMPO (Sincronizado y Persistente)
-    minutos_reserva = int(obtener_parametro('171', default=5))
-    reserva_inicio_str = request.session.get('reserva_inicio')
-    
-    if not reserva_inicio_str:
-        # Si es la primera vez, creamos el punto de partida
-        reserva_inicio = timezone.now()
-        request.session['reserva_inicio'] = reserva_inicio.isoformat()
-    else:
-        try:
-            reserva_inicio = datetime.fromisoformat(reserva_inicio_str)
-        except (ValueError, TypeError):
-            reserva_inicio = timezone.now()
-            request.session['reserva_inicio'] = reserva_inicio.isoformat()
-
-    # Calculamos la hora exacta de expiración
-    expira_en = reserva_inicio + timedelta(minutes=minutos_reserva)
-    tiempo_actual = timezone.now()
-
-    if tiempo_actual > expira_en:
-        # Si expiró, liberar asientos y redirigir
-        Asiento.objects.filter(estado='reservado', reservado_por=request.user).update(
-            estado='disponible', reservado_por=None, reservado_hasta=None
-        )
-        request.session.pop('reserva_inicio', None)
-        messages.warning(request, "Tu tiempo de reserva ha expirado. Selecciona de nuevo.")
-        return redirect('core:taquilla_inicio')
-
-    # Variables que van al HTML
     expiracion_iso = expira_en.isoformat()
     segundos_restantes = max(0, int((expira_en - tiempo_actual).total_seconds()))
 
@@ -806,6 +849,7 @@ def taquilla_mapa(request, viaje_id):
         'viaje': viaje,
         'asientos_por_piso': asientos_por_piso,
         'cliente_id': request.user.id,
+        'usuario_id': request.user.id,  # ⭐ Asegura que se envíe el ID del usuario taquillero
         'tarifa': tarifa,
         'tiene_tarifa': True,
         'seguro': valor_seguro,
@@ -1061,7 +1105,7 @@ def registro_usuario(request):
 @require_POST
 @login_required
 def reservar_temporal(request):
-    """Bloquea un asiento temporalmente por el tiempo del parámetro (113 cliente / 172 taquilla)."""
+    """Bloquea un asiento temporalmente usando el Reloj Único de Sesión."""
     viaje_id = request.POST.get('viaje_id')
     asiento_id = request.POST.get('asiento_id')
     
@@ -1074,13 +1118,13 @@ def reservar_temporal(request):
     if not cliente and not empleado:
         return JsonResponse({'ok': False, 'error': 'Usuario no autorizado.'}, status=400)
     
-    # ⭐ Tiempo según el rol
+    # ⭐ RELOJ ÚNICO: Usamos el tiempo de sesión (101 web / 171 taquilla)
     if empleado:
-        segundos = int(obtener_parametro('172', default=60))
+        minutos = float(obtener_parametro('171', default=5))
     else:
-        segundos = int(obtener_parametro('113', default=30))
+        minutos = float(obtener_parametro('101', default=10))
     
-    vence = timezone.now() + timedelta(seconds=segundos)
+    vence = timezone.now() + timedelta(minutes=minutos)
     
     try:
         with transaction.atomic():
@@ -1125,7 +1169,7 @@ def reservar_temporal(request):
 @require_POST
 @login_required
 def renovar_reserva(request):
-    """Renueva el bloqueo temporal de los asientos (113 cliente / 172 taquilla)."""
+    """Renueva el bloqueo temporal usando el Reloj Único de Sesión."""
     viaje_id = request.POST.get('viaje_id')
     asientos_ids = request.POST.getlist('asientos[]')
     
@@ -1138,13 +1182,13 @@ def renovar_reserva(request):
     if not cliente and not empleado:
         return JsonResponse({'ok': False, 'error': 'Usuario no autorizado.'}, status=400)
     
-    # ⭐ Tiempo según el rol
+    # ⭐ RELOJ ÚNICO: Usamos el tiempo de sesión (101 web / 171 taquilla)
     if empleado:
-        segundos = int(obtener_parametro('172', default=60))
+        minutos = int(obtener_parametro('171', default=5))
     else:
-        segundos = int(obtener_parametro('113', default=30))
+        minutos = int(obtener_parametro('101', default=10))
     
-    vence = timezone.now() + timedelta(seconds=segundos)
+    vence = timezone.now() + timedelta(minutes=minutos)
     
     try:
         with transaction.atomic():
