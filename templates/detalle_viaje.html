@@ -47,9 +47,20 @@
 {% endblock %}
 
 {% block contador_flotante %}
+<!-- Contador original del cliente web -->
 <div class="contador-flotante" id="contador-wrap">
     <span class="etiqueta">Tiempo restante:</span>
     <span id="contador" class="tiempo">--:--</span>
+</div>
+
+<!-- ⭐ Reloj Maestro para Taquilla (Oculto por defecto) -->
+<div id="timer-box" class="position-fixed shadow rounded bg-dark px-2 py-1 border border-warning" 
+     style="top: 105px; left: 15px; z-index: 1050; font-size: 0.75rem; display: none;">
+    <div class="d-flex align-items-center gap-2">
+        <i class="bi bi-clock-history text-warning"></i>
+        <span class="text-warning">Tiempo restante:</span>
+        <span id="contador-global" class="font-monospace fw-bold text-warning">--:--</span>
+    </div>
 </div>
 {% endblock %}
 
@@ -253,24 +264,6 @@
 
 {% block extra_js %}
 <script>
-//~ // ============================================================
-//~ // VARIABLES COMUNES
-//~ // ============================================================
-//~ let segundosTotales = {{ segundos_restantes }};
-//~ const PRECIO = parseFloat("{{ tarifa.monto_usd|default:0 }}".replace(',', '.')) || 0;
-//~ const SEGURO = parseFloat("{{ seguro }}".replace(',', '.')) || 0;
-//~ const TASA_BCV = parseFloat("{{ tasa_bcv|default:'0' }}".replace(',', '.')) || 0;
-//~ const ES_TAQUILLA = {% if user.usuarioempresa %}true{% else %}false{% endif %};
-//~ const VIAJE_ID = {{ viaje.id }};
-//~ const URL_REDIRECCION = ES_TAQUILLA ? '/taquilla/' : '/';
-//~ const USUARIO_AUTENTICADO = {% if user.is_authenticated %}true{% else %}false{% endif %};
-//~ const URL_LOGIN = "/login/?next=/viajes/{{ viaje.id }}/";
-//~ const URL_RESERVAR_TEMPORAL = "/reservar-temporal/";
-//~ const URL_RENOVAR_RESERVA = "/renovar-reserva/";
-//~ const URL_LIBERAR = "/liberar/";
-//~ const INTERVALO_RENOVACION = 20000;  
-//~ const TIEMPO_INACTIVIDAD = 120000;   
-
 // ============================================================
 // VARIABLES COMUNES
 // ============================================================
@@ -379,7 +372,7 @@ asientos.forEach(asiento => {
             
             window.location.href = URL_REDIRECCION;
             return;
-}
+        }
         const id = this.dataset.asientoId;
         
         if (seleccionados.has(id)) {
@@ -461,7 +454,7 @@ function abrirCobroTaquilla() {
 }
 
 // ============================================================
-// CONTADOR DE TIEMPO
+// CONTADOR DE TIEMPO (Lógica original del cliente web - NO TOCAR)
 // ============================================================
 function formatearTiempo(segundos) {
     const m = Math.floor(segundos / 60);
@@ -489,6 +482,50 @@ if (elementosContador.length > 0 && segundosTotales > 0) {
             wraps.forEach(wrap => wrap.classList.add('urgente'));
         }
     }, 1000);
+}
+
+// ============================================================
+// ⭐ RELOJ MAESTRO (SOLO PARA TAQUILLA)
+// ============================================================
+// Este bloque solo se ejecuta si el usuario es taquillero.
+// Toma la hora exacta de expiración del servidor (expiracion_iso)
+// y calcula el tiempo restante real, sin importar el retraso de red.
+if (ES_TAQUILLA) {
+    (function() {
+        const expiracionStr = "{{ expiracion_iso|default:'' }}";
+        if (!expiracionStr) return;
+
+        const fechaExpiracion = new Date(expiracionStr).getTime();
+        const timerBox = document.getElementById("timer-box");
+        const contadorEl = document.getElementById("contador-global");
+
+        if (contadorEl) {
+            function actualizarRelojTaquilla() {
+                const ahora = new Date().getTime();
+                const segundosRestantes = Math.max(0, Math.floor((fechaExpiracion - ahora) / 1000));
+
+                if (segundosRestantes <= 0) {
+                    clearInterval(intervaloTaquilla);
+                    contadorEl.innerText = "0:00";
+                    alert("⏰ El tiempo de reserva ha expirado. Los asientos han sido liberados.");
+                    window.location.href = "/taquilla/";
+                    return;
+                }
+
+                contadorEl.innerText = formatearTiempo(segundosRestantes);
+
+                if (timerBox) {
+                    timerBox.style.display = 'block';
+                }
+                if (segundosRestantes <= 120 && timerBox) {
+                    timerBox.className = "position-fixed shadow rounded bg-danger px-2 py-1 border border-white";
+                }
+            }
+
+            actualizarRelojTaquilla();
+            const intervaloTaquilla = setInterval(actualizarRelojTaquilla, 1000);
+        }
+    })();
 }
 </script>
 {% endblock %}

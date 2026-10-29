@@ -3,6 +3,16 @@
 {% block title %}Cobrar - Viba-Web{% endblock %}
 
 {% block content %}
+<!-- ⭐ CONTADOR FLOTANTE (HTML) - Siempre presente, oculto por defecto -->
+<div id="timer-box" class="position-fixed shadow rounded bg-dark px-2 py-1 border border-warning"
+     style="top: 105px; left: 15px; z-index: 1050; font-size: 0.75rem; display: none;">
+    <div class="d-flex align-items-center gap-2">
+        <i id="timer-icon" class="bi bi-clock-history text-warning"></i>
+        <span id="timer-label" class="text-warning">Tiempo restante:</span>
+        <span id="contador-global" class="font-monospace fw-bold text-warning">--:--</span>
+    </div>
+</div>
+
 <div class="container mt-4" style="max-width: 800px;">
     <h2><i class="bi bi-cash-coin"></i> Cobrar Boletos</h2>
     <p class="text-muted">Ruta: {{ viaje.ruta.nombre }} | Tramo: {{ parada_origen.oficina.nombre }} a {{ parada_destino.oficina.nombre }}</p>
@@ -10,61 +20,145 @@
     <div class="card shadow-sm mb-4">
         <div class="card-body">
             <h5 class="card-title">Resumen de la Venta</h5>
-            <p><strong>Asientos:</strong> {{ asientos_seleccionados|join:", " }}</p>
-            <p><strong>Precio por boleto:</strong> ${{ tarifa.monto_usd|floatformat:2|intcomma }} + Seguro ${{ valor_seguro|floatformat:2|intcomma }}</p>
+            <p><strong>Asientos:</strong> 
+                {% for a in asientos_con_datos %}{{ a.numero }}{% if not forloop.last %}, {% endif %}{% endfor %}
+            </p>
+            <p><strong>Precio base:</strong> ${{ tarifa.monto_usd|floatformat:2 }} + Seguro ${{ valor_seguro|floatformat:2 }}</p>
             <h4 class="text-success">
                 Total a cobrar: 
-                ${{ total_usd|floatformat:2|intcomma }} / 
-                Bs. {{ total_bs|floatformat:2|intcomma }}
+                $<span id="total-usd">{{ total_usd|floatformat:2 }}</span> / 
+                Bs. <span id="total-bs">{{ total_bs|floatformat:2 }}</span>
             </h4>
         </div>
     </div>
 
-    <form method="post" action="{% url 'core:taquilla_cobrar' viaje.id %}?destino={{ parada_destino.oficina.id }}&origen={{ parada_origen.oficina.id }}">
+    <form method="post" action="{% url 'core:taquilla_cobrar' viaje.id %}?destino={{ parada_destino.oficina.id }}&origen={{ parada_origen.oficina.id }}" id="form-cobro">
         {% csrf_token %}
-        <!-- Campos ocultos para mantener los asientos seleccionados -->
-        {% for asiento_id in asientos_ids %}
-            <input type="hidden" name="asientos[]" value="{{ asiento_id }}">
-        {% endfor %}
         <input type="hidden" name="destino" value="{{ parada_destino.oficina.id }}">
         <input type="hidden" name="origen" value="{{ parada_origen.oficina.id }}">
 
-        <div class="card shadow-sm mb-4">
+        <!-- REPETIR FORMULARIO POR CADA ASIENTO -->
+        {% for a in asientos_con_datos %}
+        <div class="card shadow-sm mb-3">
+            <div class="card-header bg-light">
+                <strong>Asiento {{ a.numero }}</strong>
+                {% if a.lado %}<span class="badge bg-secondary">{{ a.lado }}</span>{% endif %}
+            </div>
             <div class="card-body">
-                <h5 class="card-title">Datos del Pasajero</h5>
-                
+                <input type="hidden" name="asientos[]" value="{{ a.id }}">
                 <div class="row mb-3">
                     <div class="col-md-6">
                         <label class="form-label">Cédula (V-XXXX)</label>
-                        <input type="text" name="cedula" id="cedula" class="form-control" required placeholder="Ej: V-12345678" onblur="buscarPasajero()">
-                        <small class="text-muted" id="mensaje-cedula"></small>
+                        <input type="text" name="cedula_{{ a.id }}" class="form-control" required placeholder="Ej: V-12345678">
                     </div>
                     <div class="col-md-6">
                         <label class="form-label">Teléfono</label>
-                        <input type="text" name="telefono" id="telefono" class="form-control" placeholder="0414-1234567">
+                        <input type="text" name="telefono_{{ a.id }}" class="form-control" placeholder="0414-1234567">
                     </div>
                 </div>
-
                 <div class="mb-3">
                     <label class="form-label">Nombre y Apellido</label>
-                    <input type="text" name="nombre" id="nombre" class="form-control" required placeholder="Nombre completo del pasajero">
+                    <input type="text" name="nombre_{{ a.id }}" class="form-control" required placeholder="Nombre completo">
                 </div>
-
                 <div class="mb-3">
-                    <label class="form-label">Método de Pago</label>
-                    <select name="metodo_pago" class="form-select">
-                        <option value="efectivo_usd">Efectivo USD</option>
-                        <option value="efectivo_bs">Efectivo Bs.</option>
-                        <option value="pago_movil">Pago Móvil</option>
-                        <option value="punto_venta">Punto de Venta</option>
+                    <label class="form-label">Tipo de Pasajero</label>
+                    <select name="tipo_pasajero_{{ a.id }}" class="form-select tipo-pasajero" onchange="actualizarTotal()">
+                        <option value="normal">Normal</option>
+                        <option value="tercera_edad">Preferencial (3ra edad)</option>
+                        <option value="discapacitado">Preferencial (discapacitado)</option>
+                        <option value="cortesia">Cortesía</option>
                     </select>
                 </div>
             </div>
         </div>
+        {% endfor %}
+
+        <!-- FORMULARIO DE COBRO MÚLTIPLE -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-light">
+                <h6 class="mb-0"><i class="bi bi-cash-stack"></i> Registrar Pagos</h6>
+            </div>
+            <div class="card-body">
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">Método</label>
+                        <select id="metodo_pago" class="form-select">
+                            <option value="efectivo_usd">Efectivo USD</option>
+                            <option value="efectivo_bs">Efectivo Bs.</option>
+                            <option value="pago_movil">Pago Móvil</option>
+                            <option value="punto_venta">Punto de Venta</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">Monto</label>
+                        <input type="number" id="monto_pago" class="form-control" step="0.01" min="0" placeholder="0.00">
+                    </div>
+                    <div class="col-md-3" id="campo_referencia" style="display:none;">
+                        <label class="form-label fw-bold">Referencia</label>
+                        <input type="text" id="referencia_pago" class="form-control" placeholder="Ej: 123456789">
+                    </div>
+                    <div class="col-md-3">
+                        <button type="button" class="btn btn-primary w-100" onclick="agregarPago()">
+                            <i class="bi bi-plus-circle"></i> Agregar Pago
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- ⭐ BOTÓN DE PAGO EXACTO (Magia para el taquillero) -->
+                <div class="mt-2 text-end">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="llenarPagoExacto()">
+                        <i class="bi bi-magic"></i> Llenar Monto Restante
+                    </button>
+                </div>
+
+                <div class="alert alert-warning mt-3 mb-0">
+                    <div class="d-flex justify-content-between flex-wrap gap-2">
+                        <span>
+                            <strong>Total a cobrar:</strong><br>
+                            $<span id="total-cobrar">{{ total_usd|floatformat:2 }}</span><br>
+                            <small class="text-muted">Bs. <span id="total-cobrar-bs">{{ total_bs|floatformat:2 }}</span></small>
+                        </span>
+                        <span>
+                            <strong>Pagado:</strong><br>
+                            $<span id="total-pagado">0.00</span><br>
+                            <small class="text-muted">Bs. <span id="total-pagado-bs">0.00</span></small>
+                        </span>
+                        <span>
+                            <strong>Restante:</strong><br>
+                            $<span id="total-restante">{{ total_usd|floatformat:2 }}</span><br>
+                            <small class="text-muted">Bs. <span id="total-restante-bs">{{ total_bs|floatformat:2 }}</span></small>
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabla de pagos -->
+        <div class="card shadow-sm mb-4" id="tabla_pagos_container" style="display:none;">
+            <div class="card-body">
+                <h6 class="mb-3">Pagos registrados:</h6>
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>Método</th>
+                            <th>Monto USD</th>
+                            <th>Monto Bs.</th>
+                            <th>Referencia</th>
+                            <th>Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabla_pagos"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <input type="hidden" name="pagos_json" id="pagos_json" value="[]">
 
         <div class="d-flex justify-content-between">
             <a href="{% url 'core:taquilla_mapa' viaje.id %}?destino={{ parada_destino.oficina.id }}&origen={{ parada_origen.oficina.id }}" class="btn btn-secondary">Volver al Mapa</a>
-            <button type="submit" class="btn btn-success btn-lg"><i class="bi bi-check-circle"></i> Confirmar y Cobrar</button>
+            <button type="submit" class="btn btn-success btn-lg" id="btn_confirmar" disabled>
+                <i class="bi bi-check-circle"></i> Confirmar y Cobrar
+            </button>
         </div>
     </form>
 </div>
@@ -72,69 +166,238 @@
 
 {% block extra_js %}
 <script>
-    // Función para buscar al pasajero por cédula
-    function buscarPasajero() {
-        const cedula = document.getElementById('cedula').value;
-        const mensaje = document.getElementById('mensaje-cedula');
-        const nombreInput = document.getElementById('nombre');
-        const telefonoInput = document.getElementById('telefono');
+    // ============================================================
+    // 1. VARIABLES DE PRECIOS
+    // ============================================================
+    const PRECIO_BASE = parseFloat("{{ tarifa.monto_usd|default:0 }}".replace(',', '.')) || 0;
+    const SEGURO = parseFloat("{{ valor_seguro|default:0 }}".replace(',', '.')) || 0;
+    const TASA_BCV = parseFloat("{{ tasa_bcv|default:'0' }}".replace(',', '.')) || 0;
+    const DESCUENTO_PREFERENCIAL = parseFloat("{{ descuento_preferencial|default:0 }}") || 0;
+    const COBRAR_SEGURO_CORTESIA = {{ cobrar_seguro_cortesia|yesno:"true,false" }};
 
-        if (!cedula) return;
+    // ============================================================
+    // 2. CONTADOR FLOTANTE SINCRONIZADO (El Reloj Maestro)
+    // ============================================================
+    (function() {
+        const expiracionStr = "{{ expiracion_iso|default:'' }}";
+        const timerBox = document.getElementById("timer-box");
+        const contadorEl = document.getElementById("contador-global");
+        
+        if (!contadorEl || !expiracionStr) return;
 
-        mensaje.innerHTML = '<span class="text-info">Buscando...</span>';
+        const fechaExpiracion = new Date(expiracionStr).getTime();
 
-        fetch(`/taquilla/buscar-pasajero/?cedula=${cedula}`)
-            .then(response => response.json())
-            .then(data => {
-                if (data.encontrado) {
-                    nombreInput.value = data.nombre;
-                    telefonoInput.value = data.telefono;
-                    mensaje.innerHTML = '<span class="text-success"><i class="bi bi-check-circle"></i> Pasajero encontrado</span>';
-                } else {
-                    mensaje.innerHTML = '<span class="text-warning">Pasajero nuevo, por favor complete los datos.</span>';
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                mensaje.innerHTML = '';
-            });
-    }
+        function formatearTiempo(segundos) {
+            const m = Math.floor(segundos / 60);
+            const s = segundos % 60;
+            return `${m}:${s.toString().padStart(2, '0')}`;
+        }
 
-    // Renovación automática del bloqueo
-    const URL_RENOVAR_RESERVA = "/renovar-reserva/";
-    const VIAJE_ID = "{{ viaje.id }}";
-    const ASIENTOS_IDS = [{% for id in asientos_ids %}"{{ id }}",{% endfor %}];
-    const INTERVALO_RENOVACION = {{ intervalo_renovacion|default:20 }} * 1000;
+        function actualizarContador() {
+            const ahora = new Date().getTime();
+            const segundosTotales = Math.max(0, Math.floor((fechaExpiracion - ahora) / 1000));
 
-    function getCookie(name) {
-        let cookieValue = null;
-        if (document.cookie && document.cookie !== '') {
-            const cookies = document.cookie.split(';');
-            for (let i = 0; i < cookies.length; i++) {
-                const cookie = cookies[i].trim();
-                if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                    break;
-                }
+            if (segundosTotales <= 0) {
+                clearInterval(timerInterval);
+                contadorEl.innerText = "0:00";
+                alert("⏰ El tiempo de reserva ha expirado. Los asientos han sido liberados.");
+                window.location.href = "/taquilla/";
+                return;
+            }
+
+            contadorEl.innerText = formatearTiempo(segundosTotales);
+            
+            if (timerBox) timerBox.style.display = 'block';
+
+            if (segundosTotales <= 120 && timerBox) {
+                timerBox.className = "position-fixed shadow rounded bg-danger px-2 py-1 border border-white";
             }
         }
-        return cookieValue;
+
+        actualizarContador();
+        const timerInterval = setInterval(actualizarContador, 1000);
+    })();
+
+    // ============================================================
+    // 3. CÁLCULO DE TOTALES SEGÚN TIPO DE PASAJERO
+    // ============================================================
+    function actualizarTotal() {
+        const selects = document.querySelectorAll('.tipo-pasajero');
+        let totalUSD = 0;
+        
+        selects.forEach(select => {
+            const tipo = select.value;
+            let precioUnitario = PRECIO_BASE;
+            let seguroUnitario = SEGURO;
+            
+            if (tipo === 'tercera_edad' || tipo === 'discapacitado') {
+                precioUnitario = PRECIO_BASE * (1 - (DESCUENTO_PREFERENCIAL / 100));
+            } else if (tipo === 'cortesia') {
+                precioUnitario = 0;
+                seguroUnitario = COBRAR_SEGURO_CORTESIA ? SEGURO : 0;
+            }
+            
+            totalUSD += precioUnitario + seguroUnitario;
+        });
+        
+        const totalBs = totalUSD * TASA_BCV;
+        
+        // Redondear a 2 decimales de forma segura
+        const totalUSDRedondeado = Math.round(totalUSD * 100) / 100;
+        const totalBsRedondeado = Math.round(totalBs * 100) / 100;
+        
+        const formatoUSD = totalUSDRedondeado.toLocaleString('es-VE', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        const formatoBs = totalBsRedondeado.toLocaleString('es-VE', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        
+        document.getElementById('total-usd').innerText = formatoUSD;
+        document.getElementById('total-bs').innerText = formatoBs;
+        document.getElementById('total-cobrar').innerText = formatoUSD;
+        document.getElementById('total-cobrar-bs').innerText = formatoBs;
+        
+        recalcularRestante();
     }
 
-    function renovarReservaTaquilla() {
-        if (ASIENTOS_IDS.length === 0) return;
-        const formData = new FormData();
-        formData.append('viaje_id', VIAJE_ID);
-        ASIENTOS_IDS.forEach(id => formData.append('asientos[]', id));
-        fetch(URL_RENOVAR_RESERVA, {
-            method: 'POST',
-            headers: { 'X-CSRFToken': getCookie('csrftoken') },
-            body: formData
-        })
-        .then(response => response.json())
-        .catch(error => console.warn('Error al renovar reserva (taquilla):', error));
+    // ============================================================
+    // 4. COBRO MÚLTIPLE
+    // ============================================================
+    let pagos = [];
+
+    document.getElementById('metodo_pago').addEventListener('change', function() {
+        const metodo = this.value;
+        const campoRef = document.getElementById('campo_referencia');
+        if (metodo === 'pago_movil' || metodo === 'punto_venta') {
+            campoRef.style.display = 'block';
+        } else {
+            campoRef.style.display = 'none';
+        }
+    });
+
+    function agregarPago() {
+        const metodo = document.getElementById('metodo_pago').value;
+        const montoInput = document.getElementById('monto_pago');
+        const referencia = document.getElementById('referencia_pago').value;
+        const monto = parseFloat(montoInput.value);
+
+        if (!monto || monto <= 0) {
+            alert('Ingrese un monto válido.');
+            return;
+        }
+
+        let montoUSD = monto;
+        let montoBs = 0;
+
+        if (metodo === 'efectivo_bs' || metodo === 'pago_movil' || metodo === 'punto_venta') {
+            montoBs = monto;
+            // Redondeo exacto a 2 decimales
+            montoUSD = TASA_BCV > 0 ? Math.round((monto / TASA_BCV) * 100) / 100 : 0;
+        } else {
+            montoUSD = monto;
+            montoBs = Math.round((monto * TASA_BCV) * 100) / 100;
+        }
+
+        pagos.push({
+            metodo: metodo,
+            monto_usd: montoUSD.toFixed(2),
+            monto_bs: montoBs.toFixed(2),
+            referencia: referencia || '',
+        });
+
+        actualizarTablaPagos();
+        montoInput.value = '';
+        document.getElementById('referencia_pago').value = '';
     }
 
-    setInterval(renovarReservaTaquilla, INTERVALO_RENOVACION);
+    // ⭐ FUNCIÓN MÁGICA: Llena el monto con lo que falta por cobrar
+    function llenarPagoExacto() {
+        const restanteTexto = document.getElementById('total-restante').innerText;
+        const restanteUSD = parseFloat(restanteTexto.replace(/\./g, '').replace(',', '.')) || 0;
+        
+        const metodo = document.getElementById('metodo_pago').value;
+        const montoInput = document.getElementById('monto_pago');
+        
+        if (metodo === 'efectivo_usd') {
+            montoInput.value = restanteUSD.toFixed(2);
+        } else {
+            // Si es Bs, calculamos el equivalente
+            const restanteBs = Math.round((restanteUSD * TASA_BCV) * 100) / 100;
+            montoInput.value = restanteBs.toFixed(2);
+        }
+    }
+
+    function actualizarTablaPagos() {
+        const tbody = document.getElementById('tabla_pagos');
+        const container = document.getElementById('tabla_pagos_container');
+        
+        if (pagos.length === 0) {
+            container.style.display = 'none';
+            return;
+        }
+        
+        container.style.display = 'block';
+        tbody.innerHTML = '';
+        
+        pagos.forEach((p, i) => {
+            const metodoLabels = {
+                'efectivo_usd': 'Efectivo USD',
+                'efectivo_bs': 'Efectivo Bs.',
+                'pago_movil': 'Pago Móvil',
+                'punto_venta': 'Punto de Venta'
+            };
+            
+            tbody.innerHTML += `
+                <tr>
+                    <td>${metodoLabels[p.metodo] || p.metodo}</td>
+                    <td>$${parseFloat(p.monto_usd).toFixed(2)}</td>
+                    <td>Bs. ${parseFloat(p.monto_bs).toFixed(2)}</td>
+                    <td>${p.referencia || '—'}</td>
+                    <td><button type="button" class="btn btn-danger btn-sm" onclick="eliminarPago(${i})"><i class="bi bi-trash"></i></button></td>
+                </tr>
+            `;
+        });
+        
+        document.getElementById('pagos_json').value = JSON.stringify(pagos);
+        recalcularRestante();
+    }
+
+    function recalcularRestante() {
+        const totalPagado = pagos.reduce((sum, p) => sum + parseFloat(p.monto_usd), 0);
+        
+        // Leer el total a cobrar de forma segura
+        let totalCobrarStr = document.getElementById('total-cobrar').innerText;
+        totalCobrarStr = totalCobrarStr.replace(/\./g, '').replace(',', '.');
+        const totalCobrar = parseFloat(totalCobrarStr) || 0;
+        
+        const restante = totalCobrar - totalPagado;
+        
+        document.getElementById('total-pagado').innerText = totalPagado.toFixed(2);
+        document.getElementById('total-restante').innerText = restante.toFixed(2);
+        
+        const totalPagadoBs = totalPagado * TASA_BCV;
+        const restanteBs = restante * TASA_BCV;
+        
+        document.getElementById('total-pagado-bs').innerText = totalPagadoBs.toLocaleString('es-VE', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        document.getElementById('total-restante-bs').innerText = restanteBs.toLocaleString('es-VE', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        
+        const btn = document.getElementById('btn_confirmar');
+        if (Math.abs(restante) < 0.01 && pagos.length > 0) {
+            btn.disabled = false;
+            document.getElementById('total-restante').className = 'text-success fw-bold';
+        } else {
+            btn.disabled = true;
+            document.getElementById('total-restante').className = '';
+        }
+    }
+
+    function eliminarPago(index) {
+        pagos.splice(index, 1);
+        actualizarTablaPagos();
+    }
+
+    // ============================================================
+    // 5. INICIALIZACIÓN
+    // ============================================================
+    document.addEventListener('DOMContentLoaded', function() { 
+        actualizarTotal();
+    });
 </script>
 {% endblock %}

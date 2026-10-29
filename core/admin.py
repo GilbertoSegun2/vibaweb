@@ -1,6 +1,9 @@
 from django.contrib import admin
 from django.db import transaction
 from django.utils.safestring import mark_safe
+# 1. IMPORTAMOS EL ADMIN MÁGICO DE EXPORTACIÓN
+from import_export.admin import ImportExportModelAdmin 
+
 from .models import (
     Oficina, Empresa, Parametro, Bus, Tarifa, Ruta, Cliente, 
     Viaje, Asiento, Boleto, Credito, MovimientoAsiento, 
@@ -29,7 +32,8 @@ class EmpresaAdmin(admin.ModelAdmin):
 # ADMIN DE PARÁMETROS CON URLS PERSONALIZADAS
 # ============================================================
 
-class ParametroAdmin(admin.ModelAdmin):
+# 2. HEREDAMOS DE ImportExportModelAdmin
+class ParametroAdmin(ImportExportModelAdmin, admin.ModelAdmin): 
     list_display = ('codigo', 'descripcion', 'tipo', 'valor_numerico', 'valor_texto', 'activo')
     list_filter = ('tipo', 'activo')
     search_fields = ('codigo', 'descripcion')

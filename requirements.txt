@@ -10,3 +10,6 @@ dj-database-url==3.1.2
 gevent==26.9.0
 django-pwa==2.0.1
 python-dateutil==3.0.0
+django-import-export==4.4.4
+tablib==3.10.0
+diff-match-patch==20241021

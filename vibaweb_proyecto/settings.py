@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'django.contrib.humanize',
     'pwa',
     'core',
+    'import_export',
 ]
 
 MIDDLEWARE = [

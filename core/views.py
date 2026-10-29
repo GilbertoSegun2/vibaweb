@@ -17,7 +17,10 @@ from .models import (
     PlantillaBus, PlantillaAsiento, Ruta, RutaParada, Suscripcion
 )
 from .forms import RegistroForm, LoginForm, PagoWebForm, PasajeroForm, PasarelaVirtualForm
-from .utils import obtener_parametro, liberar_reservas_vencidas, generar_codigo_transaccion, generar_codigo_qr
+from .utils import (
+    obtener_parametro, liberar_reservas_vencidas, generar_codigo_transaccion,
+    generar_codigo_qr, asiento_esta_disponible_en_tramo
+)
 
 # ============================================================
 # SEGURIDAD: SESIÓN ÚNICA POR USUARIO-WEB
@@ -65,6 +68,10 @@ def validar_tarifa_para_viaje(viaje, origen_id, destino_id):
 # VISTAS PÚBLICAS
 # ============================================================
 def inicio(request):
+    # ⭐ Si es empleado, redirigir a su área de taquilla
+    if request.user.is_authenticated and getattr(request.user, 'usuarioempresa', None):
+        return redirect('core:taquilla_inicio')
+        
     request.session.pop('reserva_inicio', None)
     logout_reciente = request.session.pop('logout_reciente', False)
     cliente = getattr(request.user, 'cliente', None)
@@ -80,48 +87,6 @@ def inicio(request):
     return render(request, 'inicio.html', {
         'oficinas': oficinas, 'logout_reciente': logout_reciente,
         'bienvenida_titulo': bienvenida_titulo, 'bienvenida_subtitulo': bienvenida_subtitulo,
-    })
-
-def buscar_viajes(request):
-    origen_id = request.GET.get('origen')
-    destino_id = request.GET.get('destino')
-    fecha_str = request.GET.get('fecha')
-    if not (origen_id and destino_id and fecha_str):
-        return render(request, 'buscar_viajes.html', {'viajes_con_info': [], 'oficinas': Oficina.objects.filter(activa=True).order_by('nombre')})
-    viajes = Viaje.objects.filter(estado='programado', cerrado_venta=False, ruta__activa=True)
-    for viaje in viajes:
-        liberar_reservas_vencidas(viaje=viaje)
-    oficina_origen = Oficina.objects.filter(id=origen_id).first()
-    oficina_destino = Oficina.objects.filter(id=destino_id).first()
-    fecha = None
-    tarifa = None
-    if oficina_origen:
-        viajes = viajes.filter(ruta__origen=oficina_origen)
-    if oficina_destino:
-        viajes = viajes.filter(ruta__destinos=oficina_destino)
-    try:
-        fecha = datetime.strptime(fecha_str, '%Y-%m-%d').date()
-        hoy = timezone.now().date()
-        if fecha >= hoy:
-            viajes = viajes.filter(fecha=fecha)
-        else:
-            viajes = viajes.none()
-    except ValueError:
-        viajes = viajes.none()
-    if oficina_origen and oficina_destino:
-        tarifa = Tarifa.objects.filter(origen=oficina_origen, destino=oficina_destino, activa=True).first()
-    if oficina_origen:
-        request.session['busqueda_origen_id'] = oficina_origen.id
-    if oficina_destino:
-        request.session['busqueda_destino_id'] = oficina_destino.id
-    viajes = viajes.select_related('ruta', 'bus', 'ruta__origen').order_by('fecha', 'hora')
-    viajes_con_info = []
-    for viaje in viajes:
-        disponibles = viaje.asientos.filter(estado='disponible').count()
-        viajes_con_info.append({'viaje': viaje, 'disponibles': disponibles, 'tarifa': tarifa})
-    return render(request, 'buscar_viajes.html', {
-        'viajes_con_info': viajes_con_info, 'oficina_origen': oficina_origen, 'oficina_destino': oficina_destino,
-        'fecha': fecha, 'tarifa': tarifa, 'oficinas': Oficina.objects.filter(activa=True).order_by('nombre'),
     })
 
 @login_required
@@ -680,6 +645,17 @@ def ayuda(request):
 # VISTAS DE TAQUILLA (EMPLEADOS)
 # ============================================================
 def taquilla_inicio(request):
+    # ⭐ Liberar asientos vencidos (igual que el cliente web)
+    from .utils import liberar_reservas_vencidas
+    viajes_con_reservas = Viaje.objects.filter(
+        asientos__estado='reservado',
+        asientos__reservado_hasta__lt=timezone.now()
+    ).distinct()
+    for viaje in viajes_con_reservas:
+        liberar_reservas_vencidas(viaje=viaje)
+
+    # Resetear el tiempo de reserva al volver al inicio
+    request.session.pop('reserva_inicio', None)
     if not request.user.is_authenticated:
         return redirect('core:login')
     try:
@@ -702,7 +678,6 @@ def taquilla_inicio(request):
             fecha = datetime.strptime(fecha_str, '%Y-%m-%d').date()
             oficina_origen = Oficina.objects.get(id=origen_id)
             
-            from django.utils import timezone
             hoy = timezone.localtime(timezone.now()).date()
             ahora = timezone.localtime(timezone.now()).time()
 
@@ -752,6 +727,7 @@ def taquilla_mapa(request, viaje_id):
         return redirect('core:inicio')
 
     viaje = get_object_or_404(Viaje, id=viaje_id)
+    liberar_reservas_vencidas(viaje=viaje)
     
     origen_id = request.GET.get('origen', empleado.oficina.id)
     destino_id = request.GET.get('destino')
@@ -771,8 +747,6 @@ def taquilla_mapa(request, viaje_id):
     tasa_bcv = obtener_parametro('107', default=0)
     valor_seguro = obtener_parametro('100', default=0)
 
-    from .utils import asiento_esta_disponible_en_tramo
-    
     asientos = viaje.asientos.order_by('piso', 'fila', 'columna')
     asientos_por_piso = {}
     for asiento in asientos:
@@ -796,14 +770,42 @@ def taquilla_mapa(request, viaje_id):
     if len(asientos_por_piso) > 1:
         asientos_por_piso = dict(reversed(list(asientos_por_piso.items())))
 
-    # ⭐ USAR EL PARÁMETRO 171 PARA TAQUILLEROS (Minutos de reserva)
-    minutos_taquilla = int(obtener_parametro('171', default=5))
-    segundos_restantes = minutos_taquilla * 60
+    # ⭐ CONTROL DEL TIEMPO (Sincronizado y Persistente)
+    minutos_reserva = int(obtener_parametro('171', default=5))
+    reserva_inicio_str = request.session.get('reserva_inicio')
+    
+    if not reserva_inicio_str:
+        # Si es la primera vez, creamos el punto de partida
+        reserva_inicio = timezone.now()
+        request.session['reserva_inicio'] = reserva_inicio.isoformat()
+    else:
+        try:
+            reserva_inicio = datetime.fromisoformat(reserva_inicio_str)
+        except (ValueError, TypeError):
+            reserva_inicio = timezone.now()
+            request.session['reserva_inicio'] = reserva_inicio.isoformat()
+
+    # Calculamos la hora exacta de expiración
+    expira_en = reserva_inicio + timedelta(minutes=minutos_reserva)
+    tiempo_actual = timezone.now()
+
+    if tiempo_actual > expira_en:
+        # Si expiró, liberar asientos y redirigir
+        Asiento.objects.filter(estado='reservado', reservado_por=request.user).update(
+            estado='disponible', reservado_por=None, reservado_hasta=None
+        )
+        request.session.pop('reserva_inicio', None)
+        messages.warning(request, "Tu tiempo de reserva ha expirado. Selecciona de nuevo.")
+        return redirect('core:taquilla_inicio')
+
+    # Variables que van al HTML
+    expiracion_iso = expira_en.isoformat()
+    segundos_restantes = max(0, int((expira_en - tiempo_actual).total_seconds()))
 
     return render(request, 'detalle_viaje.html', {
         'viaje': viaje,
         'asientos_por_piso': asientos_por_piso,
-        'cliente_id': request.user.id, # <-- ID del User (funciona para cliente y taquillero)
+        'cliente_id': request.user.id,
         'tarifa': tarifa,
         'tiene_tarifa': True,
         'seguro': valor_seguro,
@@ -811,8 +813,9 @@ def taquilla_mapa(request, viaje_id):
         'transaccion_reciente': None,
         'origen_id': origen_id,
         'destino_id': destino_id,
+        'expiracion_iso': expiracion_iso,
     })
-
+    
 def taquilla_cobrar(request, viaje_id):
     if not request.user.is_authenticated:
         return redirect('core:login')
@@ -837,63 +840,144 @@ def taquilla_cobrar(request, viaje_id):
     tasa_bcv = obtener_parametro('107', default=0)
     valor_seguro = obtener_parametro('100', default=0)
     
+    descuento_preferencial = obtener_parametro('174', default=50)
+    cobrar_seguro_cortesia = obtener_parametro('175', default=True)
     intervalo_renovacion = int(obtener_parametro('114', default=20))
 
     if not tarifa:
         messages.error(request, "No hay tarifa configurada para este tramo.")
         return redirect('core:taquilla_inicio')
 
-    # ⭐ CONVERTIR IDs A NÚMEROS DE ASIENTO (para mostrar en el template)
-    asientos_ids = request.GET.getlist('asientos[]')
-    asientos_seleccionados = list(
-        Asiento.objects.filter(id__in=asientos_ids)
-        .values_list('numero', flat=True)
-        .order_by('numero')
-    )
+    # ⭐ CONTROL DEL TIEMPO (Sincronizado y Persistente)
+    minutos_reserva = int(obtener_parametro('171', default=5))
+    reserva_inicio_str = request.session.get('reserva_inicio')
     
+    if not reserva_inicio_str:
+        # Si es la primera vez, creamos el punto de partida
+        reserva_inicio = timezone.now()
+        request.session['reserva_inicio'] = reserva_inicio.isoformat()
+    else:
+        try:
+            reserva_inicio = datetime.fromisoformat(reserva_inicio_str)
+        except (ValueError, TypeError):
+            reserva_inicio = timezone.now()
+            request.session['reserva_inicio'] = reserva_inicio.isoformat()
+
+    # Calculamos la hora exacta de expiración
+    expira_en = reserva_inicio + timedelta(minutes=minutos_reserva)
+    tiempo_actual = timezone.now()
+
+    if tiempo_actual > expira_en:
+        # Si expiró, liberar asientos y redirigir
+        Asiento.objects.filter(estado='reservado', reservado_por=request.user).update(
+            estado='disponible', reservado_por=None, reservado_hasta=None
+        )
+        request.session.pop('reserva_inicio', None)
+        messages.warning(request, "Tu tiempo de reserva ha expirado. Selecciona de nuevo.")
+        return redirect('core:taquilla_inicio')
+
+    # Variables que van al HTML
+    expiracion_iso = expira_en.isoformat()
+    segundos_restantes = max(0, int((expira_en - tiempo_actual).total_seconds()))
+
+    liberar_reservas_vencidas(viaje=viaje)
+
+    asientos_ids = request.GET.getlist('asientos[]')
+    asientos_seleccionados = list(Asiento.objects.filter(id__in=asientos_ids).values_list('numero', flat=True).order_by('numero'))
     cantidad = len(asientos_ids)
+
+    asientos_con_datos = []
+    for asiento_id in asientos_ids:
+        asiento = Asiento.objects.filter(id=asiento_id).first()
+        if asiento:
+            asientos_con_datos.append({
+                'id': asiento.id,
+                'numero': asiento.numero,
+                'lado': asiento.get_lado_display() if hasattr(asiento, 'get_lado_display') else '',
+            })
+
     precio_unitario = tarifa.monto_usd + valor_seguro
     total_usd = precio_unitario * cantidad
     total_bs = (total_usd * tasa_bcv).quantize(Decimal('0.01')) if tasa_bcv else 0
 
     if request.method == 'POST':
+        import json
         asientos_ids = request.POST.getlist('asientos[]')
-        nombre = request.POST.get('nombre')
-        cedula = request.POST.get('cedula')
-        telefono = request.POST.get('telefono', '')
-        metodo_pago = request.POST.get('metodo_pago', 'efectivo_usd')
+        pagos_json = request.POST.get('pagos_json', '[]')
 
-        if not asientos_ids or not nombre or not cedula:
-            messages.error(request, "Debe seleccionar asientos y llenar los datos del pasajero.")
-            return render(request, 'taquilla/cobrar.html', {
-                'empleado': empleado, 'viaje': viaje, 'parada_origen': parada_origen,
-                'parada_destino': parada_destino, 'tarifa': tarifa, 'tasa_bcv': tasa_bcv,
-                'valor_seguro': valor_seguro, 'destino_id': destino_id, 'origen_id': origen_id,
-                'asientos_seleccionados': asientos_seleccionados, # ⭐ AHORA ES NÚMEROS
-                'nombre': nombre, 'cedula': cedula, 'telefono': telefono,
-                'total_usd': total_usd, 'total_bs': total_bs,
-                'intervalo_renovacion': intervalo_renovacion,
+        if not asientos_ids:
+            messages.error(request, "No hay asientos seleccionados.")
+            return redirect('core:taquilla_mapa', viaje_id=viaje.id)
+
+        boletos_creados = []
+        total_venta_usd = Decimal('0.00')
+        total_venta_bs = Decimal('0.00')
+
+        for asiento_id in asientos_ids:
+            cedula = request.POST.get(f'cedula_{asiento_id}')
+            nombre = request.POST.get(f'nombre_{asiento_id}')
+            telefono = request.POST.get(f'telefono_{asiento_id}', '')
+            tipo = request.POST.get(f'tipo_pasajero_{asiento_id}', 'normal')
+
+            if not cedula or not nombre:
+                messages.error(request, f"Faltan datos para el asiento {asiento_id}.")
+                return redirect(f"/taquilla/viaje/{viaje.id}/cobrar/?destino={destino_id}&origen={origen_id}&" + "&".join([f"asientos[]={aid}" for aid in asientos_ids]))
+
+            if tipo == 'cortesia':
+                precio_final = Decimal('0.00')
+                seguro_final = valor_seguro if cobrar_seguro_cortesia else Decimal('0.00')
+            elif tipo in ['tercera_edad', 'discapacitado']:
+                precio_final = tarifa.monto_usd * (1 - (Decimal(descuento_preferencial) / 100))
+                seguro_final = valor_seguro
+            else:
+                precio_final = tarifa.monto_usd
+                seguro_final = valor_seguro
+
+            total_unitario = precio_final + seguro_final
+            total_venta_usd += total_unitario
+            total_venta_bs += (total_unitario * tasa_bcv) if tasa_bcv else Decimal('0.00')
+
+            boletos_creados.append({
+                'asiento_id': asiento_id, 'cedula': cedula, 'nombre': nombre,
+                'telefono': telefono, 'tipo': tipo, 'precio': precio_final,
+                'seguro': seguro_final, 'total': total_unitario,
             })
+
+        try:
+            pagos_lista = json.loads(pagos_json)
+        except json.JSONDecodeError:
+            pagos_lista = []
+
+        if not pagos_lista:
+            messages.error(request, "Debe registrar al menos un pago.")
+            return redirect(f"/taquilla/viaje/{viaje.id}/cobrar/?destino={destino_id}&origen={origen_id}&" + "&".join([f"asientos[]={aid}" for aid in asientos_ids]))
+
+        total_pagado = sum(float(p['monto_usd']) for p in pagos_lista)
+        if abs(total_pagado - float(total_venta_usd)) > 0.01:
+            messages.error(request, f"El total pagado (${total_pagado:.2f}) no coincide con el total a cobrar (${total_venta_usd:.2f}).")
+            return redirect(f"/taquilla/viaje/{viaje.id}/cobrar/?destino={destino_id}&origen={origen_id}&" + "&".join([f"asientos[]={aid}" for aid in asientos_ids]))
 
         try:
             with transaction.atomic():
                 codigo = generar_codigo_transaccion()
                 transaccion = Transaccion.objects.create(
-                    codigo=codigo, cliente=None, viaje=viaje, cantidad_boletos=cantidad,
-                    monto_total_usd=total_usd, monto_total_bs=total_bs, tasa_bcv=tasa_bcv,
+                    codigo=codigo, cliente=None, viaje=viaje, cantidad_boletos=len(boletos_creados),
+                    monto_total_usd=total_venta_usd, monto_total_bs=total_venta_bs, tasa_bcv=tasa_bcv,
                     estado='confirmada', fecha_confirmacion=timezone.now(),
                     vendido_por=request.user, oficina_venta=empleado.oficina,
                     oficina_destino=parada_destino.oficina, dispositivo_venta='Taquilla',
                 )
 
-                Pago.objects.create(
-                    transaccion=transaccion, metodo=metodo_pago,
-                    monto_usd=total_usd, monto_bs=total_bs, tasa_bcv=tasa_bcv,
-                    estado='confirmado', confirmado_por=request.user, fecha_confirmacion=timezone.now()
-                )
+                for p in pagos_lista:
+                    Pago.objects.create(
+                        transaccion=transaccion, metodo=p['metodo'],
+                        monto_usd=Decimal(p['monto_usd']), monto_bs=Decimal(p['monto_bs']),
+                        tasa_bcv=tasa_bcv, referencia=p.get('referencia', ''),
+                        estado='confirmado', confirmado_por=request.user, fecha_confirmacion=timezone.now()
+                    )
 
-                for asiento_id in asientos_ids:
-                    asiento = Asiento.objects.select_for_update().get(id=asiento_id, viaje=viaje)
+                for b in boletos_creados:
+                    asiento = Asiento.objects.select_for_update().get(id=b['asiento_id'], viaje=viaje)
                     asiento.estado = 'vendido'
                     asiento.reservado_hasta = None
                     asiento.reservado_por = None
@@ -901,13 +985,14 @@ def taquilla_cobrar(request, viaje_id):
 
                     Boleto.objects.create(
                         transaccion=transaccion, viaje=viaje, asiento=asiento,
-                        pasajero_cedula=cedula, pasajero_nombre=nombre, pasajero_telefono=telefono,
-                        tipo_pasajero='normal', monto_tarifa_usd=tarifa.monto_usd,
-                        monto_seguro_usd=valor_seguro, monto_total_usd=precio_unitario,
-                        tasa_bcv=tasa_bcv, monto_total_bs=(precio_unitario * tasa_bcv).quantize(Decimal('0.01')) if tasa_bcv else 0,
+                        pasajero_cedula=b['cedula'], pasajero_nombre=b['nombre'], pasajero_telefono=b['telefono'],
+                        tipo_pasajero=b['tipo'], monto_tarifa_usd=b['precio'], monto_seguro_usd=b['seguro'],
+                        monto_total_usd=b['total'], tasa_bcv=tasa_bcv,
+                        monto_total_bs=(b['total'] * tasa_bcv).quantize(Decimal('0.01')) if tasa_bcv else 0,
                         codigo_qr=generar_codigo_qr(), estado='vendido', vendido_por=request.user
                     )
 
+            request.session.pop('reserva_inicio', None)
             messages.success(request, f"¡Venta exitosa! Código: {codigo}")
             return redirect('core:taquilla_inicio')
 
@@ -919,9 +1004,11 @@ def taquilla_cobrar(request, viaje_id):
         'empleado': empleado, 'viaje': viaje, 'parada_origen': parada_origen,
         'parada_destino': parada_destino, 'tarifa': tarifa, 'tasa_bcv': tasa_bcv,
         'valor_seguro': valor_seguro, 'destino_id': destino_id, 'origen_id': origen_id,
-        'asientos_seleccionados': asientos_seleccionados,
-        'total_usd': total_usd, 'total_bs': total_bs,
-        'intervalo_renovacion': intervalo_renovacion,
+        'asientos_seleccionados': asientos_seleccionados, 'asientos_ids': asientos_ids,
+        'asientos_con_datos': asientos_con_datos, 'total_usd': total_usd, 'total_bs': total_bs,
+        'intervalo_renovacion': intervalo_renovacion, 'descuento_preferencial': descuento_preferencial,
+        'cobrar_seguro_cortesia': cobrar_seguro_cortesia,
+        'expiracion_iso': expiracion_iso, 'segundos_restantes': segundos_restantes, 'minutos_reserva': minutos_reserva,
     })
 
 @login_required
@@ -1069,3 +1156,45 @@ def renovar_reserva(request):
     
     except Exception as e:
         return JsonResponse({'ok': False, 'error': str(e)}, status=500)
+        
+def buscar_viajes(request):
+    origen_id = request.GET.get('origen')
+    destino_id = request.GET.get('destino')
+    fecha_str = request.GET.get('fecha')
+    if not (origen_id and destino_id and fecha_str):
+        return render(request, 'buscar_viajes.html', {'viajes_con_info': [], 'oficinas': Oficina.objects.filter(activa=True).order_by('nombre')})
+    viajes = Viaje.objects.filter(estado='programado', cerrado_venta=False, ruta__activa=True)
+    for viaje in viajes:
+        liberar_reservas_vencidas(viaje=viaje)
+    oficina_origen = Oficina.objects.filter(id=origen_id).first()
+    oficina_destino = Oficina.objects.filter(id=destino_id).first()
+    fecha = None
+    tarifa = None
+    if oficina_origen:
+        viajes = viajes.filter(ruta__origen=oficina_origen)
+    if oficina_destino:
+        viajes = viajes.filter(ruta__destinos=oficina_destino)
+    try:
+        fecha = datetime.strptime(fecha_str, '%Y-%m-%d').date()
+        hoy = timezone.now().date()
+        if fecha >= hoy:
+            viajes = viajes.filter(fecha=fecha)
+        else:
+            viajes = viajes.none()
+    except ValueError:
+        viajes = viajes.none()
+    if oficina_origen and oficina_destino:
+        tarifa = Tarifa.objects.filter(origen=oficina_origen, destino=oficina_destino, activa=True).first()
+    if oficina_origen:
+        request.session['busqueda_origen_id'] = oficina_origen.id
+    if oficina_destino:
+        request.session['busqueda_destino_id'] = oficina_destino.id
+    viajes = viajes.select_related('ruta', 'bus', 'ruta__origen').order_by('fecha', 'hora')
+    viajes_con_info = []
+    for viaje in viajes:
+        disponibles = viaje.asientos.filter(estado='disponible').count()
+        viajes_con_info.append({'viaje': viaje, 'disponibles': disponibles, 'tarifa': tarifa})
+    return render(request, 'buscar_viajes.html', {
+        'viajes_con_info': viajes_con_info, 'oficina_origen': oficina_origen, 'oficina_destino': oficina_destino,
+        'fecha': fecha, 'tarifa': tarifa, 'oficinas': Oficina.objects.filter(activa=True).order_by('nombre'),
+    })
