@@ -1143,7 +1143,7 @@ def registro_usuario(request):
                 fecha_expiracion_codigo=timezone.now() + timedelta(hours=24)
             )
             
-            # Guardamos el ID en la sesión temporalmente (sin loguear al usuario todavía)
+            # Guardamos el ID en la sesión temporalmente
             request.session['verificacion_user_id'] = user.id
             
             # HTML del correo con el número grande profesional
@@ -1159,10 +1159,13 @@ def registro_usuario(request):
                 </div>
                 <p>Ingresa este código en la plataforma para completar tu registro.</p>
                 <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
-                <p style="color: #666; font-size: 12px; text-align: center;">Este es un mensaje automático, por favor no lo respondas.<br>Gracias por preferirnos - Viba-Web</p>
+                <p style="color: #666; font-size: 12px; text-align: center;">Este es un mensaje automático, por favor no lo respondas.<br>Viba-Web</p>
             </div>
             """
 
+            # ========================================================
+            # 📌 AQUÍ ES EXACTAMENTE A ESTE NIVEL DE ALTURA:
+            # ========================================================
             try:
                 send_mail(
                     subject='Verifica tu cuenta - Viba-Web',
@@ -1173,9 +1176,8 @@ def registro_usuario(request):
                     fail_silently=False,
                 )
             except Exception as e:
-                messages.warning(request, f"Error al enviar el correo: {str(e)}")
+                messages.warning(request, f"Cuenta creada, pero hubo un detalle al enviar el correo: {str(e)}")
             
-            # ❌ SIN auth_login para obligar la verificación primero
             messages.success(request, f"¡Registro exitoso, {first_name}! Te hemos enviado un código de verificación a tu correo.")
             return redirect('core:verificar_email')
     else:
