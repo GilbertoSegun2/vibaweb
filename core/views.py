@@ -248,6 +248,10 @@ def login_view(request):
                     return render(request, 'login.html', {'form': form, 'mostrar_desbloqueo': True, 'username_bloqueado': username})
                 
                 auth_login(request, user)
+                # ⭐ VERIFICAR SI EL EMAIL ESTÁ VERIFICADO
+                if getattr(user, 'cliente', None) and not user.cliente.email_verificado:
+                    messages.warning(request, "Debes verificar tu correo electrónico antes de continuar.")
+                    return redirect('core:verificar_email')
                 
                 # ⭐ LIMPIEZA DE RESERVAS HUÉRFANAS (Para ambos roles)
                 # Si el usuario cerró el navegador, sus asientos quedaron reservados.
@@ -1107,6 +1111,10 @@ def taquilla_buscar_pasajero(request):
         })
     return JsonResponse({'encontrado': False})
     
+import random
+from django.core.mail import send_mail
+from django.conf import settings
+
 def registro_usuario(request):
     if request.user.is_authenticated:
         return redirect('core:inicio')
@@ -1127,13 +1135,49 @@ def registro_usuario(request):
                 first_name=first_name, last_name=last_name
             )
             
-            from .models import Cliente
-            Cliente.objects.create(user=user, cedula=cedula, telefono=telefono)
+            # Generar código de verificación
+            codigo = str(random.randint(100000, 999999))
+            cliente = Cliente.objects.create(
+                user=user, cedula=cedula, telefono=telefono,
+                codigo_verificacion=codigo,
+                fecha_expiracion_codigo=timezone.now() + timedelta(hours=24)
+            )
             
-            auth_login(request, user)
-            messages.success(request, f"Estimado cliente {first_name}: su cuenta ha sido creada exitosamente. Te damos la más cordial bienvenida.")
-            next_url = request.POST.get('next') or request.GET.get('next') or 'core:inicio'
-            return redirect(next_url)
+            # Guardamos el ID en la sesión temporalmente (sin loguear al usuario todavía)
+            request.session['verificacion_user_id'] = user.id
+            
+            # HTML del correo con el número grande profesional
+            html_content = f"""
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+                <h2 style="color: #003366; text-align: center;">Viba-Web</h2>
+                <p>Hola <strong>{first_name}</strong>,</p>
+                <p>Tu código de verificación para activar tu cuenta es:</p>
+                <div style="text-align: center; margin: 30px 0;">
+                    <span style="font-size: 36px; font-weight: bold; color: #003366; background-color: #f4f6f8; padding: 12px 24px; border-radius: 6px; letter-spacing: 6px; border: 1px dashed #003366;">
+                        {codigo}
+                    </span>
+                </div>
+                <p>Ingresa este código en la plataforma para completar tu registro.</p>
+                <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+                <p style="color: #666; font-size: 12px; text-align: center;">Este es un mensaje automático, por favor no lo respondas.<br>Gracias por preferirnos - Viba-Web</p>
+            </div>
+            """
+
+            try:
+                send_mail(
+                    subject='Verifica tu cuenta - Viba-Web',
+                    message=f'Hola {first_name},\n\nTu código de verificación es: {codigo}',
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    recipient_list=[email],
+                    html_message=html_content,
+                    fail_silently=False,
+                )
+            except Exception as e:
+                messages.warning(request, f"Error al enviar el correo: {str(e)}")
+            
+            # ❌ SIN auth_login para obligar la verificación primero
+            messages.success(request, f"¡Registro exitoso, {first_name}! Te hemos enviado un código de verificación a tu correo.")
+            return redirect('core:verificar_email')
     else:
         form = RegistroForm()
         
@@ -1289,3 +1333,208 @@ def buscar_viajes(request):
         'viajes_con_info': viajes_con_info, 'oficina_origen': oficina_origen, 'oficina_destino': oficina_destino,
         'fecha': fecha, 'tarifa': tarifa, 'oficinas': Oficina.objects.filter(activa=True).order_by('nombre'),
     })
+    
+@require_POST
+def solicitar_desbloqueo_login(request):
+    """Envía un código al correo del usuario bloqueado para forzar la liberación de su sesión."""
+    username = request.POST.get('username')
+    user = User.objects.filter(username=username).first() or User.objects.filter(email=username).first()
+    
+    if not user:
+        messages.error(request, "Usuario no encontrado.")
+        return redirect('core:login')
+    
+    cliente = getattr(user, 'cliente', None)
+    if not cliente:
+        messages.error(request, "Esta cuenta no es de tipo cliente.")
+        return redirect('core:login')
+    
+    # Generar código de 6 dígitos para desbloqueo
+    codigo = str(random.randint(100000, 999999))
+    cliente.codigo_verificacion = codigo
+    cliente.fecha_expiracion_codigo = timezone.now() + timedelta(minutes=15)
+    cliente.save()
+    
+    # Guardar en sesión temporalmente el ID del usuario a desbloquear
+    request.session['usuario_desbloqueo_id'] = user.id
+    
+    # ⭐ CORREO HTML PROFESIONAL DE DESBLOQUEO
+    html_content = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+        <h2 style="color: #003366; text-align: center;">Viba-Web - Seguridad</h2>
+        <p>Hola <strong>{user.first_name}</strong>,</p>
+        <p>Has solicitado desbloquear tu sesión activa y liberar tus asientos pendientes.</p>
+        <p>Tu código de verificación es:</p>
+        <div style="text-align: center; margin: 30px 0;">
+            <span style="font-size: 36px; font-weight: bold; color: #dc3545; background-color: #f4f6f8; padding: 12px 24px; border-radius: 6px; letter-spacing: 6px; border: 1px dashed #dc3545;">
+                {codigo}
+            </span>
+        </div>
+        <p>Este código expirará en <strong>15 minutos</strong>.</p>
+        <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+        <p style="color: #666; font-size: 12px; text-align: center;">Si no solicitaste este cambio, puedes ignorar este mensaje.<br>Viba-Web</p>
+    </div>
+    """
+
+    # Enviar correo mediante Resend
+    try:
+        send_mail(
+            subject='Código de desbloqueo de sesión - Viba-Web',
+            message=f'Hola {user.first_name},\n\nHas solicitado desbloquear tu sesión activa en Viba-Web.\nTu código de verificación es: {codigo}\n\nEste código expirará en 15 minutos.',
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user.email],
+            html_message=html_content,
+            fail_silently=False,
+        )
+        messages.success(request, "Te hemos enviado un código de desbloqueo a tu correo electrónico.")
+    except Exception as e:
+        messages.error(request, f"Error al enviar el correo: {str(e)}")
+        
+    return redirect('core:confirmar_desbloqueo')
+    
+# ~ @login_required
+def verificar_email(request):
+    user_id = request.session.get('verificacion_user_id')
+    if not user_id:
+        messages.error(request, "No hay ningún proceso de verificación pendiente.")
+        return redirect('core:login')
+        
+    user = get_object_or_404(User, id=user_id)
+    cliente = getattr(user, 'cliente', None)
+    
+    if not cliente or cliente.email_verificado:
+        return redirect('core:inicio')
+    
+    if request.method == 'POST':
+        codigo_ingresado = request.POST.get('codigo', '').strip()
+        
+        if codigo_ingresado == cliente.codigo_verificacion:
+            if timezone.now() > cliente.fecha_expiracion_codigo:
+                messages.error(request, "El código ha expirado. Solicita uno nuevo.")
+                return render(request, 'verificar_email.html')
+            
+            # 1. Marcar email como verificado
+            cliente.email_verificado = True
+            cliente.codigo_verificacion = None
+            cliente.fecha_expiracion_codigo = None
+            cliente.save()
+            
+            # 2. ⭐ INICIAR SESIÓN AQUÍ OFICIALMENTE POR PRIMERA VEZ
+            auth_login(request, user)
+            request.session.pop('verificacion_user_id', None)
+            
+            messages.success(request, "¡Email verificado exitosamente! Bienvenido a Viba-Web.")
+            return redirect('core:inicio')
+        else:
+            messages.error(request, "El código ingresado no es correcto.")
+    
+    return render(request, 'verificar_email.html')
+
+
+@require_POST
+def solicitar_desbloqueo_login(request):
+    """Envía un código al correo del usuario bloqueado para forzar la liberación de su sesión."""
+    username = request.POST.get('username')
+    user = User.objects.filter(username=username).first() or User.objects.filter(email=username).first()
+    
+    if not user:
+        messages.error(request, "Usuario no encontrado.")
+        return redirect('core:login')
+    
+    cliente = getattr(user, 'cliente', None)
+    if not cliente:
+        messages.error(request, "Esta cuenta no es de tipo cliente.")
+        return redirect('core:login')
+    
+    # Generar código de 6 dígitos para desbloqueo
+    codigo = str(random.randint(100000, 999999))
+    cliente.codigo_verificacion = codigo
+    cliente.fecha_expiracion_codigo = timezone.now() + timedelta(minutes=15)
+    cliente.save()
+    
+    # Guardar en sesión temporalmente el ID del usuario a desbloquear
+    request.session['usuario_desbloqueo_id'] = user.id
+    
+    # ⭐ CORREO HTML PROFESIONAL DE DESBLOQUEO
+    html_content = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+        <h2 style="color: #003366; text-align: center;">Viba-Web - Seguridad</h2>
+        <p>Hola <strong>{user.first_name}</strong>,</p>
+        <p>Has solicitado desbloquear tu sesión activa y liberar tus asientos pendientes.</p>
+        <p>Tu código de verificación es:</p>
+        <div style="text-align: center; margin: 30px 0;">
+            <span style="font-size: 36px; font-weight: bold; color: #dc3545; background-color: #f4f6f8; padding: 12px 24px; border-radius: 6px; letter-spacing: 6px; border: 1px dashed #dc3545;">
+                {codigo}
+            </span>
+        </div>
+        <p>Este código expirará en <strong>15 minutos</strong>.</p>
+        <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+        <p style="color: #666; font-size: 12px; text-align: center;">Si no solicitaste este cambio, puedes ignorar este mensaje.<br>Viba-Web</p>
+    </div>
+    """
+
+    try:
+        send_mail(
+            subject='Código de desbloqueo de sesión - Viba-Web',
+            message=f'Hola {user.first_name},\n\nHas solicitado desbloquear tu sesión activa en Viba-Web.\nTu código de verificación es: {codigo}\n\nEste código expirará en 15 minutos.',
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user.email],
+            html_message=html_content,
+            fail_silently=False,
+        )
+        messages.success(request, "Te hemos enviado un código de desbloqueo a tu correo electrónico.")
+    except Exception as e:
+        messages.error(request, f"Error al enviar el correo: {str(e)}")
+        
+    return redirect('core:confirmar_desbloqueo')
+
+
+def confirmar_desbloqueo_view(request):
+    """Valida el código, destruye la sesión anterior, libera asientos huérfanos y loguea al cliente."""
+    user_id = request.session.get('usuario_desbloqueo_id')
+    if not user_id:
+        messages.warning(request, "Por favor, ingresa tu usuario primero.")
+        return redirect('core:login')
+        
+    user = get_object_or_404(User, id=user_id)
+    cliente = getattr(user, 'cliente', None)
+    
+    if request.method == 'POST':
+        codigo_ingresado = request.POST.get('codigo', '').strip()
+        
+        if codigo_ingresado and codigo_ingresado == cliente.codigo_verificacion:
+            if timezone.now() > cliente.fecha_expiracion_codigo:
+                messages.error(request, "El código ha expirado. Solicita uno nuevo.")
+                return render(request, 'confirmar_desbloqueo.html')
+                
+            with transaction.atomic():
+                # 1. Destruir la sesión activa anterior en la base de datos
+                SesionActiva.objects.filter(user=user).delete()
+                
+                # 2. Liberar asientos amarillos / huérfanos reservados por este usuario
+                Asiento.objects.filter(
+                    estado='reservado',
+                    reservado_por=user
+                ).update(
+                    estado='disponible',
+                    reservado_por=None,
+                    reservado_hasta=None
+                )
+                
+                # 3. Limpiar código usado
+                cliente.codigo_verificacion = None
+                cliente.fecha_expiracion_codigo = None
+                cliente.save()
+                
+            # 4. Iniciar sesión limpiamente de forma automática
+            auth_login(request, user)
+            request.session.pop('usuario_desbloqueo_id', None)
+            request.session.pop('reserva_inicio', None)
+            request.session.pop('asientos_seleccionados', None)
+            
+            messages.success(request, "¡Sesión desbloqueada y liberada con éxito! Has ingresado limpiamente.")
+            return redirect('core:perfil')
+        else:
+            messages.error(request, "El código ingresado es incorrecto.")
+            
+    return render(request, 'confirmar_desbloqueo.html', {'user_obj': user})

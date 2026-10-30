@@ -190,6 +190,10 @@ class Cliente(models.Model):
     es_discapacitado = models.BooleanField(default=False, verbose_name="¿Discapacitado?")
     es_tercera_edad = models.BooleanField(default=False, verbose_name="¿Tercera edad?")
     fecha_registro = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de registro")
+    # ⭐ VERIFICACIÓN DE EMAIL
+    email_verificado = models.BooleanField(default=False, verbose_name="¿Email verificado?")
+    codigo_verificacion = models.CharField(max_length=6, blank=True, null=True, verbose_name="Código de verificación")
+    fecha_expiracion_codigo = models.DateTimeField(blank=True, null=True, verbose_name="Expiración del código")
 
     class Meta:
         verbose_name = "Cliente"

@@ -27,4 +27,7 @@ urlpatterns = [
     path('ayuda/', views.ayuda, name='ayuda'),
     path('taquilla/viaje/<int:viaje_id>/cobrar/', views.taquilla_cobrar, name='taquilla_cobrar'),
     path('api/heartbeat/', views.heartbeat, name='heartbeat'),
+    path('verificar-email/', views.verificar_email, name='verificar_email'),
+    path('desbloquear/solicitar/', views.solicitar_desbloqueo_login, name='solicitar_desbloqueo'),
+    path('desbloquear/confirmar/', views.confirmar_desbloqueo_view, name='confirmar_desbloqueo'),
 ]
