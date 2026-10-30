@@ -68,6 +68,9 @@ def validar_tarifa_para_viaje(viaje, origen_id, destino_id):
 # VISTAS PÚBLICAS
 # ============================================================
 def inicio(request):
+    # ⭐ Limpiar mensajes viejos para evitar acumulación
+    from django.contrib.messages import get_messages
+    list(get_messages(request))
     # ⭐ Si es empleado, redirigir a su área de taquilla
     if request.user.is_authenticated and getattr(request.user, 'usuarioempresa', None):
         return redirect('core:taquilla_inicio')
@@ -181,11 +184,21 @@ def detalle_viaje(request, viaje_id):
         
     if len(asientos_por_piso) > 1:
         asientos_por_piso = dict(reversed(list(asientos_por_piso.items())))
-        
+
     transaccion_reciente = None
     if cliente:
         hace_5_min = timezone.now() - timedelta(minutes=5)
-        transaccion_reciente = Transaccion.objects.filter(cliente=cliente, viaje=viaje, fecha_creacion__gte=hace_5_min, estado__in=['pendiente_verificacion', 'confirmada']).order_by('-fecha_creacion').first()
+        transaccion_reciente = Transaccion.objects.filter(
+            cliente=cliente, viaje=viaje, fecha_creacion__gte=hace_5_min,
+            estado__in=['pendiente_verificacion', 'confirmada']
+        ).order_by('-fecha_creacion').first()
+
+    # ⭐ CALCULAR LA EXPIRACIÓN PARA EL RELOJ FLOTANTE
+    if reserva_inicio_str:
+        expiracion_iso = (reserva_inicio + timedelta(minutes=minutos_reserva)).isoformat()
+    else:
+        expiracion_iso = (timezone.now() + timedelta(minutes=minutos_reserva)).isoformat()
+    
     return render(request, 'detalle_viaje.html', {
         'viaje': viaje, 
         'asientos_por_piso': asientos_por_piso, 
@@ -196,13 +209,8 @@ def detalle_viaje(request, viaje_id):
         'seguro': valor_seguro,
         'segundos_restantes': segundos_restantes, 
         'transaccion_reciente': transaccion_reciente,
+        'expiracion_iso': expiracion_iso,
     })
-    
-    # ~ return render(request, 'detalle_viaje.html', {
-        # ~ 'viaje': viaje, 'asientos_por_piso': asientos_por_piso, 'cliente_id': cliente.id if cliente else None,
-        # ~ 'tarifa': tarifa, 'tiene_tarifa': tarifa is not None, 'seguro': valor_seguro,
-        # ~ 'segundos_restantes': segundos_restantes, 'transaccion_reciente': transaccion_reciente,
-    # ~ })
 
 # ============================================================
 # VISTAS DE AUTENTICACIÓN
@@ -238,10 +246,39 @@ def login_view(request):
                 if not exito:
                     messages.warning(request, mensaje)
                     return render(request, 'login.html', {'form': form, 'mostrar_desbloqueo': True, 'username_bloqueado': username})
+                
                 auth_login(request, user)
+                
+                # ⭐ LIMPIEZA DE RESERVAS HUÉRFANAS (Para ambos roles)
+                # Si el usuario cerró el navegador, sus asientos quedaron reservados.
+                # Al volver a loguearse, los liberamos para que empiece limpio.
+                Asiento.objects.filter(
+                    estado='reservado',
+                    reservado_por=user
+                ).update(
+                    estado='disponible',
+                    reservado_por=None,
+                    reservado_hasta=None  # 👈 Limpia la fecha en la DB
+                )
+                
+                # ⭐ LIMPIEZA DE SEÑALES DE TIEMPO EN LA SESIÓN
+                # Borramos el punto de partida del reloj y los datos temporales
+                request.session.pop('reserva_inicio', None)
+                request.session.pop('asientos_seleccionados', None)
+                request.session.pop('pasajeros_data', None)
+                
                 from .models import SesionActiva
                 if not (user.is_staff or user.is_superuser) and getattr(user, 'cliente', None):
-                    SesionActiva.objects.update_or_create(user=user, defaults={'session_key': request.session.session_key, 'ip_address': request.META.get('REMOTE_ADDR'), 'user_agent': request.META.get('HTTP_USER_AGENT', '')[:250], 'ultima_actividad': timezone.now()})
+                    SesionActiva.objects.update_or_create(
+                        user=user, 
+                        defaults={
+                            'session_key': request.session.session_key, 
+                            'ip_address': request.META.get('REMOTE_ADDR'), 
+                            'user_agent': request.META.get('HTTP_USER_AGENT', '')[:250], 
+                            'ultima_actividad': timezone.now()
+                        }
+                    )
+                
                 nombre = user.first_name or user.username
                 messages.success(request, f"Estimado cliente {nombre}: bienvenido nuevamente. Es un gusto tenerlo de vuelta.")
                 
@@ -276,7 +313,7 @@ def logout_view(request):
             with transaction.atomic():
                 asientos_reservados = Asiento.objects.select_for_update().filter(estado='reservado', reservado_por=request.user)
                 for asiento in asientos_reservados:
-                    MovimientoAsiento.objects.create(asiento=asiento, tipo='liberacion_manual', estado_anterior='reservado', estado_nuevo='disponible', usuario=request.user, motivo='El cliente cerró sesión por tiempo expirado.')
+                    MovimientoAsiento.objects.create(asiento=asiento, tipo='liberacion_manual', estado_anterior='reservado', estado_nuevo='disponible', usuario=request.user, motivo='El cliente cerró sesión.')
                 asientos_reservados.update(estado='disponible', reservado_por=None, reservado_hasta=None)
         from .models import SesionActiva
         SesionActiva.objects.filter(user=request.user).delete()
@@ -1200,6 +1237,16 @@ def renovar_reserva(request):
     
     except Exception as e:
         return JsonResponse({'ok': False, 'error': str(e)}, status=500)
+        
+@require_POST
+def heartbeat(request):
+    """Recibe el latido del navegador para saber que el usuario sigue activo."""
+    if request.user.is_authenticated:
+        # Actualizamos la última actividad en la sesión
+        request.session['ultima_actividad_heartbeat'] = timezone.now().isoformat()
+        request.session.modified = True
+        return JsonResponse({'ok': True})
+    return JsonResponse({'ok': False}, status=401)
         
 def buscar_viajes(request):
     origen_id = request.GET.get('origen')

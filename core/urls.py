@@ -26,4 +26,5 @@ urlpatterns = [
     path('taquilla/viaje/<int:viaje_id>/', views.taquilla_mapa, name='taquilla_mapa'),
     path('ayuda/', views.ayuda, name='ayuda'),
     path('taquilla/viaje/<int:viaje_id>/cobrar/', views.taquilla_cobrar, name='taquilla_cobrar'),
+    path('api/heartbeat/', views.heartbeat, name='heartbeat'),
 ]

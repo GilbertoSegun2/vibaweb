@@ -6,28 +6,51 @@ class SessionTimeoutMiddleware:
     - Cliente web: parámetro 140 (120 min)
     - Taquillero: parámetro 173 (15 min)
     - Si es 0: la sesión muere al cerrar el navegador.
+    
+    ⭐ NUEVO: Verifica el "latido" (heartbeat) del navegador.
+    Si no hay latido en 60 segundos, la sesión se cierra y se liberan los asientos.
     """
     
     def __init__(self, get_response):
         self.get_response = get_response
     
     def __call__(self, request):
-        rutas_excluidas = ['/login/', '/logout/', '/registro/']
+        rutas_excluidas = ['/login/', '/logout/', '/registro/', '/api/heartbeat/']
         if any(request.path.startswith(ruta) for ruta in rutas_excluidas):
             return self.get_response(request)
         
         if request.user.is_authenticated:
-            # ⭐ VERIFICAR SI ES EMPLEADO (TAQUILLERO)
+            # ⭐ VERIFICAR EL LATIDO (HEARTBEAT)
+            ultima_actividad = request.session.get('ultima_actividad_heartbeat')
+            if ultima_actividad:
+                from datetime import datetime
+                try:
+                    ultima_dt = datetime.fromisoformat(ultima_actividad)
+                    segundos_sin_latido = (timezone.now() - ultima_dt).total_seconds()
+                    if segundos_sin_latido > 60:
+                        # El usuario no ha dado señales de vida en 60 segundos
+                        # Cerramos sesión y liberamos asientos
+                        from django.contrib.auth import logout as auth_logout
+                        from .models import Asiento
+                        Asiento.objects.filter(
+                            estado='reservado',
+                            reservado_por=request.user
+                        ).update(estado='disponible', reservado_por=None, reservado_hasta=None)
+                        auth_logout(request)
+                        from django.shortcuts import redirect
+                        return redirect('core:login')
+                except (ValueError, TypeError):
+                    pass
+            
+            # ⭐ AJUSTAR EL TIMEOUT SEGÚN EL ROL
             es_empleado = getattr(request.user, 'usuarioempresa', None) is not None
             
             if es_empleado:
-                # Taquillero: 15 min por defecto
                 try:
                     minutos = int(obtener_parametro('173', default=15))
                 except (ValueError, TypeError):
                     minutos = 15
             else:
-                # Cliente web: 120 min por defecto
                 try:
                     minutos = int(obtener_parametro('140', default=120))
                 except (ValueError, TypeError):
@@ -168,3 +191,48 @@ class SuscripcionMiddleware:
             pass # Si falla algo, no bloqueamos para no romper el sitio
 
         return self.get_response(request)
+        
+class LimpiarMensajesMiddleware:
+    """
+    Limpia los mensajes viejos de la sesión para evitar que se acumulen.
+    Solo deja los mensajes nuevos (los que se crean en la petición actual).
+    """
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        # Antes de procesar la petición, limpiar los mensajes viejos
+        if hasattr(request, 'session'):
+            from django.contrib.messages import get_messages
+            list(get_messages(request))  # Consumir y borrar
+        return self.get_response(request)
+        
+        
+import time
+from django.conf import settings
+from django.contrib.auth import logout
+from django.shortcuts import redirect
+
+class AutoLogoutMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        # Solo aplicar a usuarios autenticados
+        if request.user.is_authenticated:
+            current_time = time.time()
+            last_activity = request.session.get('last_activity')
+
+            # Obtener el límite de inactividad (por defecto 15 minutos = 900 segundos)
+            timeout = getattr(settings, 'AUTO_LOGOUT_DELAY', 120)
+
+            if last_activity and (current_time - last_activity > timeout):
+                # Eliminar la sesión y desconectar al usuario
+                logout(request)
+                return redirect(settings.LOGIN_URL)
+
+            # Actualizar la marca de tiempo en cada petición activa
+            request.session['last_activity'] = current_time
+
+        return self.get_response(request)
+

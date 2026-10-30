@@ -117,13 +117,28 @@ def liberar_reservas_vencidas(viaje=None):
 def obtener_tasa_bcv():
     """
     Devuelve la tasa BCV del día (parámetro 107).
-    Si no existe o es 0, devuelve None.
+    Si no existe, es 0 o no es numérica, devuelve None.
+    Acepta valores numéricos o de texto (con coma o punto decimal).
     """
     from .models import Parametro
     try:
         p = Parametro.objects.get(codigo='107', activo=True)
-        if p.valor_numerico and p.valor_numerico > 0:
+        
+        # 1. Intentar con valor_numerico
+        if p.valor_numerico is not None and p.valor_numerico > 0:
             return p.valor_numerico
+        
+        # 2. Si no, intentar con valor_texto (por si se guardó como texto)
+        if p.valor_texto:
+            try:
+                # Limpiar comas y puntos (formato venezolano: 879,12 -> 879.12)
+                texto_limpio = p.valor_texto.replace('.', '').replace(',', '.')
+                valor = float(texto_limpio)
+                if valor > 0:
+                    return valor
+            except (ValueError, TypeError):
+                pass
+                
     except Parametro.DoesNotExist:
         pass
     return None
