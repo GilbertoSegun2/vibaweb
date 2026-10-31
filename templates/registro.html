@@ -175,4 +175,19 @@ function togglePassword(button) {
     }
 })();
 </script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const form = document.querySelector('form');
+        if (form) {
+            form.addEventListener('submit', function (e) {
+                const btn = form.querySelector('button[type="submit"]');
+                if (btn) {
+                    // Cambiamos el texto y deshabilitamos el botón para evitar doble clic
+                    btn.disabled = true;
+                    btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Registrando...';
+                }
+            });
+        }
+    });
+</script>
 {% endblock %}
