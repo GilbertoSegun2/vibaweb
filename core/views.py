@@ -1114,30 +1114,25 @@ def taquilla_buscar_pasajero(request):
 import random
 from django.core.mail import send_mail
 from django.conf import settings
-
 def registro_usuario(request):
     if request.method == 'POST':
         form = RegistroForm(request.POST)
         if form.is_valid():
-            # 1. Guardamos los datos básicos del formulario (crea el usuario)
             user = form.save(commit=False)
-            user.set_form_password(form.cleaned_data['password'])
+            # Usar set_password (método nativo de Django)
+            user.set_password(form.cleaned_data['password'])
             user.save()
 
-            # 2. Generamos el código de verificación de 6 dígitos
             codigo = str(random.randint(100000, 999999))
             
-            # Guardamos el código en el perfil o modelo de verificación asociado al usuario
-            # (Aquí va tu lógica actual para guardar el código en la base de datos...)
-            
-            # Preparamos el contenido HTML profesional para el correo
+            # (Guarda el código en tu modelo de perfil o verificación)
+
             html_content = render_to_string('core/email_verificacion.html', {
                 'user': user,
                 'codigo': codigo,
                 'first_name': user.first_name,
             })
 
-            # 3. ⭐ AQUÍ ES EXACTAMENTE DONDE COLOCAS EL BLOQUE TRY-EXCEPT QUE EVITA EL TIMEOUT Y BORRA EL USUARIO SI FALLA:
             try:
                 send_mail(
                     subject='Verifica tu cuenta - Viba-Web',
@@ -1147,15 +1142,15 @@ def registro_usuario(request):
                     html_message=html_content,
                     fail_silently=False,
                 )
-                # Si el correo se envía con éxito, guardamos en sesión y redirigimos
                 request.session['verificacion_user_id'] = user.id
-                messages.success(request, f"¡Registro exitoso, {user.first_name}! Te hemos enviado un código de verificación a tu correo.")
+                messages.success(request, f"¡Registro exitoso, {user.first_name}! Te hemos enviado un código de verificación.")
                 return redirect('core:verificar_email')
 
             except Exception as e:
-                # ⭐ SI FALLA EL CORREO: Borramos el usuario creado para que no quede huérfano
-                user.delete()
-                messages.error(request, f"No pudimos enviar el correo de verificación debido a un problema de red. Por favor, inténtalo de nuevo.")
+                # Si falla el envío por timeout u otro motivo, elimina el registro fallido
+                if user.pk:
+                    user.delete()
+                messages.error(request, "No pudimos enviar el correo de verificación. Por favor, inténtalo de nuevo.")
                 return render(request, 'registro.html', {'form': form})
     else:
         form = RegistroForm()
