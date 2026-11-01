@@ -1182,7 +1182,6 @@ def taquilla_buscar_pasajero(request):
 import random
 from datetime import timedelta
 from django.utils import timezone
-from django.core.mail import send_mail
 from django.conf import settings
 from django.template.loader import render_to_string
 from django.contrib import messages
@@ -1190,6 +1189,7 @@ from django.shortcuts import render, redirect
 from django.contrib.auth.models import User
 from .forms import RegistroForm  # Asegúrate de importar tu formulario si no lo tienes
 from .models import Cliente     # Asegúrate de importar tu modelo Cliente
+import resend                    # 👈 Importamos la librería oficial de Resend
 
 def registro_usuario(request):
     if request.user.is_authenticated:
@@ -1221,7 +1221,7 @@ def registro_usuario(request):
                 email_verificado=False
             )
             
-            # 3. Intentar enviar el correo de verificación con Resend / SMTP
+            # 3. Intentar enviar el correo de verificación usando la API HTTP de Resend
             try:
                 html_content = render_to_string('email_verificacion.html', {
                     'user': user,
@@ -1229,14 +1229,18 @@ def registro_usuario(request):
                     'first_name': user.first_name,
                 })
                 
-                send_mail(
-                    subject='Verifica tu cuenta - Viba-Web',
-                    message=f'Hola {user.first_name},\n\nTu código de verificación es: {codigo}',
-                    from_email=settings.DEFAULT_FROM_EMAIL,
-                    recipient_list=[user.email],
-                    html_message=html_content,
-                    fail_silently=False,
-                )
+                # Configuramos la API Key de Resend desde settings (usa la misma variable RESEND_API_KEY)
+                resend.api_key = settings.EMAIL_HOST_PASSWORD
+                
+                params = {
+                    "from": settings.DEFAULT_FROM_EMAIL,
+                    "to": [user.email],
+                    "subject": "Verifica tu cuenta - Viba-Web",
+                    "html": html_content,
+                }
+                
+                # Envío mediante API HTTP (evita totalmente los bloqueos de puertos SMTP en Railway)
+                email_response = resend.Emails.send(params)
                 
                 # Guardamos el ID temporalmente en sesión para la verificación posterior
                 request.session['verificacion_user_id'] = user.id

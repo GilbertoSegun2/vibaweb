@@ -13,3 +13,4 @@ python-dateutil==3.0.0
 django-import-export==4.4.4
 tablib==3.10.0
 diff-match-patch==20241021
+resend==2.50.1
