@@ -260,7 +260,7 @@ EMAIL_HOST_PASSWORD = config('RESEND_API_KEY', default='')
 DEFAULT_FROM_EMAIL = 'Viba-Web <info@boletoexpreso.com>'
 
 # ⭐ Tiempo máximo de espera (en segundos) para evitar bloqueos y el error 524
-EMAIL_TIMEOUT = 5
+EMAIL_TIMEOUT = 20
 
 # ============================================================
 # REDIRECCIÓN DE LOGIN
