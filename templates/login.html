@@ -60,3 +60,29 @@
     </div>
 </div>
 {% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    // ⭐ Leer el parámetro 185 desde Django (minutos de inactividad)
+    const MINUTOS_INACTIVIDAD = {{ minutos_login|default:2 }};
+    const TIEMPO_INACTIVIDAD = MINUTOS_INACTIVIDAD * 60 * 1000;
+    let temporizadorInactividad;
+
+    function redirigirAInicio() {
+        window.location.replace('/');
+    }
+
+    function reiniciarTemporizador() {
+        clearTimeout(temporizadorInactividad);
+        temporizadorInactividad = setTimeout(redirigirAInicio, TIEMPO_INACTIVIDAD);
+    }
+
+    reiniciarTemporizador();
+
+    window.addEventListener('mousemove', reiniciarTemporizador);
+    window.addEventListener('keydown', reiniciarTemporizador);
+    window.addEventListener('touchstart', reiniciarTemporizador);
+});
+</script>
+{% endblock %}

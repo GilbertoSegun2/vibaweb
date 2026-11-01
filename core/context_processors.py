@@ -36,3 +36,10 @@ def personalizacion(request):
         'navbar_color_1': obtener_parametro('152', default='#003366'),
         'navbar_color_2': obtener_parametro('153', default='#001a33'),
     }
+
+def timeout_inactividad(request):
+    """Agrega los minutos de inactividad para clientes web al contexto global."""
+    from .utils import obtener_parametro
+    return {
+        'minutos_inactividad': int(obtener_parametro('186', default=10)),
+    }

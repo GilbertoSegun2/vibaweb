@@ -74,6 +74,7 @@ TEMPLATES = [
                 'django.contrib.messages.context_processors.messages',
                 'core.context_processors.personalizacion',
                 'core.context_processors.tasa_bcv',  # ⭐ AGREGAR ESTA LÍNEA
+                'core.context_processors.timeout_inactividad',
             ],
         },
     },

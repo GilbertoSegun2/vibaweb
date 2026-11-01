@@ -68,9 +68,9 @@ def validar_tarifa_para_viaje(viaje, origen_id, destino_id):
 # VISTAS PÚBLICAS
 # ============================================================
 def inicio(request):
-    # ⭐ Limpiar mensajes viejos para evitar acumulación
-    from django.contrib.messages import get_messages
-    list(get_messages(request))
+    # ~ # ⭐ Limpiar mensajes viejos para evitar acumulación
+    # ~ from django.contrib.messages import get_messages
+    # ~ list(get_messages(request))
     # ⭐ Si es empleado, redirigir a su área de taquilla
     if request.user.is_authenticated and getattr(request.user, 'usuarioempresa', None):
         return redirect('core:taquilla_inicio')
@@ -231,7 +231,11 @@ def registro(request):
 
 def login_view(request):
     if request.user.is_authenticated:
-        return redirect('core:perfil')
+        # Si ya está logueado y entra al login, respetamos el next_url o lo mandamos al inicio
+        next_url = request.GET.get('next') or ''
+        if next_url and not any(x in next_url for x in ['/perfil', '/login', '/registro']):
+            return redirect(next_url)
+        return redirect('core:inicio')
     if request.method == 'POST':
         form = LoginForm(request.POST)
         if form.is_valid():
@@ -248,25 +252,26 @@ def login_view(request):
                     return render(request, 'login.html', {'form': form, 'mostrar_desbloqueo': True, 'username_bloqueado': username})
                 
                 auth_login(request, user)
+                
+                # ⭐ ESTABLECER QUE LA SESIÓN EXPIRE AL CERRAR EL NAVEGADOR
+                request.session.set_expiry(0)
+                
                 # ⭐ VERIFICAR SI EL EMAIL ESTÁ VERIFICADO
                 if getattr(user, 'cliente', None) and not user.cliente.email_verificado:
                     messages.warning(request, "Debes verificar tu correo electrónico antes de continuar.")
                     return redirect('core:verificar_email')
                 
                 # ⭐ LIMPIEZA DE RESERVAS HUÉRFANAS (Para ambos roles)
-                # Si el usuario cerró el navegador, sus asientos quedaron reservados.
-                # Al volver a loguearse, los liberamos para que empiece limpio.
                 Asiento.objects.filter(
                     estado='reservado',
                     reservado_por=user
                 ).update(
                     estado='disponible',
                     reservado_por=None,
-                    reservado_hasta=None  # 👈 Limpia la fecha en la DB
+                    reservado_hasta=None
                 )
                 
                 # ⭐ LIMPIEZA DE SEÑALES DE TIEMPO EN LA SESIÓN
-                # Borramos el punto de partida del reloj y los datos temporales
                 request.session.pop('reserva_inicio', None)
                 request.session.pop('asientos_seleccionados', None)
                 request.session.pop('pasajeros_data', None)
@@ -301,34 +306,97 @@ def login_view(request):
                         "Lo hemos redirigido a su perfil."
                     )
                     return redirect('core:perfil')
-                
-                # 3. Cliente normal (o admin)
-                return redirect(next_url or 'core:perfil')
+                    
+                # ~ # 3. Cliente normal: si hay next_url, ir ahí; si no, ir al INICIO
+                # ~ # ⭐ Si el next_url contiene '/perfil', ignorarlo (ir al inicio)
+                # ~ if next_url and '/perfil' not in next_url:
+                    # ~ return redirect(next_url)
+                # ~ else:
+                    # ~ return redirect('core:inicio')
+                    
+                # 3. Cliente normal: si hay un next_url válido y NO es perfil, login o registro, va allá.
+                # Si entró directo desde el menú (next vacío o apunta al perfil), va directo al INICIO (Imagen 4).
+                if next_url and not any(x in next_url for x in ['/perfil', '/login', '/registro']):
+                    return redirect(next_url)
+                else:
+                    return redirect('core:inicio')
             else:
                 messages.error(request, "Estimado cliente: los datos ingresados no coinciden con nuestros registros. Por favor, verifique su usuario y contraseña e intente nuevamente.")
     else:
         form = LoginForm()
-    return render(request, 'login.html', {'form': form})
+    minutos_login = int(obtener_parametro('185', default=2))
+    
+    return render(request, 'login.html', {
+        'form': form,
+        'minutos_login': minutos_login,
+    })
+
+from django.contrib.auth import logout
+from django.shortcuts import redirect
+from django.http import JsonResponse
+from django.views.decorators.http import require_POST
+from django.contrib.auth.decorators import login_required
+from django.db import transaction
+from .models import Asiento, MovimientoAsiento, SesionActiva
+
+def procesar_liberacion_asientos(user):
+    """Función reutilizable para liberar los asientos reservados del usuario."""
+    cliente = getattr(user, 'cliente', None)
+    if cliente:
+        with transaction.atomic():
+            asientos_reservados = Asiento.objects.select_for_update().filter(
+                estado='reservado', 
+                reservado_por=user
+            )
+            for asiento in asientos_reservados:
+                MovimientoAsiento.objects.create(
+                    asiento=asiento, 
+                    tipo='liberacion_manual', 
+                    estado_anterior='reservado', 
+                    estado_nuevo='disponible', 
+                    usuario=user, 
+                    motivo='El cliente cerró sesión o expiró la sesión por inactividad.'
+                )
+            asientos_reservados.update(estado='disponible', reservado_por=None, reservado_hasta=None)
 
 def logout_view(request):
+    """Vista de logout tradicional (botón Salir)."""
     if request.user.is_authenticated:
-        cliente = getattr(request.user, 'cliente', None)
-        if cliente:
-            with transaction.atomic():
-                asientos_reservados = Asiento.objects.select_for_update().filter(estado='reservado', reservado_por=request.user)
-                for asiento in asientos_reservados:
-                    MovimientoAsiento.objects.create(asiento=asiento, tipo='liberacion_manual', estado_anterior='reservado', estado_nuevo='disponible', usuario=request.user, motivo='El cliente cerró sesión.')
-                asientos_reservados.update(estado='disponible', reservado_por=None, reservado_hasta=None)
-        from .models import SesionActiva
+        # 1. Liberar asientos
+        procesar_liberacion_asientos(request.user)
+        
+        # 2. Limpiar SesionActiva
         SesionActiva.objects.filter(user=request.user).delete()
+    
+    # 3. Limpiar sesión
     request.session.pop('asientos_seleccionados', None)
     request.session.pop('reserva_inicio', None)
-    auth_logout(request)
+    request.session.pop('login_inicio', None)
+    
+    # 4. Cerrar sesión
+    logout(request)
     messages.info(request, "Estimado cliente: su sesión ha finalizado correctamente. Gracias por preferirnos.")
     request.session['logout_reciente'] = True
     response = redirect('core:inicio')
     response.status_code = 303
     return response
+
+@require_POST
+@login_required
+def timeout_logout_view(request):
+    """Vista para el logout por inactividad (llamada por AJAX desde el JS)."""
+    if request.user.is_authenticated:
+        # 1. Liberar asientos
+        procesar_liberacion_asientos(request.user)
+        
+        # 2. Limpiar SesionActiva
+        SesionActiva.objects.filter(user=request.user).delete()
+        
+        # 3. Cerrar sesión
+        logout(request)
+        
+        return JsonResponse({'status': 'success'})
+    return JsonResponse({'status': 'unauthorized'}, status=401)
 
 @login_required
 def perfil(request):
@@ -1112,28 +1180,55 @@ def taquilla_buscar_pasajero(request):
     return JsonResponse({'encontrado': False})
     
 import random
+from datetime import timedelta
+from django.utils import timezone
 from django.core.mail import send_mail
 from django.conf import settings
+from django.template.loader import render_to_string
+from django.contrib import messages
+from django.shortcuts import render, redirect
+from django.contrib.auth.models import User
+from .forms import RegistroForm  # Asegúrate de importar tu formulario si no lo tienes
+from .models import Cliente     # Asegúrate de importar tu modelo Cliente
+
 def registro_usuario(request):
+    if request.user.is_authenticated:
+        return redirect('core:inicio')
+    
     if request.method == 'POST':
         form = RegistroForm(request.POST)
         if form.is_valid():
-            user = form.save(commit=False)
-            # Usar set_password (método nativo de Django)
-            user.set_password(form.cleaned_data['password'])
-            user.save()
-
-            codigo = str(random.randint(100000, 999999))
+            data = form.cleaned_data
             
-            # (Guarda el código en tu modelo de perfil o verificación)
-
-            html_content = render_to_string('core/email_verificacion.html', {
-                'user': user,
-                'codigo': codigo,
-                'first_name': user.first_name,
-            })
-
+            # 1. Crear el usuario nativo de Django solo con sus campos oficiales
+            user = User.objects.create_user(
+                username=data['username'],
+                email=data['email'],
+                password=data['password1'],
+                first_name=data.get('first_name', ''),
+                last_name=data.get('last_name', '')
+            )
+            
+            # 2. Crear el registro en el modelo Cliente (perfil extendido)
+            codigo = str(random.randint(100000, 999999))
+            cliente = Cliente.objects.create(
+                user=user,
+                cedula=data['cedula'],
+                telefono=data['telefono'],
+                whatsapp=data.get('whatsapp', ''),
+                codigo_verificacion=codigo,
+                fecha_expiracion_codigo=timezone.now() + timedelta(hours=24),
+                email_verificado=False
+            )
+            
+            # 3. Intentar enviar el correo de verificación con Resend / SMTP
             try:
+                html_content = render_to_string('email_verificacion.html', {
+                    'user': user,
+                    'codigo': codigo,
+                    'first_name': user.first_name,
+                })
+                
                 send_mail(
                     subject='Verifica tu cuenta - Viba-Web',
                     message=f'Hola {user.first_name},\n\nTu código de verificación es: {codigo}',
@@ -1142,15 +1237,17 @@ def registro_usuario(request):
                     html_message=html_content,
                     fail_silently=False,
                 )
+                
+                # Guardamos el ID temporalmente en sesión para la verificación posterior
                 request.session['verificacion_user_id'] = user.id
-                messages.success(request, f"¡Registro exitoso, {user.first_name}! Te hemos enviado un código de verificación.")
+                messages.success(request, f"¡Registro exitoso, {user.first_name}! Te hemos enviado un código de verificación a tu correo.")
                 return redirect('core:verificar_email')
-
+                
             except Exception as e:
-                # Si falla el envío por timeout u otro motivo, elimina el registro fallido
+                # ⭐ SI FALLA EL CORREO: Borramos el usuario (y por cascada el cliente) para evitar cuentas huérfanas
                 if user.pk:
                     user.delete()
-                messages.error(request, "No pudimos enviar el correo de verificación. Por favor, inténtalo de nuevo.")
+                messages.error(request, f"No pudimos enviar el correo de verificación debido a un problema de red: {str(e)}")
                 return render(request, 'registro.html', {'form': form})
     else:
         form = RegistroForm()
@@ -1258,11 +1355,14 @@ def renovar_reserva(request):
         
 @require_POST
 def heartbeat(request):
-    """Recibe el latido del navegador para saber que el usuario sigue activo."""
+    """Recibe el latido del navegador. NO actualiza la sesión (para no interferir con el Vigilante)."""
     if request.user.is_authenticated:
-        # Actualizamos la última actividad en la sesión
-        request.session['ultima_actividad_heartbeat'] = timezone.now().isoformat()
-        request.session.modified = True
+        # Solo actualizamos la SesionActiva (para el control de sesión única)
+        # NO tocamos request.session.modified, para no resetear el Vigilante.
+        from .models import SesionActiva
+        SesionActiva.objects.filter(user=request.user).update(
+            ultima_actividad=timezone.now()
+        )
         return JsonResponse({'ok': True})
     return JsonResponse({'ok': False}, status=401)
         
@@ -1403,66 +1503,7 @@ def verificar_email(request):
             messages.error(request, "El código ingresado no es correcto.")
     
     return render(request, 'verificar_email.html')
-
-
-@require_POST
-def solicitar_desbloqueo_login(request):
-    """Envía un código al correo del usuario bloqueado para forzar la liberación de su sesión."""
-    username = request.POST.get('username')
-    user = User.objects.filter(username=username).first() or User.objects.filter(email=username).first()
     
-    if not user:
-        messages.error(request, "Usuario no encontrado.")
-        return redirect('core:login')
-    
-    cliente = getattr(user, 'cliente', None)
-    if not cliente:
-        messages.error(request, "Esta cuenta no es de tipo cliente.")
-        return redirect('core:login')
-    
-    # Generar código de 6 dígitos para desbloqueo
-    codigo = str(random.randint(100000, 999999))
-    cliente.codigo_verificacion = codigo
-    cliente.fecha_expiracion_codigo = timezone.now() + timedelta(minutes=15)
-    cliente.save()
-    
-    # Guardar en sesión temporalmente el ID del usuario a desbloquear
-    request.session['usuario_desbloqueo_id'] = user.id
-    
-    # ⭐ CORREO HTML PROFESIONAL DE DESBLOQUEO
-    html_content = f"""
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
-        <h2 style="color: #003366; text-align: center;">Viba-Web - Seguridad</h2>
-        <p>Hola <strong>{user.first_name}</strong>,</p>
-        <p>Has solicitado desbloquear tu sesión activa y liberar tus asientos pendientes.</p>
-        <p>Tu código de verificación es:</p>
-        <div style="text-align: center; margin: 30px 0;">
-            <span style="font-size: 36px; font-weight: bold; color: #dc3545; background-color: #f4f6f8; padding: 12px 24px; border-radius: 6px; letter-spacing: 6px; border: 1px dashed #dc3545;">
-                {codigo}
-            </span>
-        </div>
-        <p>Este código expirará en <strong>15 minutos</strong>.</p>
-        <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
-        <p style="color: #666; font-size: 12px; text-align: center;">Si no solicitaste este cambio, puedes ignorar este mensaje.<br>Viba-Web</p>
-    </div>
-    """
-
-    try:
-        send_mail(
-            subject='Código de desbloqueo de sesión - Viba-Web',
-            message=f'Hola {user.first_name},\n\nHas solicitado desbloquear tu sesión activa en Viba-Web.\nTu código de verificación es: {codigo}\n\nEste código expirará en 15 minutos.',
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[user.email],
-            html_message=html_content,
-            fail_silently=False,
-        )
-        messages.success(request, "Te hemos enviado un código de desbloqueo a tu correo electrónico.")
-    except Exception as e:
-        messages.error(request, f"Error al enviar el correo: {str(e)}")
-        
-    return redirect('core:confirmar_desbloqueo')
-
-
 def confirmar_desbloqueo_view(request):
     """Valida el código, destruye la sesión anterior, libera asientos huérfanos y loguea al cliente."""
     user_id = request.session.get('usuario_desbloqueo_id')
@@ -1482,10 +1523,7 @@ def confirmar_desbloqueo_view(request):
                 return render(request, 'confirmar_desbloqueo.html')
                 
             with transaction.atomic():
-                # 1. Destruir la sesión activa anterior en la base de datos
                 SesionActiva.objects.filter(user=user).delete()
-                
-                # 2. Liberar asientos amarillos / huérfanos reservados por este usuario
                 Asiento.objects.filter(
                     estado='reservado',
                     reservado_por=user
@@ -1494,13 +1532,10 @@ def confirmar_desbloqueo_view(request):
                     reservado_por=None,
                     reservado_hasta=None
                 )
-                
-                # 3. Limpiar código usado
                 cliente.codigo_verificacion = None
                 cliente.fecha_expiracion_codigo = None
                 cliente.save()
                 
-            # 4. Iniciar sesión limpiamente de forma automática
             auth_login(request, user)
             request.session.pop('usuario_desbloqueo_id', None)
             request.session.pop('reserva_inicio', None)
@@ -1512,3 +1547,17 @@ def confirmar_desbloqueo_view(request):
             messages.error(request, "El código ingresado es incorrecto.")
             
     return render(request, 'confirmar_desbloqueo.html', {'user_obj': user})
+
+def cancelar_registro(request):
+    user_id = request.session.get('verificacion_user_id')
+    if user_id:
+        try:
+            user = User.objects.get(id=user_id)
+            user.delete()
+        except User.DoesNotExist:
+            pass
+        
+        del request.session['verificacion_user_id']
+        
+    messages.info(request, "El registro ha sido cancelado.")
+    return redirect('core:inicio')

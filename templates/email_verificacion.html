@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Verifica tu cuenta</title>
+</head>
+<body style="font-family: Arial, sans-serif; color: #333;">
+    <h2>¡Hola, {{ first_name }}!</h2>
+    <p>Gracias por registrarte en Viba-Web. Para completar tu registro, por favor ingresa el siguiente código de verificación:</p>
+    
+    <div style="background-color: #f4f4f4; padding: 15px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #003366;">
+        {{ codigo }}
+    </div>
+    
+    <p>Este código es válido por 24 horas.</p>
+    <p>Si no solicitaste esta cuenta, puedes ignorar este mensaje.</p>
+    <br>
+    <p>Atentamente,<br><strong>El equipo de Viba-Web</strong></p>
+</body>
+</html>

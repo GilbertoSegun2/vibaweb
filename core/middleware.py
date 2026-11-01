@@ -207,32 +207,5 @@ class LimpiarMensajesMiddleware:
             list(get_messages(request))  # Consumir y borrar
         return self.get_response(request)
         
-        
-import time
-from django.conf import settings
-from django.contrib.auth import logout
-from django.shortcuts import redirect
 
-class AutoLogoutMiddleware:
-    def __init__(self, get_response):
-        self.get_response = get_response
-
-    def __call__(self, request):
-        # Solo aplicar a usuarios autenticados
-        if request.user.is_authenticated:
-            current_time = time.time()
-            last_activity = request.session.get('last_activity')
-
-            # Obtener el límite de inactividad (por defecto 15 minutos = 900 segundos)
-            timeout = getattr(settings, 'AUTO_LOGOUT_DELAY', 120)
-
-            if last_activity and (current_time - last_activity > timeout):
-                # Eliminar la sesión y desconectar al usuario
-                logout(request)
-                return redirect(settings.LOGIN_URL)
-
-            # Actualizar la marca de tiempo en cada petición activa
-            request.session['last_activity'] = current_time
-
-        return self.get_response(request)
 

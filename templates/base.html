@@ -7,7 +7,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Viba-Web{% endblock %}</title>
     {% progressive_web_app_meta %}
-    <!-- Favicon (configurable desde el parámetro 150) -->
+    
+    <!-- Favicon -->
     {% if navbar_icono and navbar_icono|slice:":3" != "bi-" %}
         <link rel="icon" href="{% static 'img/iconos/' %}{{ navbar_icono }}">
     {% endif %}
@@ -23,8 +24,24 @@
 </head>
 <body>
     
+    <!-- Contenedor de Notificaciones (Toasts) flotantes -->
+    <div aria-live="polite" aria-atomic="true" class="position-fixed end-0 p-3" style="top: 75px; z-index: 1080; max-width: 380px; width: 100%;">
+        {% if messages %}
+            {% for message in messages %}
+                <div class="toast show align-items-center text-white bg-success border-0 mb-2 shadow-lg" role="alert" aria-live="assertive" aria-atomic="true">
+                    <div class="d-flex">
+                        <div class="toast-body">
+                            {{ message }}
+                        </div>
+                        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+                    </div>
+                </div>
+            {% endfor %}
+        {% endif %}
+    </div>
+
     <!-- ============================================================ -->
-    <!-- MENÚ DE NAVEGACIÓN                                            -->
+    <!-- MENÚ DE NAVEGACIÓN                                           -->
     <!-- ============================================================ -->
     <nav class="navbar navbar-expand-lg navbar-dark" style="background: linear-gradient(90deg, {{ navbar_color_1 }}, {{ navbar_color_2 }});">
         <div class="container">
@@ -88,7 +105,7 @@
     </nav>
     
     <!-- ============================================================ -->
-    <!-- CONTADOR FLOTANTE GLOBAL                                      -->
+    <!-- CONTADOR FLOTANTE GLOBAL                                     -->
     <!-- ============================================================ -->
     {% if expiracion_iso %}
     <div id="timer-box" class="position-fixed shadow rounded bg-dark px-2 py-1 border border-warning"
@@ -102,35 +119,15 @@
     {% endif %}
     
     <!-- ============================================================ -->
-    <!-- CONTENIDO PRINCIPAL                                           -->
+    <!-- CONTENIDO PRINCIPAL                                          -->
     <!-- ============================================================ -->
     <main class="container my-4">
-        
-        <!-- MENSAJES DE DJANGO -->
-        {% if messages %}
-            {% for message in messages %}
-                <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show" role="alert">
-                    {% if message.tags == 'success' %}
-                        <i class="bi bi-check-circle-fill"></i>
-                    {% elif message.tags == 'error' %}
-                        <i class="bi bi-exclamation-triangle-fill"></i>
-                    {% elif message.tags == 'warning' %}
-                        <i class="bi bi-exclamation-circle-fill"></i>
-                    {% else %}
-                        <i class="bi bi-info-circle-fill"></i>
-                    {% endif %}
-                    {{ message }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
-                </div>
-            {% endfor %}
-        {% endif %}
-        
         {% block content %}
         {% endblock %}
     </main>
     
     <!-- ============================================================ -->
-    <!-- PIE DE PÁGINA                                                 -->
+    <!-- PIE DE PÁGINA                                                -->
     <!-- ============================================================ -->
     <footer class="text-center text-muted py-3 mt-5 border-top">
         <div class="container">
@@ -154,14 +151,29 @@
             </div>
         </div>
     </footer>
-    
+
     <!-- ============================================================ -->
-    <!-- SCRIPTS                                                        -->
+    <!-- SCRIPTS                                                      -->
     <!-- ============================================================ -->
     
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     
+    <!-- ⭐ AUTO-CERRAR MENSAJES FLOTANTES SUAVEMENTE -->
+    <script>
+    document.addEventListener("DOMContentLoaded", function() {
+        const toasts = document.querySelectorAll('.toast');
+        toasts.forEach(function(toast) {
+            setTimeout(function() {
+                toast.style.transition = 'opacity 0.6s ease-in-out, transform 0.6s ease-in-out';
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateY(-10px)';
+                setTimeout(function() { toast.remove(); }, 600);
+            }, 4500); 
+        });
+    });
+    </script>
+
     <!-- ⭐ CONTADOR DE TIEMPO DE RESERVA -->
     {% if expiracion_iso %}
     <script>
@@ -171,7 +183,6 @@
         const contadorEl = document.getElementById("contador-global");
         const timerIcon = document.getElementById("timer-icon");
         const timerLabel = document.getElementById("timer-label");
-        
         let yaEstaRojo = false;
 
         function actualizarContador() {
@@ -203,9 +214,7 @@
             const seconds = Math.floor((distance % (1000 * 60)) / 1000);
 
             if (contadorEl) {
-                contadorEl.innerText = 
-                    String(minutes).padStart(2, '0') + ":" + 
-                    String(seconds).padStart(2, '0');
+                contadorEl.innerText = String(minutes).padStart(2, '0') + ":" + String(seconds).padStart(2, '0');
             }
         }
 
@@ -220,7 +229,6 @@
     function togglePassword(btn) {
         const input = btn.previousElementSibling;
         const icon = btn.querySelector('i');
-        
         if (input.type === 'password') {
             input.type = 'text';
             icon.className = 'bi bi-eye-slash';
@@ -231,46 +239,64 @@
     }
     </script>
     
-    <!-- ⭐ PWA: BOTÓN "DESCARGAR APP" -->
+    <!-- ⭐ PWA: LÓGICA DE INSTALACIÓN GLOBAL -->
     <script>
     (function() {
         let promptDiferido = null;
         const botonLi = document.getElementById('btn-instalar-pwa-li');
         const boton = document.getElementById('btn-instalar-pwa');
+        const banner = document.getElementById('pwa-banner');
+        const botonBanner = document.getElementById('btn-pwa-banner');
         const esIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+        const yaInstalada = window.matchMedia('(display-mode: standalone)').matches;
+
+        if (yaInstalada) return;
+
+        if (esIOS) {
+            if (botonLi) botonLi.classList.remove('d-none');
+            if (banner) banner.classList.remove('d-none');
+            if (banner) {
+                const bannerText = banner.querySelector('strong');
+                if (bannerText) bannerText.innerText = 'Instala Viba-Web en tu iPhone';
+                const bannerBtn = banner.querySelector('button');
+                if (bannerBtn) bannerBtn.innerText = 'Ver cómo';
+            }
+        }
 
         window.addEventListener('beforeinstallprompt', function(e) {
             e.preventDefault();
             promptDiferido = e;
             if (botonLi) botonLi.classList.remove('d-none');
+            if (banner) banner.classList.remove('d-none');
         });
 
-        if (boton) {
-            boton.addEventListener('click', function(e) {
-                e.preventDefault();
-                if (esIOS) {
-                    alert('📱 Para instalar Viba-Web en su iPhone:\n\n1. Toque "Compartir"\n2. Elija "Añadir a pantalla de inicio"\n3. Toque "Añadir"');
-                    return;
+        function instalarApp(e) {
+            e.preventDefault();
+            if (esIOS) {
+                alert('📱 Para instalar Viba-Web en tu iPhone:\n\n1. Toca el botón "Compartir" (el cuadro con la flecha hacia arriba).\n\n2. Desliza hacia abajo y selecciona "Añadir a pantalla de inicio".\n\n3. Toca "Añadir" en la superior derecha.\n\n¡Listo! La app aparecerá en tu pantalla de inicio.');
+                return;
+            }
+            if (!promptDiferido) {
+                alert('Para instalar la app, abre el menú del navegador y selecciona "Instalar aplicación".');
+                return;
+            }
+            promptDiferido.prompt();
+            promptDiferido.userChoice.then(function(choiceResult) {
+                if (choiceResult.outcome === 'accepted') {
+                    if (botonLi) botonLi.classList.add('d-none');
+                    if (banner) banner.classList.add('d-none');
                 }
-                if (!promptDiferido) {
-                    alert('Para instalar la app, abra el menú del navegador y seleccione "Instalar aplicación".');
-                    return;
-                }
-                promptDiferido.prompt();
-                promptDiferido.userChoice.then(function(choiceResult) {
-                    if (choiceResult.outcome === 'accepted') {
-                        if (botonLi) botonLi.classList.add('d-none');
-                    }
-                    promptDiferido = null;
-                });
+                promptDiferido = null;
             });
         }
 
+        if (boton) boton.addEventListener('click', instalarApp);
+        if (botonBanner) botonBanner.addEventListener('click', instalarApp);
+
         window.addEventListener('appinstalled', function() {
             if (botonLi) botonLi.classList.add('d-none');
+            if (banner) banner.classList.add('d-none');
         });
-
-        if (esIOS && botonLi) botonLi.classList.remove('d-none');
     })();
     </script>
     
@@ -293,7 +319,7 @@
     })();
     </script>
 
-    <!-- ⭐ HEARTBEAT: Avisa al servidor que el usuario sigue en la página -->
+    <!-- ⭐ HEARTBEAT -->
     <script>
     (function() {
         {% if user.is_authenticated %}
@@ -320,13 +346,12 @@
             return cookieValue;
         }
 
-        // Enviar un latido cada 15 segundos
         setInterval(enviarLatido, 15000);
         {% endif %}
     })();
     </script>
 
-    <!-- ⭐ LOGOUT SEGURO (Redirección directa) -->
+    <!-- ⭐ LOGOUT SEGURO -->
     <script>
     (function() {
         const linkLogout = document.getElementById('link-logout');
@@ -339,92 +364,38 @@
     })();
     </script>
     
-    <!-- ⭐ AUTO-CERRAR MENSAJES DESPUÉS DE 5 SEGUNDOS -->
+    <!-- ⭐ TIMEOUT DE INACTIVIDAD (SOLO CLIENTES WEB) -->
     <script>
     (function() {
-        // Seleccionar todos los mensajes de Django
-        const mensajes = document.querySelectorAll('.alert-dismissible');
-        mensajes.forEach(function(mensaje) {
-            // Desaparecer después de 5 segundos
-            setTimeout(function() {
-                mensaje.style.transition = 'opacity 0.5s';
-                mensaje.style.opacity = '0';
-                setTimeout(function() {
-                    mensaje.remove();
-                }, 500);
-            }, 5000);
+        {% if user.is_authenticated and not user.usuarioempresa %}
+        const MINUTOS_INACTIVIDAD = Number("{{ minutos_inactividad|default:10 }}");
+        const TIEMPO_INACTIVIDAD = MINUTOS_INACTIVIDAD * 60 * 1000;
+        let temporizadorInactividad;
+
+        function redirigirALogout() {
+            fetch('/timeout-logout/', {
+                method: 'POST',
+                headers: { 'X-CSRFToken': getCookie('csrftoken') },
+            }).then(function() {
+                window.location.replace('/');
+            }).catch(function() {
+                window.location.replace('/');
+            });
+        }
+
+        function reiniciarTemporizador() {
+            clearTimeout(temporizadorInactividad);
+            temporizadorInactividad = setTimeout(redirigirALogout, TIEMPO_INACTIVIDAD);
+        }
+
+        reiniciarTemporizador();
+        ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'].forEach(function(evento) {
+            document.addEventListener(evento, reiniciarTemporizador);
         });
+        {% endif %}
     })();
     </script>
     
-    <script>
-        // Configuración sincronizada con tu AUTO_LOGOUT_DELAY de Django
-        const TOTAL_TIMEOUT = 120 * 1000; // 2 minutos en milisegundos
-        const WARNING_TIME = 30 * 1000;   // Mostrar el modal cuando falten 30 segundos
-
-        let warningTimer;
-        let countdownInterval;
-        const modal = document.getElementById('inactivity-modal');
-        const countdownElement = document.getElementById('countdown-seconds');
-
-        function resetActivityTimers() {
-            modal.style.display = 'none';
-            clearInterval(countdownInterval);
-            clearTimeout(warningTimer);
-
-            startTrackingActivity();
-
-            // El aviso aparecerá tras 90 segundos de inactividad pura (120 - 30 = 90)
-            warningTimer = setTimeout(showWarningModal, TOTAL_TIMEOUT - WARNING_TIME);
-        }
-
-        function showWarningModal() {
-            stopTrackingActivity();
-            
-            modal.style.display = 'flex';
-            let secondsLeft = WARNING_TIME / 1000; // Iniciará la cuenta regresiva en 30
-            countdownElement.innerText = secondsLeft;
-
-            countdownInterval = setInterval(() => {
-                secondsLeft--;
-                countdownElement.innerText = secondsLeft;
-
-                if (secondsLeft <= 0) {
-                    clearInterval(countdownInterval);
-                    // 🚀 REDIRECCIÓN A INICIO: Cambia '/' por la URL exacta de tu Login o Inicio si es diferente
-                    window.location.href = '/'; 
-                }
-            }, 1000);
-        }
-
-        function extendDjangoSession() {
-            fetch(window.location.href, { method: 'HEAD' })
-                .then(() => {
-                    resetActivityTimers();
-                })
-                .catch(() => {
-                    window.location.href = '/';
-                });
-        }
-
-        function startTrackingActivity() {
-            window.onmousemove = resetActivityTimers;
-            window.onmousedown = resetActivityTimers;
-            window.onkeypress = resetActivityTimers;
-            window.ontouchstart = resetActivityTimers;
-        }
-
-        function stopTrackingActivity() {
-            window.onmousemove = null;
-            window.onmousedown = null;
-            window.onkeypress = null;
-            window.ontouchstart = null;
-        }
-
-        document.getElementById('extend-session-btn').onclick = extendDjangoSession;
-        window.onload = resetActivityTimers;
-    </script>
-
     {% block extra_js %}{% endblock %}
 </body>
 </html>
