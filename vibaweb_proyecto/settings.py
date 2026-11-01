@@ -245,12 +245,8 @@ LOGGING = {
 # ============================================================
 # CONFIGURACIÓN DE CORREO (Resend / SMTP)
 # ============================================================
-if DEBUG:
-    # En local usamos tu clase para saltar el problema de Windows
-    EMAIL_BACKEND = 'core.email_backend.UnsafeEmailBackend'
-else:
-    # En producción (Railway / servidor real) usamos el estándar seguro
-    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+# Usamos UnsafeEmailBackend para evitar bloqueos de certificados en producción
+EMAIL_BACKEND = 'core.email_backend.UnsafeEmailBackend'
 
 EMAIL_HOST = 'smtp.resend.com'
 EMAIL_PORT = 587
@@ -259,7 +255,7 @@ EMAIL_HOST_USER = 'resend'
 EMAIL_HOST_PASSWORD = config('RESEND_API_KEY', default='')
 DEFAULT_FROM_EMAIL = 'Viba-Web <info@boletoexpreso.com>'
 
-# ⭐ Tiempo máximo de espera (en segundos) para evitar bloqueos y el error 524
+# Tiempo máximo de espera (en segundos)
 EMAIL_TIMEOUT = 20
 
 # ============================================================
