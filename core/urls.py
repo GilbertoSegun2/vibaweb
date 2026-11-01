@@ -32,4 +32,5 @@ urlpatterns = [
     path('cancelar-registro/', views.cancelar_registro, name='cancelar_registro'),
     path('timeout-logout/', views.timeout_logout_view, name='timeout_logout'),
     path('desbloquear/confirmar/', views.confirmar_desbloqueo_view, name='confirmar_desbloqueo'),
+    path('api/destinos-populares/', views.api_destinos_populares, name='api_destinos_populares'),
 ]

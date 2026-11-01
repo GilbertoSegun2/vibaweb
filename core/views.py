@@ -68,10 +68,7 @@ def validar_tarifa_para_viaje(viaje, origen_id, destino_id):
 # VISTAS PÚBLICAS
 # ============================================================
 def inicio(request):
-    # ~ # ⭐ Limpiar mensajes viejos para evitar acumulación
-    # ~ from django.contrib.messages import get_messages
-    # ~ list(get_messages(request))
-    # ⭐ Si es empleado, redirigir a su área de taquilla
+    # Si es empleado, redirigir a su área de taquilla
     if request.user.is_authenticated and getattr(request.user, 'usuarioempresa', None):
         return redirect('core:taquilla_inicio')
         
@@ -84,12 +81,20 @@ def inicio(request):
             for asiento in asientos_reservados:
                 MovimientoAsiento.objects.create(asiento=asiento, tipo='liberacion_manual', estado_anterior='reservado', estado_nuevo='disponible', usuario=request.user, motivo='El cliente volvió al inicio')
             asientos_reservados.update(estado='disponible', reservado_hasta=None, reservado_por=None)
+    
     oficinas = Oficina.objects.filter(activa=True).order_by('nombre')
     bienvenida_titulo = obtener_parametro('160', default='Bienvenido a Viba-Web')
     bienvenida_subtitulo = obtener_parametro('161', default='Compra tus boletos de autobús de forma rápida y segura')
+    
+    # ⭐ FECHA DE HOY EN VENEZUELA
+    hoy = timezone.localtime(timezone.now()).strftime('%Y-%m-%d')
+    
     return render(request, 'inicio.html', {
-        'oficinas': oficinas, 'logout_reciente': logout_reciente,
-        'bienvenida_titulo': bienvenida_titulo, 'bienvenida_subtitulo': bienvenida_subtitulo,
+        'oficinas': oficinas, 
+        'logout_reciente': logout_reciente,
+        'bienvenida_titulo': bienvenida_titulo, 
+        'bienvenida_subtitulo': bienvenida_subtitulo,
+        'hoy': hoy,  # ⭐ Pasar la fecha al template
     })
 
 @login_required
@@ -815,6 +820,10 @@ def taquilla_inicio(request):
     origen_id = request.GET.get('origen', empleado.oficina.id)
     destino_id = request.GET.get('destino')
     fecha_str = request.GET.get('fecha')
+    
+    # ⭐ SI NO HAY FECHA, USAR LA DE HOY EN VENEZUELA
+    if not fecha_str:
+        fecha_str = timezone.localtime(timezone.now()).strftime('%Y-%m-%d')
     
     viajes_con_info = []
     tasa_bcv = obtener_parametro('107', default=0)
@@ -1565,3 +1574,41 @@ def cancelar_registro(request):
         
     messages.info(request, "El registro ha sido cancelado.")
     return redirect('core:inicio')
+    
+from django.db.models import Count
+
+def api_destinos_populares(request):
+    """
+    Devuelve los destinos más vendidos desde un origen específico.
+    Si no hay ventas, devuelve todos los destinos activos ordenados alfabéticamente.
+    """
+    origen_id = request.GET.get('origen_id')
+    if not origen_id:
+        return JsonResponse([], safe=False)
+
+    # 1. Buscar los destinos más vendidos desde ese origen
+    populares = Boleto.objects.filter(
+        viaje__ruta__origen_id=origen_id,
+        estado__in=['vendido', 'usado', 'liquidado']
+    ).values(
+        'viaje__ruta__destinos__id', 
+        'viaje__ruta__destinos__nombre'
+    ).annotate(
+        total=Count('id')
+    ).order_by('-total')[:10]  # Los 10 más populares
+
+    # 2. Formatear la respuesta
+    data = []
+    for p in populares:
+        if p['viaje__ruta__destinos__id']:  # Validar que no sea None
+            data.append({
+                'id': p['viaje__ruta__destinos__id'],
+                'nombre': p['viaje__ruta__destinos__nombre']
+            })
+
+    # 3. Si no hay ventas, devolver todos los destinos activos (alfabético)
+    if not data:
+        destinos = Oficina.objects.filter(activa=True).order_by('nombre')
+        data = [{'id': d.id, 'nombre': d.nombre} for d in destinos]
+
+    return JsonResponse(data, safe=False)

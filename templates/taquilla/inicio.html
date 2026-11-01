@@ -27,7 +27,8 @@
                         Origen 
                         <small class="text-muted" style="font-size: 0.7rem;">(Por defecto: {{ empleado.oficina.nombre }})</small>
                     </label>
-                    <select name="origen" class="form-select" required>
+                    <!-- ⭐ ID AGREGADO: id="origen" -->
+                    <select name="origen" id="origen" class="form-select" required>
                         {% for oficina in oficinas %}
                             <option value="{{ oficina.id }}" {% if origen_seleccionado == oficina.id %}selected{% endif %}>
                                 {{ oficina.nombre }}
@@ -37,7 +38,8 @@
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">Destino</label>
-                    <select name="destino" class="form-select" required>
+                    <!-- ⭐ ID AGREGADO: id="destino" -->
+                    <select name="destino" id="destino" class="form-select" required>
                         <option value="">Seleccione destino...</option>
                         {% for oficina in oficinas %}
                             {% if oficina.id != empleado.oficina.id %}
@@ -50,7 +52,7 @@
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">Fecha</label>
-                    <input type="date" name="fecha" class="form-control" value="{{ fecha_seleccionada }}" required>
+                    <input type="date" name="fecha" class="form-control" value="{{ fecha_seleccionada|default:'' }}" min="{{ hoy|date:'Y-m-d' }}">
                 </div>
                 <div class="col-md-3">
                     <button type="submit" class="btn btn-primary w-100" style="height: 38px;">
@@ -127,4 +129,43 @@
         </div>
     {% endif %}
 </div>
+
+<!-- ⭐ SCRIPT DE DESTINOS POPULARES -->
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    const comboOrigen = document.getElementById('origen');
+    const comboDestino = document.getElementById('destino');
+
+    if (comboOrigen && comboDestino) {
+        function cargarDestinos(origenId) {
+            comboDestino.innerHTML = '<option value="">Cargando...</option>';
+            
+            fetch(`/api/destinos-populares/?origen_id=${origenId}`)
+                .then(response => response.json())
+                .then(data => {
+                    comboDestino.innerHTML = '';
+                    data.forEach((destino, index) => {
+                        const option = document.createElement('option');
+                        option.value = destino.id;
+                        option.textContent = destino.nombre;
+                        if (index === 0) option.selected = true;
+                        comboDestino.appendChild(option);
+                    });
+                })
+                .catch(error => {
+                    console.error('Error al cargar destinos:', error);
+                    comboDestino.innerHTML = '<option value="">Error al cargar</option>';
+                });
+        }
+
+        comboOrigen.addEventListener('change', function() {
+            cargarDestinos(this.value);
+        });
+
+        if (comboOrigen.value) {
+            cargarDestinos(comboOrigen.value);
+        }
+    }
+});
+</script>
 {% endblock %}
