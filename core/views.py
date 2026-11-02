@@ -1222,7 +1222,9 @@ def registro_usuario(request):
                 whatsapp=data.get('whatsapp', ''),
                 codigo_verificacion=codigo,
                 fecha_expiracion_codigo=timezone.now() + timedelta(hours=24),
-                email_verificado=False
+                email_verificado=False,
+                acepto_terminos=True,
+                fecha_aceptacion_terminos=timezone.now(),
             )
             
             # 3. Intentar enviar el correo de verificación usando la API HTTP de Resend

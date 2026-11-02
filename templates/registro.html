@@ -83,9 +83,26 @@
                             {{ form.whatsapp }}
                         </div>
                     </div>
+
+                    <!-- ⭐ CHECK DE TÉRMINOS Y CONDICIONES -->
+                    <div class="form-check mt-4 mb-3">
+                        {{ form.acepto_terminos }}
+                        <label class="form-check-label" for="{{ form.acepto_terminos.id_for_label }}">
+                            He leído y acepto los <a href="#" data-bs-toggle="modal" data-bs-target="#modalTerminos">Términos y Condiciones</a> 
+                            y la <a href="#" data-bs-toggle="modal" data-bs-target="#modalPrivacidad">Política de Privacidad</a>.
+                        </label>
+                        {% if form.acepto_terminos.errors %}
+                            <div class="text-danger small">{{ form.acepto_terminos.errors }}</div>
+                        {% endif %}
+                    </div>
+
+                    <p class="text-muted small text-center mb-3">
+                        Al crear una cuenta, usted acepta nuestros términos y condiciones y nuestra política de privacidad.
+                    </p>
                     
+                    <!-- Botón de Registro (deshabilitado por defecto) -->
                     <div class="text-center mt-4">
-                        <button type="submit" class="btn btn-primary px-5" style="background-color: #003366; border-color: #003366;">
+                        <button type="submit" class="btn btn-primary px-5" id="btn-registrar" style="background-color: #003366; border-color: #003366;" disabled>
                             <i class="bi bi-check-circle"></i> Registrarme
                         </button>
                     </div>
@@ -103,11 +120,43 @@
     </div>
 </div>
 
-<!-- ============================================================ -->
-<!-- SCRIPTS: MÁSCARAS Y VISIBILIDAD DE CONTRASEÑA                -->
-<!-- ============================================================ -->
+<!-- ⭐ MODALES DE TÉRMINOS Y PRIVACIDAD (Placeholder) -->
+<div class="modal fade" id="modalTerminos" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Términos y Condiciones</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Aquí va el texto de los Términos y Condiciones de Expresos Mérida...</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalPrivacidad" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Política de Privacidad</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Aquí va el texto de la Política de Privacidad...</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
-// Función global para alternar la visibilidad de la contraseña con el ícono del ojo
+// Función para alternar la visibilidad de la contraseña con el ícono del ojo
 function togglePassword(button) {
     const input = button.previousElementSibling;
     if (input) {
@@ -121,73 +170,19 @@ function togglePassword(button) {
         }
     }
 }
-(function() {
-    function inicializarMascarasRegistro() {
-        // Cédula: V-12.345.678
-        const elCedula = document.querySelector('input[name="cedula"]');
-        if (elCedula) {
-            elCedula.addEventListener('input', function(e) {
-                let v = e.target.value.toUpperCase().trim();
-                let letra = '';
-                if (v && v[0].match(/[VEJG]/)) {
-                    letra = v[0];
-                    v = v.substring(1);
-                }
-                let nums = v.replace(/\D/g, '').substring(0, 9);
-                if (nums.length > 3) {
-                    nums = nums.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-                }
-                e.target.value = letra ? (letra + '-' + nums) : nums;
-            });
+
+// Script para habilitar/deshabilitar el botón de registro
+document.addEventListener("DOMContentLoaded", function() {
+    const checkTerminos = document.getElementById('id_acepto_terminos');
+    const btnRegistrar = document.getElementById('btn-registrar');
+
+    if (checkTerminos && btnRegistrar) {
+        function toggleBoton() {
+            btnRegistrar.disabled = !checkTerminos.checked;
         }
-        
-        // Teléfono: 0412-1234567
-        const elTelefono = document.querySelector('input[name="telefono"]');
-        if (elTelefono) {
-            elTelefono.addEventListener('input', function(e) {
-                let v = e.target.value.replace(/\D/g, '').substring(0, 11);
-                if (v.length > 4) {
-                    e.target.value = v.substring(0, 4) + '-' + v.substring(4);
-                } else {
-                    e.target.value = v;
-                }
-            });
-        }
-        
-        // WhatsApp: 0412-1234567
-        const elWhatsapp = document.querySelector('input[name="whatsapp"]');
-        if (elWhatsapp) {
-            elWhatsapp.addEventListener('input', function(e) {
-                let v = e.target.value.replace(/\D/g, '').substring(0, 11);
-                if (v.length > 4) {
-                    e.target.value = v.substring(0, 4) + '-' + v.substring(4);
-                } else {
-                    e.target.value = v;
-                }
-            });
-        }
+        checkTerminos.addEventListener('change', toggleBoton);
+        toggleBoton(); // Estado inicial
     }
-    
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', inicializarMascarasRegistro);
-    } else {
-        inicializarMascarasRegistro();
-    }
-})();
-</script>
-<script>
-    document.addEventListener('DOMContentLoaded', function () {
-        const form = document.querySelector('form');
-        if (form) {
-            form.addEventListener('submit', function (e) {
-                const btn = form.querySelector('button[type="submit"]');
-                if (btn) {
-                    // Cambiamos el texto y deshabilitamos el botón para evitar doble clic
-                    btn.disabled = true;
-                    btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Registrando...';
-                }
-            });
-        }
-    });
+});
 </script>
 {% endblock %}

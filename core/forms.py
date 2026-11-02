@@ -88,6 +88,11 @@ class RegistroForm(forms.Form):
             'autocomplete': 'off',
         })
     )
+    acepto_terminos = forms.BooleanField(
+        required=True,
+        label="Acepto los Términos y Condiciones y la Política de Privacidad",
+        error_messages={'required': 'Debes aceptar los términos y condiciones para registrarte.'}
+    )
     
 # ... (los métodos clean_cedula, clean_telefono, clean_whatsapp, save)
     

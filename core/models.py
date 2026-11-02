@@ -195,6 +195,9 @@ class Cliente(models.Model):
     codigo_verificacion = models.CharField(max_length=6, blank=True, null=True, verbose_name="Código de verificación")
     fecha_expiracion_codigo = models.DateTimeField(blank=True, null=True, verbose_name="Expiración del código")
 
+    # ⭐ TÉRMINOS Y CONDICIONES
+    acepto_terminos = models.BooleanField(default=False, verbose_name="¿Aceptó los términos y condiciones?")
+    fecha_aceptacion_terminos = models.DateTimeField(null=True, blank=True, verbose_name="Fecha de aceptación")
     class Meta:
         verbose_name = "Cliente"
         verbose_name_plural = "Clientes"
