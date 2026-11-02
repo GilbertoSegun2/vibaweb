@@ -73,6 +73,22 @@
         </div>
         {% endfor %}
 
+        <!-- ⭐ SELECTOR DE PISTERO -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-body">
+                <label class="form-label fw-bold"><i class="bi bi-person-badge"></i> Pistero (opcional)</label>
+                <select name="pistero_id" id="pistero_id" class="form-select">
+                    <option value="">— Ninguno —</option>
+                    {% for p in pisteros %}
+                        <option value="{{ p.id }}" data-comision="{{ p.comision_usd }}">
+                            {{ p.nombre }} (Comisión: ${{ p.comision_usd }})
+                        </option>
+                    {% endfor %}
+                </select>
+                <small class="text-muted">Seleccione el pistero que captó al pasajero.</small>
+            </div>
+        </div>
+
         <!-- FORMULARIO DE COBRO MÚLTIPLE -->
         <div class="card shadow-sm mb-4">
             <div class="card-header bg-light">
@@ -104,7 +120,6 @@
                     </div>
                 </div>
                 
-                <!-- ⭐ BOTÓN DE PAGO EXACTO (Magia para el taquillero) -->
                 <div class="mt-2 text-end">
                     <button type="button" class="btn btn-outline-secondary btn-sm" onclick="llenarPagoExacto()">
                         <i class="bi bi-magic"></i> Llenar Monto Restante
@@ -133,7 +148,6 @@
             </div>
         </div>
 
-        <!-- Tabla de pagos -->
         <div class="card shadow-sm mb-4" id="tabla_pagos_container" style="display:none;">
             <div class="card-body">
                 <h6 class="mb-3">Pagos registrados:</h6>
@@ -166,37 +180,26 @@
 
 {% block extra_js %}
 <script>
-    // ============================================================
-    // 1. VARIABLES DE PRECIOS
-    // ============================================================
     const PRECIO_BASE = parseFloat("{{ tarifa.monto_usd|default:0 }}".replace(',', '.')) || 0;
     const SEGURO = parseFloat("{{ valor_seguro|default:0 }}".replace(',', '.')) || 0;
     const TASA_BCV = parseFloat("{{ tasa_bcv|default:'0' }}".replace(',', '.')) || 0;
     const DESCUENTO_PREFERENCIAL = parseFloat("{{ descuento_preferencial|default:0 }}") || 0;
     const COBRAR_SEGURO_CORTESIA = {{ cobrar_seguro_cortesia|yesno:"true,false" }};
 
-    // ============================================================
-    // 2. CONTADOR FLOTANTE SINCRONIZADO (El Reloj Maestro)
-    // ============================================================
     (function() {
         const expiracionStr = "{{ expiracion_iso|default:'' }}";
         const timerBox = document.getElementById("timer-box");
         const contadorEl = document.getElementById("contador-global");
-        
         if (!contadorEl || !expiracionStr) return;
-
         const fechaExpiracion = new Date(expiracionStr).getTime();
-
         function formatearTiempo(segundos) {
             const m = Math.floor(segundos / 60);
             const s = segundos % 60;
             return `${m}:${s.toString().padStart(2, '0')}`;
         }
-
         function actualizarContador() {
             const ahora = new Date().getTime();
             const segundosTotales = Math.max(0, Math.floor((fechaExpiracion - ahora) / 1000));
-
             if (segundosTotales <= 0) {
                 clearInterval(timerInterval);
                 contadorEl.innerText = "0:00";
@@ -204,72 +207,48 @@
                 window.location.href = "/taquilla/";
                 return;
             }
-
             contadorEl.innerText = formatearTiempo(segundosTotales);
-            
             if (timerBox) timerBox.style.display = 'block';
-
             if (segundosTotales <= 120 && timerBox) {
                 timerBox.className = "position-fixed shadow rounded bg-danger px-2 py-1 border border-white";
             }
         }
-
         actualizarContador();
         const timerInterval = setInterval(actualizarContador, 1000);
     })();
 
-    // ============================================================
-    // 3. CÁLCULO DE TOTALES SEGÚN TIPO DE PASAJERO
-    // ============================================================
     function actualizarTotal() {
         const selects = document.querySelectorAll('.tipo-pasajero');
         let totalUSD = 0;
-        
         selects.forEach(select => {
             const tipo = select.value;
             let precioUnitario = PRECIO_BASE;
             let seguroUnitario = SEGURO;
-            
             if (tipo === 'tercera_edad' || tipo === 'discapacitado') {
                 precioUnitario = PRECIO_BASE * (1 - (DESCUENTO_PREFERENCIAL / 100));
             } else if (tipo === 'cortesia') {
                 precioUnitario = 0;
                 seguroUnitario = COBRAR_SEGURO_CORTESIA ? SEGURO : 0;
             }
-            
             totalUSD += precioUnitario + seguroUnitario;
         });
-        
         const totalBs = totalUSD * TASA_BCV;
-        
-        // Redondear a 2 decimales de forma segura
         const totalUSDRedondeado = Math.round(totalUSD * 100) / 100;
         const totalBsRedondeado = Math.round(totalBs * 100) / 100;
-        
         const formatoUSD = totalUSDRedondeado.toLocaleString('es-VE', {minimumFractionDigits: 2, maximumFractionDigits: 2});
         const formatoBs = totalBsRedondeado.toLocaleString('es-VE', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-        
         document.getElementById('total-usd').innerText = formatoUSD;
         document.getElementById('total-bs').innerText = formatoBs;
         document.getElementById('total-cobrar').innerText = formatoUSD;
         document.getElementById('total-cobrar-bs').innerText = formatoBs;
-        
         recalcularRestante();
     }
 
-    // ============================================================
-    // 4. COBRO MÚLTIPLE
-    // ============================================================
     let pagos = [];
-
     document.getElementById('metodo_pago').addEventListener('change', function() {
         const metodo = this.value;
         const campoRef = document.getElementById('campo_referencia');
-        if (metodo === 'pago_movil' || metodo === 'punto_venta') {
-            campoRef.style.display = 'block';
-        } else {
-            campoRef.style.display = 'none';
-        }
+        campoRef.style.display = (metodo === 'pago_movil' || metodo === 'punto_venta') ? 'block' : 'none';
     });
 
     function agregarPago() {
@@ -277,93 +256,48 @@
         const montoInput = document.getElementById('monto_pago');
         const referencia = document.getElementById('referencia_pago').value;
         const monto = parseFloat(montoInput.value);
-
-        if (!monto || monto <= 0) {
-            alert('Ingrese un monto válido.');
-            return;
-        }
-
-        let montoUSD = monto;
-        let montoBs = 0;
-
+        if (!monto || monto <= 0) { alert('Ingrese un monto válido.'); return; }
+        let montoUSD = monto, montoBs = 0;
         if (metodo === 'efectivo_bs' || metodo === 'pago_movil' || metodo === 'punto_venta') {
             montoBs = monto;
-            // Redondeo exacto a 2 decimales
             montoUSD = TASA_BCV > 0 ? Math.round((monto / TASA_BCV) * 100) / 100 : 0;
         } else {
             montoUSD = monto;
             montoBs = Math.round((monto * TASA_BCV) * 100) / 100;
         }
-
-        pagos.push({
-            metodo: metodo,
-            monto_usd: montoUSD.toFixed(2),
-            monto_bs: montoBs.toFixed(2),
-            referencia: referencia || '',
-        });
-
+        pagos.push({ metodo, monto_usd: montoUSD.toFixed(2), monto_bs: montoBs.toFixed(2), referencia: referencia || '' });
         actualizarTablaPagos();
         montoInput.value = '';
         document.getElementById('referencia_pago').value = '';
     }
 
-// ⭐ FUNCIÓN MÁGICA: Llena el monto restante en Bs. (calculado de forma numérica y limpia)
     function llenarPagoExacto() {
         const metodo = document.getElementById('metodo_pago').value;
-        
-        // Solo actuamos si el método es Pago Móvil, Punto de Venta o Efectivo Bs.
         if (metodo === 'pago_movil' || metodo === 'punto_venta' || metodo === 'efectivo_bs') {
-            // 1. Calculamos el total a cobrar numéricamente de forma interna
             let totalCobrarStr = document.getElementById('total-cobrar').innerText;
-            // Limpiamos separadores de miles y estandarizamos el punto decimal
             totalCobrarStr = totalCobrarStr.replace(/\./g, '').replace(',', '.');
             const totalCobrarUSD = parseFloat(totalCobrarStr) || 0;
-            
-            // 2. Sumamos lo que ya se ha pagado en USD
             const totalPagadoUSD = pagos.reduce((sum, p) => sum + parseFloat(p.monto_usd), 0);
-            
-            // 3. Obtenemos el restante real en USD de forma numérica
             const restanteUSD = Math.max(0, totalCobrarUSD - totalPagadoUSD);
-            
-            // 4. Convertimos el restante USD directamente a Bolívares usando la tasa BCV
             const restanteBs = restanteUSD * TASA_BCV;
-            
-            // 5. Redondeamos exactamente a 2 decimales
             const montoLimpio = Math.round(restanteBs * 100) / 100;
-            
-            // 6. Llenamos el input usando punto como separador decimal estándar (ej: "17333.36")
-            const montoInput = document.getElementById('monto_pago');
-            montoInput.value = montoLimpio.toFixed(2);
-            
-            // 7. Si es Pago Móvil o Punto de Venta, mostramos el campo de referencia
+            document.getElementById('monto_pago').value = montoLimpio.toFixed(2);
             if (metodo === 'pago_movil' || metodo === 'punto_venta') {
                 document.getElementById('campo_referencia').style.display = 'block';
             }
         } else {
-            alert('El botón "Llenar Monto Restante" solo funciona para pagos en Bolívares (Pago Móvil, Punto de Venta o Efectivo Bs.).');
+            alert('El botón "Llenar Monto Restante" solo funciona para pagos en Bolívares.');
         }
     }
 
     function actualizarTablaPagos() {
         const tbody = document.getElementById('tabla_pagos');
         const container = document.getElementById('tabla_pagos_container');
-        
-        if (pagos.length === 0) {
-            container.style.display = 'none';
-            return;
-        }
-        
+        if (pagos.length === 0) { container.style.display = 'none'; return; }
         container.style.display = 'block';
         tbody.innerHTML = '';
-        
+        const metodoLabels = { 'efectivo_usd': 'Efectivo USD', 'efectivo_bs': 'Efectivo Bs.', 'pago_movil': 'Pago Móvil', 'punto_venta': 'Punto de Venta' };
         pagos.forEach((p, i) => {
-            const metodoLabels = {
-                'efectivo_usd': 'Efectivo USD',
-                'efectivo_bs': 'Efectivo Bs.',
-                'pago_movil': 'Pago Móvil',
-                'punto_venta': 'Punto de Venta'
-            };
-            
             tbody.innerHTML += `
                 <tr>
                     <td>${metodoLabels[p.metodo] || p.metodo}</td>
@@ -374,30 +308,20 @@
                 </tr>
             `;
         });
-        
         document.getElementById('pagos_json').value = JSON.stringify(pagos);
         recalcularRestante();
     }
 
     function recalcularRestante() {
         const totalPagado = pagos.reduce((sum, p) => sum + parseFloat(p.monto_usd), 0);
-        
-        // Leer el total a cobrar de forma segura
         let totalCobrarStr = document.getElementById('total-cobrar').innerText;
         totalCobrarStr = totalCobrarStr.replace(/\./g, '').replace(',', '.');
         const totalCobrar = parseFloat(totalCobrarStr) || 0;
-        
         const restante = totalCobrar - totalPagado;
-        
         document.getElementById('total-pagado').innerText = totalPagado.toFixed(2);
         document.getElementById('total-restante').innerText = restante.toFixed(2);
-        
-        const totalPagadoBs = totalPagado * TASA_BCV;
-        const restanteBs = restante * TASA_BCV;
-        
-        document.getElementById('total-pagado-bs').innerText = totalPagadoBs.toLocaleString('es-VE', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-        document.getElementById('total-restante-bs').innerText = restanteBs.toLocaleString('es-VE', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-        
+        document.getElementById('total-pagado-bs').innerText = (totalPagado * TASA_BCV).toLocaleString('es-VE', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        document.getElementById('total-restante-bs').innerText = (restante * TASA_BCV).toLocaleString('es-VE', {minimumFractionDigits: 2, maximumFractionDigits: 2});
         const btn = document.getElementById('btn_confirmar');
         if (Math.abs(restante) < 0.01 && pagos.length > 0) {
             btn.disabled = false;
@@ -410,14 +334,9 @@
 
     function eliminarPago(index) {
         pagos.splice(index, 1);
-        actualizarTablaPagos();
+        actualizarPagoTabla();
     }
 
-    // ============================================================
-    // 5. INICIALIZACIÓN
-    // ============================================================
-    document.addEventListener('DOMContentLoaded', function() { 
-        actualizarTotal();
-    });
+    document.addEventListener('DOMContentLoaded', function() { actualizarTotal(); });
 </script>
 {% endblock %}

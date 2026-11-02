@@ -972,7 +972,7 @@ def taquilla_mapa(request, viaje_id):
         'destino_id': destino_id,
         'expiracion_iso': expiracion_iso,
     })
-    
+
 def taquilla_cobrar(request, viaje_id):
     if not request.user.is_authenticated:
         return redirect('core:login')
@@ -1010,7 +1010,6 @@ def taquilla_cobrar(request, viaje_id):
     reserva_inicio_str = request.session.get('reserva_inicio')
     
     if not reserva_inicio_str:
-        # Si es la primera vez, creamos el punto de partida
         reserva_inicio = timezone.now()
         request.session['reserva_inicio'] = reserva_inicio.isoformat()
     else:
@@ -1020,12 +1019,10 @@ def taquilla_cobrar(request, viaje_id):
             reserva_inicio = timezone.now()
             request.session['reserva_inicio'] = reserva_inicio.isoformat()
 
-    # Calculamos la hora exacta de expiración
     expira_en = reserva_inicio + timedelta(minutes=minutos_reserva)
     tiempo_actual = timezone.now()
 
     if tiempo_actual > expira_en:
-        # Si expiró, liberar asientos y redirigir
         Asiento.objects.filter(estado='reservado', reservado_por=request.user).update(
             estado='disponible', reservado_por=None, reservado_hasta=None
         )
@@ -1033,7 +1030,6 @@ def taquilla_cobrar(request, viaje_id):
         messages.warning(request, "Tu tiempo de reserva ha expirado. Selecciona de nuevo.")
         return redirect('core:taquilla_inicio')
 
-    # Variables que van al HTML
     expiracion_iso = expira_en.isoformat()
     segundos_restantes = max(0, int((expira_en - tiempo_actual).total_seconds()))
 
@@ -1056,6 +1052,9 @@ def taquilla_cobrar(request, viaje_id):
     precio_unitario = tarifa.monto_usd + valor_seguro
     total_usd = precio_unitario * cantidad
     total_bs = (total_usd * tasa_bcv).quantize(Decimal('0.01')) if tasa_bcv else 0
+
+    # ⭐ PISTEROS ACTIVOS DE LA OFICINA (Para el selector y el POST)
+    pisteros = Pistero.objects.filter(oficina=empleado.oficina, activo=True).order_by('nombre')
 
     if request.method == 'POST':
         import json
@@ -1114,6 +1113,11 @@ def taquilla_cobrar(request, viaje_id):
             messages.error(request, f"El total pagado (${total_pagado:.2f}) no coincide con el total a cobrar (${total_venta_usd:.2f}).")
             return redirect(f"/taquilla/viaje/{viaje.id}/cobrar/?destino={destino_id}&origen={origen_id}&" + "&".join([f"asientos[]={aid}" for aid in asientos_ids]))
 
+        # ⭐ PROCESAR EL PISTERO SELECCIONADO
+        pistero_id = request.POST.get('pistero_id')
+        pistero = Pistero.objects.filter(id=pistero_id, oficina=empleado.oficina).first() if pistero_id else None
+        comision_pistero = (pistero.comision_usd * len(boletos_creados)) if pistero else Decimal('0.00')
+
         try:
             with transaction.atomic():
                 codigo = generar_codigo_transaccion()
@@ -1123,6 +1127,8 @@ def taquilla_cobrar(request, viaje_id):
                     estado='confirmada', fecha_confirmacion=timezone.now(),
                     vendido_por=request.user, oficina_venta=empleado.oficina,
                     oficina_destino=parada_destino.oficina, dispositivo_venta='Taquilla',
+                    pistero=pistero,  # ⭐ NUEVO
+                    comision_pistero_usd=comision_pistero,  # ⭐ NUEVO
                 )
 
                 for p in pagos_lista:
@@ -1166,7 +1172,8 @@ def taquilla_cobrar(request, viaje_id):
         'intervalo_renovacion': intervalo_renovacion, 'descuento_preferencial': descuento_preferencial,
         'cobrar_seguro_cortesia': cobrar_seguro_cortesia,
         'expiracion_iso': expiracion_iso, 'segundos_restantes': segundos_restantes, 'minutos_reserva': minutos_reserva,
-    })
+        'pisteros': pisteros,  # ⭐ NUEVO
+    })    
 
 @login_required
 def taquilla_buscar_pasajero(request):
@@ -1212,6 +1219,9 @@ def registro_usuario(request):
                 first_name=data.get('first_name', ''),
                 last_name=data.get('last_name', '')
             )
+
+            # ⭐ Obtenemos los minutos de expiración del parámetro 188 (por defecto 15 min)
+            minutos_expiracion = int(obtener_parametro('188', default=15))
             
             # 2. Crear el registro en el modelo Cliente (perfil extendido)
             codigo = str(random.randint(100000, 999999))
@@ -1221,10 +1231,8 @@ def registro_usuario(request):
                 telefono=data['telefono'],
                 whatsapp=data.get('whatsapp', ''),
                 codigo_verificacion=codigo,
-                fecha_expiracion_codigo=timezone.now() + timedelta(hours=24),
-                email_verificado=False,
-                acepto_terminos=True,
-                fecha_aceptacion_terminos=timezone.now(),
+                fecha_expiracion_codigo=timezone.now() + timedelta(minutes=minutos_expiracion), # 👈 Dinámico según el parámetro
+                email_verificado=False
             )
             
             # 3. Intentar enviar el correo de verificación usando la API HTTP de Resend

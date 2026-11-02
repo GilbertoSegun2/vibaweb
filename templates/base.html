@@ -239,9 +239,20 @@
     }
     </script>
     
-    <!-- ⭐ PWA: LÓGICA DE INSTALACIÓN GLOBAL -->
+    <!-- ⭐ PWA: REGISTRO Y LÓGICA DE INSTALACIÓN GLOBAL (BLINDADO) -->
     <script>
     (function() {
+        // ⭐ REGISTRO FORZADO DEL SERVICE WORKER (con update)
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/serviceworker.js')
+                .then(function(reg) {
+                    reg.update(); // Forzar la búsqueda de actualizaciones
+                })
+                .catch(function(err) {
+                    console.log('SW registration failed:', err);
+                });
+        }
+
         let promptDiferido = null;
         const botonLi = document.getElementById('btn-instalar-pwa-li');
         const boton = document.getElementById('btn-instalar-pwa');
@@ -368,7 +379,6 @@
     <script>
     (function() {
         {% if user.is_authenticated and not user.usuarioempresa %}
-        // ⭐ Forzamos 1 minuto exacto para el vigilante de inactividad
         const MINUTOS_INACTIVIDAD = 1; 
         const TIEMPO_INACTIVIDAD = MINUTOS_INACTIVIDAD * 60 * 1000;
         let temporizadorInactividad;

@@ -2,10 +2,14 @@
 from .utils import obtener_tasa_bcv
 from django.utils import timezone
 from datetime import datetime, timedelta
-
-
+    
 def tasa_bcv(request):
-    """Agrega la tasa BCV actual a todos los templates."""
+    """Agrega la tasa BCV actual a todos los templates y verifica su actualización diaria."""
+    from .utils import verificar_y_actualizar_bcv_automatico
+    
+    # ⚡ Ejecuta el chequeo automático diario de forma transparente
+    verificar_y_actualizar_bcv_automatico()
+    
     return {
         'tasa_bcv': obtener_tasa_bcv(),
     }

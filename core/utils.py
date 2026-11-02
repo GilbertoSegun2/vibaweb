@@ -229,3 +229,27 @@ def asiento_esta_disponible_en_tramo(asiento_id, viaje_id, nuevo_orden_origen, n
     
     return not choque # Si hay choque, devuelve False (Ocupado). Si no, True (Libre).
     
+def verificar_y_actualizar_bcv_automatico():
+    """
+    Verifica si la tasa del BCV del día actual en Venezuela ya fue actualizada.
+    Si es un nuevo día, ejecuta el comando de actualización automáticamente.
+    """
+    from django.core.management import call_command
+    from django.utils import timezone
+    from .models import Parametro
+    
+    try:
+        ahora_ve = timezone.localtime(timezone.now())
+        hoy_str = ahora_ve.strftime('%Y-%m-%d')
+        
+        # Leer la fecha de la última actualización guardada en el parámetro '108'
+        param_fecha = Parametro.objects.filter(codigo='108').first()
+        ultima_fecha = param_fecha.valor_texto if param_fecha else None
+        
+        # Si no hay fecha registrada o la última fecha es de un día anterior, actualizamos
+        if not ultima_fecha or not ultima_fecha.startswith(hoy_str):
+            call_command('actualizar_bcv')
+    except Exception as e:
+        # Capturamos cualquier error de red o del BCV para que la web siga funcionando sin bloquearse
+        print(f"Aviso: No se pudo actualizar la tasa BCV automáticamente: {e}")
+    

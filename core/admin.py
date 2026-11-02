@@ -557,3 +557,12 @@ class BancoAdmin(admin.ModelAdmin):
     list_filter = ('activo',)
     search_fields = ('codigo', 'nombre')
     ordering = ('codigo',)
+
+
+from .models import Pistero
+
+@admin.register(Pistero)
+class PisteroAdmin(admin.ModelAdmin):
+    list_display = ('nombre', 'cedula', 'oficina', 'comision_usd', 'activo')
+    list_filter = ('oficina', 'activo')
+    search_fields = ('nombre', 'cedula')

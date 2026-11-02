@@ -375,6 +375,15 @@ class Transaccion(models.Model):
     numero_liquidacion = models.CharField(
         max_length=50, blank=True, verbose_name="Número de liquidación"
     )
+    # PISTEROS
+    pistero = models.ForeignKey(
+        'Pistero', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='transacciones', verbose_name="Pistero"
+    )
+    comision_pistero_usd = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0,
+        verbose_name="Comisión del pistero (USD)"
+    )
     # ---------------------------------------------    
     
 
@@ -809,3 +818,27 @@ class Banco(models.Model):
 
     def __str__(self):
         return f"{self.codigo} - {self.nombre}"
+        
+class Pistero(models.Model):
+    """Persona que capta pasajeros en la puerta del terminal (por comisión)."""
+    nombre = models.CharField(max_length=100, verbose_name="Nombre completo")
+    cedula = models.CharField(max_length=20, unique=True, verbose_name="Cédula")
+    telefono = models.CharField(max_length=20, blank=True, verbose_name="Teléfono")
+    oficina = models.ForeignKey(
+        Oficina, on_delete=models.PROTECT, 
+        related_name='pisteros', verbose_name="Oficina"
+    )
+    comision_usd = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0,
+        verbose_name="Comisión por boleto (USD)"
+    )
+    activo = models.BooleanField(default=True, verbose_name="Activo")
+    fecha_ingreso = models.DateField(auto_now_add=True, verbose_name="Fecha de ingreso")
+
+    class Meta:
+        verbose_name = "Pistero"
+        verbose_name_plural = "Pisteros"
+        ordering = ['oficina', 'nombre']
+
+    def __str__(self):
+        return f"{self.nombre} ({self.cedula}) - {self.oficina.nombre}"
