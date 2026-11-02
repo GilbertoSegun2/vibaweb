@@ -14,7 +14,8 @@ from decimal import Decimal
 from .models import (
     Oficina, Viaje, Asiento, Transaccion, Pago, Boleto, Tarifa, 
     MovimientoAsiento, UsuarioEmpresa, Cliente, Credito, 
-    PlantillaBus, PlantillaAsiento, Ruta, RutaParada, Suscripcion
+    PlantillaBus, PlantillaAsiento, Ruta, RutaParada, Suscripcion,
+    Pistero
 )
 from .forms import RegistroForm, LoginForm, PagoWebForm, PasajeroForm, PasarelaVirtualForm
 from .utils import (
@@ -438,20 +439,36 @@ def reservar_asientos(request):
 @login_required
 def liberar_asientos(request):
     asientos_ids = request.POST.getlist('asientos[]')
-    if not asientos_ids: return JsonResponse({'ok': False, 'error': 'Faltan datos.'}, status=400)
+    if not asientos_ids:
+        return JsonResponse({'ok': False, 'error': 'Faltan datos.'}, status=400)
+    
+    # ⭐ ACEPTAR TANTO A CLIENTES COMO A TAQUILLEROS
     cliente = getattr(request.user, 'cliente', None)
-    if not cliente: return JsonResponse({'ok': False, 'error': 'Sin cliente.'}, status=400)
+    empleado = getattr(request.user, 'usuarioempresa', None)
+    
+    if not cliente and not empleado:
+        return JsonResponse({'ok': False, 'error': 'Usuario no autorizado.'}, status=400)
+    
     try:
         with transaction.atomic():
-            asientos = Asiento.objects.select_for_update().filter(id__in=asientos_ids, estado='reservado', reservado_por=request.user)
+            asientos = Asiento.objects.select_for_update().filter(
+                id__in=asientos_ids, estado='reservado', reservado_por=request.user
+            )
             for asiento in asientos:
-                MovimientoAsiento.objects.create(asiento=asiento, tipo='liberacion_manual', estado_anterior='reservado', estado_nuevo='disponible', usuario=request.user, motivo='El cliente liberó el asiento.')
+                MovimientoAsiento.objects.create(
+                    asiento=asiento, tipo='liberacion_manual', 
+                    estado_anterior='reservado', estado_nuevo='disponible', 
+                    usuario=request.user, motivo='El usuario liberó el asiento.'
+                )
             asientos.update(estado='disponible', reservado_hasta=None, reservado_por=None)
+        
         asientos_sesion = request.session.get('asientos_seleccionados', [])
         asientos_sesion = [aid for aid in asientos_sesion if str(aid) not in asientos_ids]
         request.session['asientos_seleccionados'] = asientos_sesion
+        
         return JsonResponse({'ok': True, 'cantidad': len(asientos_ids)})
-    except Exception as e: return JsonResponse({'ok': False, 'error': str(e)}, status=500)
+    except Exception as e:
+        return JsonResponse({'ok': False, 'error': str(e)}, status=500)
 
 @login_required
 def pasajeros(request, viaje_id):

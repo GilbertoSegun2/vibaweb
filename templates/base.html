@@ -242,11 +242,10 @@
     <!-- ⭐ PWA: REGISTRO Y LÓGICA DE INSTALACIÓN GLOBAL (BLINDADO) -->
     <script>
     (function() {
-        // ⭐ REGISTRO FORZADO DEL SERVICE WORKER (con update)
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/serviceworker.js')
                 .then(function(reg) {
-                    reg.update(); // Forzar la búsqueda de actualizaciones
+                    reg.update();
                 })
                 .catch(function(err) {
                     console.log('SW registration failed:', err);
@@ -420,6 +419,23 @@
         });
         {% endif %}
     })();
+    </script>
+
+    <!-- ⭐ EXTRA_JS (BLINDADO) -->
+    {% block extra_js %}{% endblock %}
+
+    <!-- ⭐ SCRIPT DE RESPALDO: INYECTA EL EXTRA_JS SI FALLA -->
+    <script>
+    document.addEventListener("DOMContentLoaded", function() {
+        const scriptsExtra = document.querySelectorAll('script[data-extra-js]');
+        scriptsExtra.forEach(script => {
+            try {
+                eval(script.textContent);
+            } catch (e) {
+                console.error("Error en extra_js:", e);
+            }
+        });
+    });
     </script>
 </body>
 </html>

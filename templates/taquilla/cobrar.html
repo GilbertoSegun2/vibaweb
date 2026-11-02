@@ -179,7 +179,7 @@
 {% endblock %}
 
 {% block extra_js %}
-<script>
+<script data-extra-js>
     const PRECIO_BASE = parseFloat("{{ tarifa.monto_usd|default:0 }}".replace(',', '.')) || 0;
     const SEGURO = parseFloat("{{ valor_seguro|default:0 }}".replace(',', '.')) || 0;
     const TASA_BCV = parseFloat("{{ tasa_bcv|default:'0' }}".replace(',', '.')) || 0;
@@ -334,7 +334,7 @@
 
     function eliminarPago(index) {
         pagos.splice(index, 1);
-        actualizarPagoTabla();
+        actualizarTablaPagos();
     }
 
     document.addEventListener('DOMContentLoaded', function() { actualizarTotal(); });
