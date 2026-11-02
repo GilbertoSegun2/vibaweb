@@ -68,33 +68,28 @@ def validar_tarifa_para_viaje(viaje, origen_id, destino_id):
 # VISTAS PÚBLICAS
 # ============================================================
 def inicio(request):
-    # Si es empleado, redirigir a su área de taquilla
     if request.user.is_authenticated and getattr(request.user, 'usuarioempresa', None):
         return redirect('core:taquilla_inicio')
         
     request.session.pop('reserva_inicio', None)
     logout_reciente = request.session.pop('logout_reciente', False)
-    cliente = getattr(request.user, 'cliente', None)
-    if cliente:
-        with transaction.atomic():
-            asientos_reservados = Asiento.objects.select_for_update().filter(estado='reservado', reservado_por=request.user)
-            for asiento in asientos_reservados:
-                MovimientoAsiento.objects.create(asiento=asiento, tipo='liberacion_manual', estado_anterior='reservado', estado_nuevo='disponible', usuario=request.user, motivo='El cliente volvió al inicio')
-            asientos_reservados.update(estado='disponible', reservado_hasta=None, reservado_por=None)
     
     oficinas = Oficina.objects.filter(activa=True).order_by('nombre')
     bienvenida_titulo = obtener_parametro('160', default='Bienvenido a Viba-Web')
     bienvenida_subtitulo = obtener_parametro('161', default='Compra tus boletos de autobús de forma rápida y segura')
-    
-    # ⭐ FECHA DE HOY EN VENEZUELA
     hoy = timezone.localtime(timezone.now()).strftime('%Y-%m-%d')
     
-    return render(request, 'inicio.html', {
+    # ⭐ DETERMINAR QUÉ TEMPLATE USAR (Parámetro 187)
+    usar_buscador = obtener_parametro('187', default=False) # Booleano
+    
+    template = 'inicio_inteligente.html' if usar_buscador else 'inicio.html'
+    
+    return render(request, template, {
         'oficinas': oficinas, 
         'logout_reciente': logout_reciente,
         'bienvenida_titulo': bienvenida_titulo, 
         'bienvenida_subtitulo': bienvenida_subtitulo,
-        'hoy': hoy,  # ⭐ Pasar la fecha al template
+        'hoy': hoy,
     })
 
 @login_required
@@ -1413,9 +1408,23 @@ def buscar_viajes(request):
         request.session['busqueda_destino_id'] = oficina_destino.id
     viajes = viajes.select_related('ruta', 'bus', 'ruta__origen').order_by('fecha', 'hora')
     viajes_con_info = []
+    tasa_bcv = obtener_parametro('107', default=0) # ⭐ Obtener la tasa BCV
+    
     for viaje in viajes:
         disponibles = viaje.asientos.filter(estado='disponible').count()
-        viajes_con_info.append({'viaje': viaje, 'disponibles': disponibles, 'tarifa': tarifa})
+        precio_usd = tarifa.monto_usd if tarifa else 0
+        
+        # ⭐ Cálculo del monto en bolívares y formateo exacto (ej: 28.456,32)
+        precio_bs_num = (precio_usd * tasa_bcv) if tasa_bcv else 0
+        precio_bs_formateado = f"{precio_bs_num:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        
+        viajes_con_info.append({
+            'viaje': viaje, 
+            'disponibles': disponibles, 
+            'tarifa': tarifa,
+            'precio_usd': precio_usd,
+            'precio_bs': precio_bs_formateado,  # ⭐ Cadena con punto de miles y coma decimal
+        })
     return render(request, 'buscar_viajes.html', {
         'viajes_con_info': viajes_con_info, 'oficina_origen': oficina_origen, 'oficina_destino': oficina_destino,
         'fecha': fecha, 'tarifa': tarifa, 'oficinas': Oficina.objects.filter(activa=True).order_by('nombre'),
@@ -1611,4 +1620,18 @@ def api_destinos_populares(request):
         destinos = Oficina.objects.filter(activa=True).order_by('nombre')
         data = [{'id': d.id, 'nombre': d.nombre} for d in destinos]
 
+    return JsonResponse(data, safe=False)
+    
+def api_buscar_oficinas(request):
+    """Busca oficinas por nombre para el autocomplete."""
+    query = request.GET.get('q', '')
+    if len(query) < 2:
+        return JsonResponse([], safe=False)
+    
+    oficinas = Oficina.objects.filter(
+        nombre__icontains=query,
+        activa=True
+    ).order_by('nombre')[:10]
+    
+    data = [{'id': o.id, 'nombre': o.nombre} for o in oficinas]
     return JsonResponse(data, safe=False)

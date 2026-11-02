@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Inicio - Viba-Web{% endblock %}
+
+{% block content %}
+    {% include 'partials/_hero.html' %}
+    
+    <div class="container mb-5">
+        {% include 'partials/_buscador_inteligente.html' %}
+        
+        <div class="mt-5">
+            {% include 'partials/_pilares.html' %}
+        </div>
+    </div>
+{% endblock %}

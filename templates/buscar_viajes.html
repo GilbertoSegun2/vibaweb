@@ -1,170 +1,69 @@
 {% extends 'base.html' %}
+{% load humanize %}
 
-{% block title %}Comprar boletos - Viba-Web{% endblock %}
-
-{% load core_extras %}
+{% block title %}Resultados - Viba-Web{% endblock %}
 
 {% block content %}
-{% now "Y-m-d" as fecha_hoy %}
+<div class="container mt-3">
+    <!-- Buscador Compacto -->
+    {% include 'partials/_buscador_compacto.html' %}
 
-<h2 class="mb-4" style="color: #003366;">
-    <i class="bi bi-search"></i> Comprar boletos
-</h2>
+    <!-- Resultados -->
+    <div class="mt-4">
+        {% if viajes_con_info %}
+            <h5 class="mb-3 text-muted">{{ viajes_con_info|length }} viaje(s) encontrado(s)</h5>
+            
+            {% for item in viajes_con_info %}
+            <div class="card mb-3 border-0 shadow-sm" style="border-radius: 12px;">
+                <div class="card-body p-3">
+                    <div class="row align-items-center">
+                        <!-- Columna izquierda: Info del viaje -->
+                        <div class="col-md-8">
+                            <h6 class="fw-bold text-dark mb-1">{{ item.viaje.ruta.nombre }}</h6>
+                            <p class="text-muted small mb-1">{{ item.viaje.bus.modelo }} ({{ item.viaje.bus.placa }})</p>
+                            
+                            <div class="d-flex align-items-center gap-2 my-2">
+                                <strong class="text-dark fs-6 text-uppercase">{{ oficina_origen.nombre }}</strong>
+                                <i class="bi bi-arrow-right text-muted"></i>
+                                <strong class="text-dark fs-6 text-uppercase">{{ oficina_destino.nombre }}</strong>
+                            </div>
 
-<!-- Formulario de búsqueda -->
-<div class="card mb-4 shadow-sm">
-    <div class="card-body">
-        <form method="get" action="/viajes/">
-            <div class="row g-3">
-                <div class="col-md-3">
-                    <label class="form-label">Origen</label>
-                    <select name="origen" class="form-select">
-                        <option value="">Todos</option>
-                        {% for oficina in oficinas %}
-                            <option value="{{ oficina.id }}" {% if oficina_origen and oficina.id == oficina_origen.id %}selected{% endif %}>
-                                {{ oficina.nombre }}
-                            </option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label">Destino</label>
-                    <select name="destino" class="form-select">
-                        <option value="">Todos</option>
-                        {% for oficina in oficinas %}
-                            <option value="{{ oficina.id }}" {% if oficina_destino and oficina.id == oficina_destino.id %}selected{% endif %}>
-                                {{ oficina.nombre }}
-                            </option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label">Fecha</label>
-                    <input type="date" name="fecha" class="form-control" value="{{ fecha|date:'Y-m-d'|default:'' }}">
-                </div>
-                <div class="col-md-3 d-flex align-items-end">
-                    <button type="submit" class="btn btn-primary w-100" style="background-color: #003366; border-color: #003366;">
-                        <i class="bi bi-search"></i> Buscar
-                    </button>
-                </div>
-            </div>
-        </form>
-        <script>
-            // Guardar los valores de búsqueda en sessionStorage al enviar el formulario
-            document.addEventListener('DOMContentLoaded', function() {
-                const formulario = document.querySelector('form[action="/viajes/"]');
-                
-                if (formulario) {
-                    formulario.addEventListener('submit', function() {
-                        const origen = document.querySelector('select[name="origen"]').value;
-                        const destino = document.querySelector('select[name="destino"]').value;
-                        const fecha = document.querySelector('input[name="fecha"]').value;
+                            <!-- Hora y Fecha -->
+                            <div class="d-flex align-items-center gap-3 mb-2">
+                                <div><i class="bi bi-clock text-muted"></i> {{ item.viaje.hora|time:"h:i A" }}</div>
+                                <div><i class="bi bi-calendar-event text-muted"></i> {{ item.viaje.fecha|date:"d/m/Y" }}</div>
+                            </div>
+                            
+                            <div class="mt-2">
+                                <span class="badge bg-success bg-opacity-10 text-success">
+                                    <i class="bi bi-person-fill"></i> {{ item.disponibles }} disponibles
+                                </span>
+                            </div>
+                        </div>
                         
-                        sessionStorage.setItem('busqueda_origen', origen);
-                        sessionStorage.setItem('busqueda_destino', destino);
-                        sessionStorage.setItem('busqueda_fecha', fecha);
-                    });
-                }
-            });
-        </script>
-    </div>
-</div>
-
-<!-- Resultados -->
-{% if viajes_con_info %}
-    <h5 class="mb-3 text-muted">{{ viajes_con_info|length }} viaje(s) encontrado(s)</h5>
-    <div class="row">
-        {% for item in viajes_con_info %}
-            <div class="col-md-6 mb-3">
-                <div class="card h-100 shadow-sm">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-start mb-2">
-                            <h5 class="card-title mb-0" style="color: #003366;">
-                                {{ item.viaje.ruta.nombre }}
-                            </h5>
+                        <!-- Columna derecha: Precios y Botón -->
+                        <div class="col-md-4 text-md-end mt-3 mt-md-0">
+                            <div class="text-end">
+                                <span class="fs-4 fw-bold text-success">$ {{ item.precio_usd|floatformat:2 }}</span>
+                                <span class="text-muted small d-block">
+                                    Bs. {{ item.precio_bs }}
+                                </span>
+                            </div>
                             {% if item.tarifa %}
-                                <div class="text-end">
-                                    <span class="badge bg-success">${{ item.tarifa.monto_usd }}</span>
-                                    {% if item.viaje.fecha|date:"Y-m-d" == fecha_hoy %}
-                                        <br>
-                                        <small class="text-muted" style="font-size: 0.7rem;">
-                                            Bs. {{ item.tarifa.monto_usd|convertir_bs }}
-                                        </small>
-                                    {% endif %}
-                                </div>
+                                <a href="{% url 'core:detalle_viaje' item.viaje.id %}?origen={{ oficina_origen.id }}&destino={{ oficina_destino.id }}" class="btn btn-primary mt-2" style="background-color: #0F75BB; border-color: #0F75BB;">
+                                    Ver Asientos <i class="bi bi-arrow-right"></i>
+                                </a>
                             {% else %}
-                                <span class="badge bg-secondary">Sin tarifa</span>
+                                <button class="btn btn-secondary mt-2" disabled>Sin Tarifa</button>
                             {% endif %}
                         </div>
-                        <p class="text-muted mb-2">
-                            <p class="text-muted mb-2">
-                                <i class="bi bi-geo-alt"></i> Desde <strong>{{ item.viaje.ruta.origen.nombre }}</strong>
-                                {% if oficina_destino %}
-                                    → <strong>{{ oficina_destino.nombre }}</strong>
-                                {% endif %}
-                            </p>
-                        </p>
-                        <p class="mb-2">
-                            <i class="bi bi-calendar"></i> {{ item.viaje.fecha|date:'d/m/Y' }}
-                            <i class="bi bi-clock ms-3"></i> {{ item.viaje.hora|hora_am_pm }}
-                        </p>
-                        <p class="mb-2">
-                            <i class="bi bi-bus-front"></i> {{ item.viaje.bus.modelo }} ({{ item.viaje.bus.placa }})
-                        </p>
-                        <p class="mb-3">
-                            <i class="bi bi-person-check"></i>
-                            <strong>{{ item.disponibles }}</strong> asientos disponibles
-                        </p>
-                        <a href="/viajes/{{ item.viaje.id }}/?origen={{ oficina_origen.id|default:'' }}&destino={{ oficina_destino.id|default:'' }}" class="btn btn-primary w-100" style="background-color: #003366; border-color: #003366;">
-                            Ver Asientos <i class="bi bi-arrow-right"></i>
-                        </a>
                     </div>
                 </div>
             </div>
-        {% endfor %}
-    </div>
-{% else %}
-    <div class="alert alert-info text-center">
-        <i class="bi bi-info-circle"></i>
-        {% if oficina_origen or oficina_destino or fecha %}
-            No se encontraron viajes con esos criterios. Intenta con otros.
-            {% if tarifa and oficina_origen and oficina_destino %}
-                <br>
-                <small class="text-muted">
-                    Precio de referencia para esta ruta:
-                    <strong class="text-success">${{ tarifa.monto_usd }}</strong>
-                </small>
-            {% endif %}
+            {% endfor %}
         {% else %}
-            Realiza una búsqueda para ver viajes disponibles.
+            <div class="alert alert-warning text-center">No se encontraron viajes disponibles para esta fecha y ruta.</div>
         {% endif %}
     </div>
-{% endif %}
-{% endblock %}
-
-
-{% block extra_js %}
-<script>
-    document.addEventListener('DOMContentLoaded', function() {
-        // Rellenar los combos con los valores guardados si están vacíos
-        const origenSelect = document.querySelector('select[name="origen"]');
-        const destinoSelect = document.querySelector('select[name="destino"]');
-        const fechaInput = document.querySelector('input[name="fecha"]');
-        
-        if (origenSelect && !origenSelect.value) {
-            const origenGuardado = sessionStorage.getItem('busqueda_origen');
-            if (origenGuardado) origenSelect.value = origenGuardado;
-        }
-        
-        if (destinoSelect && !destinoSelect.value) {
-            const destinoGuardado = sessionStorage.getItem('busqueda_destino');
-            if (destinoGuardado) destinoSelect.value = destinoGuardado;
-        }
-        
-        if (fechaInput && !fechaInput.value) {
-            const fechaGuardada = sessionStorage.getItem('busqueda_fecha');
-            if (fechaGuardada) fechaInput.value = fechaGuardada;
-        }
-    });
-</script>
+</div>
 {% endblock %}

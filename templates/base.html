@@ -368,9 +368,25 @@
     <script>
     (function() {
         {% if user.is_authenticated and not user.usuarioempresa %}
-        const MINUTOS_INACTIVIDAD = Number("{{ minutos_inactividad|default:10 }}");
+        // ⭐ Forzamos 1 minuto exacto para el vigilante de inactividad
+        const MINUTOS_INACTIVIDAD = 1; 
         const TIEMPO_INACTIVIDAD = MINUTOS_INACTIVIDAD * 60 * 1000;
         let temporizadorInactividad;
+
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
 
         function redirigirALogout() {
             fetch('/timeout-logout/', {
@@ -395,7 +411,5 @@
         {% endif %}
     })();
     </script>
-    
-    {% block extra_js %}{% endblock %}
 </body>
 </html>
