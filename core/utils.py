@@ -252,4 +252,42 @@ def verificar_y_actualizar_bcv_automatico():
     except Exception as e:
         # Capturamos cualquier error de red o del BCV para que la web siga funcionando sin bloquearse
         print(f"Aviso: No se pudo actualizar la tasa BCV automáticamente: {e}")
+        
+def generar_numero_boleto(oficina, es_continuo=False):
+    """
+    Genera el número de boleto con formato CÓDIGO OFICINA-SECUENCIA.
+    Si es_continuo=True, la secuencia es única para toda la empresa.
+    Si es_continuo=False, cada oficina tiene su propio contador.
+    """
+    from .models import Boleto, Oficina
+    
+    # Obtener el código de la oficina (ej. "001")
+    codigo_oficina = oficina.codigo if oficina else "WEB"
+    
+    if es_continuo:
+        # Buscar el último boleto de CUALQUIER oficina (secuencia continua)
+        ultimo = Boleto.objects.filter(numero_boleto__isnull=False).order_by('-id').first()
+        if ultimo and ultimo.numero_boleto:
+            try:
+                # Extraer la secuencia (después del guión)
+                secuencia = int(ultimo.numero_boleto.split('-')[1]) + 1
+            except (ValueError, IndexError):
+                secuencia = 1
+        else:
+            secuencia = 1
+    else:
+        # Buscar el último boleto de ESA oficina específica
+        ultimo = Boleto.objects.filter(
+            numero_boleto__startswith=f"{codigo_oficina}-"
+        ).order_by('-id').first()
+        if ultimo and ultimo.numero_boleto:
+            try:
+                secuencia = int(ultimo.numero_boleto.split('-')[1]) + 1
+            except (ValueError, IndexError):
+                secuencia = 1
+        else:
+            secuencia = 1
+    
+    # Formatear con 6 dígitos
+    return f"{codigo_oficina}-{secuencia:06d}"
     

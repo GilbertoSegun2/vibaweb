@@ -20,7 +20,8 @@ from .models import (
 from .forms import RegistroForm, LoginForm, PagoWebForm, PasajeroForm, PasarelaVirtualForm
 from .utils import (
     obtener_parametro, liberar_reservas_vencidas, generar_codigo_transaccion,
-    generar_codigo_qr, asiento_esta_disponible_en_tramo
+    generar_codigo_qr, asiento_esta_disponible_en_tramo,
+    generar_numero_boleto,
 )
 
 # ============================================================
@@ -632,7 +633,23 @@ def pago(request, viaje_id):
                     monto_tarifa = tarifa.monto_usd if tarifa else 0
                     monto_seguro = valor_seguro if tarifa else 0
                     monto_total_boleto = monto_tarifa + monto_seguro
-                    Boleto.objects.create(transaccion=transaccion, viaje=viaje, asiento=asiento, pasajero_cedula=p['cedula'], pasajero_nombre=p['nombre'], pasajero_telefono=p.get('telefono', ''), tipo_pasajero=p['tipo_pasajero'], monto_tarifa_usd=monto_tarifa, monto_seguro_usd=monto_seguro, monto_total_usd=monto_total_boleto, tasa_bcv=tasa_bcv, monto_total_bs=(monto_total_boleto * tasa_bcv).quantize(Decimal('0.01')) if tasa_bcv else 0, codigo_qr=generar_codigo_qr(), estado='pendiente_verificacion')
+                    Boleto.objects.create(
+                        transaccion=transaccion, viaje=viaje, 
+                        asiento=asiento, 
+                        pasajero_cedula=p['cedula'], 
+                        pasajero_nombre=p['nombre'], 
+                        pasajero_telefono=p.get('telefono', ''), 
+                        tipo_pasajero=p['tipo_pasajero'], 
+                        monto_tarifa_usd=monto_tarifa, 
+                        monto_seguro_usd=monto_seguro, 
+                        monto_total_usd=monto_total_boleto, 
+                        tasa_bcv=tasa_bcv, 
+                        monto_total_bs=(monto_total_boleto * tasa_bcv).quantize(Decimal('0.01')) if tasa_bcv else 0,
+                        numero_boleto=generar_numero_boleto(None, es_continuo=obtener_parametro('179', default=False)),
+                        codigo_qr=generar_codigo_qr(), 
+                        estado='pendiente_verificacion'
+                    )
+                    
             request.session.pop('pasajeros_data', None)
             request.session.pop('viaje_id', None)
             request.session.pop('asientos_seleccionados', None)
@@ -651,8 +668,13 @@ def confirmacion(request, transaccion_id):
         messages.error(request, "No tienes acceso a esta transacción.")
         return redirect('core:inicio')
     boletos = transaccion.boletos.all().order_by('asiento__numero')
-    pago_obj = transaccion.pagos.first()
-    return render(request, 'confirmacion.html', {'transaccion': transaccion, 'boletos': boletos, 'pago': pago_obj})
+    pagos = transaccion.pagos.all() 
+    return render(request, 'confirmacion.html', {
+        'transaccion': transaccion, 
+        'boletos': boletos, 
+        'pagos': pagos,
+        'fecha_venta': transaccion.fecha_creacion,
+    })
 
 # ============================================================
 # SELECCIÓN DE MÉTODO DE PAGO Y PASARELA
@@ -1169,12 +1191,13 @@ def taquilla_cobrar(request, viaje_id):
                         tipo_pasajero=b['tipo'], monto_tarifa_usd=b['precio'], monto_seguro_usd=b['seguro'],
                         monto_total_usd=b['total'], tasa_bcv=tasa_bcv,
                         monto_total_bs=(b['total'] * tasa_bcv).quantize(Decimal('0.01')) if tasa_bcv else 0,
-                        codigo_qr=generar_codigo_qr(), estado='vendido', vendido_por=request.user
+                        codigo_qr=generar_codigo_qr(), estado='vendido', vendido_por=request.user,
+                        numero_boleto=generar_numero_boleto(empleado.oficina, es_continuo=obtener_parametro('179', default=False)),
                     )
 
             request.session.pop('reserva_inicio', None)
             messages.success(request, f"¡Venta exitosa! Código: {codigo}")
-            return redirect('core:taquilla_inicio')
+            return redirect('core:taquilla_confirmacion', transaccion_id=transaccion.id)
 
         except Exception as e:
             messages.error(request, f"Error al procesar la venta: {str(e)}")
@@ -1189,8 +1212,29 @@ def taquilla_cobrar(request, viaje_id):
         'intervalo_renovacion': intervalo_renovacion, 'descuento_preferencial': descuento_preferencial,
         'cobrar_seguro_cortesia': cobrar_seguro_cortesia,
         'expiracion_iso': expiracion_iso, 'segundos_restantes': segundos_restantes, 'minutos_reserva': minutos_reserva,
-        'pisteros': pisteros,  # ⭐ NUEVO
-    })    
+        'pisteros': pisteros, 
+    })   
+    
+@login_required
+def taquilla_confirmacion(request, transaccion_id):
+    try:
+        empleado = request.user.usuarioempresa
+    except UsuarioEmpresa.DoesNotExist:
+        messages.error(request, "No tiene permisos para acceder a la taquilla.")
+        return redirect('core:inicio')
+    
+    transaccion = get_object_or_404(Transaccion, id=transaccion_id)
+    boletos = transaccion.boletos.all().order_by('asiento__numero')
+    pagos = transaccion.pagos.all()  # ⭐ NUEVO
+    
+    return render(request, 'taquilla/confirmacion.html', {
+        'transaccion': transaccion,
+        'boletos': boletos,
+        'pagos': pagos,
+        'empleado': empleado,
+        'fecha_venta': transaccion.fecha_creacion, 
+        'formato_impresion': obtener_parametro('176', default=1), 
+    })
 
 @login_required
 def taquilla_buscar_pasajero(request):

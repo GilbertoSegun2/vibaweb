@@ -463,6 +463,12 @@ class Boleto(models.Model):
     # Código QR único
     codigo_qr = models.CharField(max_length=50, unique=True, verbose_name="Código QR")
     
+    numero_boleto = models.CharField(
+        max_length=20, unique=True, blank=True, null=True,
+        verbose_name="Número de boleto",
+        help_text="Formato: CÓDIGO OFICINA-SECUENCIA (ej. 001-000123)"
+    )
+    
     # Estados y fechas
     estado = models.CharField(max_length=30, choices=ESTADOS, default='pendiente_verificacion', verbose_name="Estado")
     fecha_venta = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de venta")

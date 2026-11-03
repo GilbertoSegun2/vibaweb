@@ -69,6 +69,7 @@ urlpatterns = [
     path('taquilla/', views.taquilla_inicio, name='taquilla_inicio'),
     path('taquilla/viaje/<int:viaje_id>/', views.taquilla_mapa, name='taquilla_mapa'),
     path('taquilla/viaje/<int:viaje_id>/cobrar/', views.taquilla_cobrar, name='taquilla_cobrar'),
+    path('taquilla/confirmacion/<int:transaccion_id>/', views.taquilla_confirmacion, name='taquilla_confirmacion'),
     
     # ============================================================
     # UTILIDADES Y APIS
