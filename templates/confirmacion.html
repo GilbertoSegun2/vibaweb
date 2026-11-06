@@ -97,21 +97,38 @@
             </div>
             <div class="card-body">
                 {% for boleto in boletos %}
-                <div class="border rounded p-3 mb-3">
-                    <div class="row align-items-center">
-                        <div class="col-md-6">
-                            <p class="mb-1">
-                                <strong>Asiento:</strong>
-                                <span class="badge bg-primary fs-6">{{ boleto.asiento.numero }}</span>
-                            </p>
-                            <p class="mb-1"><strong>Pasajero:</strong> {{ boleto.pasajero_nombre }}</p>
-                            <p class="mb-1"><strong>Cédula:</strong> {{ boleto.pasajero_cedula|formato_cedula }}</p>
-                            <p class="mb-1"><strong>Tipo:</strong> {{ boleto.get_tipo_pasajero_display }}</p>
-                            <p class="mb-0"><strong>N° Boleto:</strong> {{ boleto.numero_boleto|default:"Pendiente" }}</p>
-                        </div>
-                        <div class="col-md-6 text-center mt-3 mt-md-0">
-                            <p class="mb-1 small text-muted">Código QR:</p>
-                            <code class="d-block text-break small" style="background: #f8f9fa; padding: 8px; border-radius: 6px;">{{ boleto.codigo_qr }}</code>
+                <div class="card mb-3 border-0 shadow-sm rounded-3">
+                    <div class="card-body p-3">
+                        <div class="row align-items-center">
+                            <!-- Columna Izquierda: Datos del pasajero -->
+                            <div class="col-md-6 mb-3 mb-md-0">
+                                <div class="d-flex align-items-center mb-2">
+                                    <span class="badge bg-primary fs-5 me-2">Asiento: {{ boleto.asiento.numero }}</span>
+                                </div>
+                                <p class="mb-1"><strong>Pasajero:</strong> {{ boleto.pasajero_nombre }}</p>
+                                <p class="mb-1"><strong>Cédula:</strong> {{ boleto.pasajero_cedula|formato_cedula }}</p>
+                                <p class="mb-1 text-muted small"><strong>Tipo:</strong> {{ boleto.get_tipo_pasajero_display }}</p>
+                                
+                                <!-- ⭐ EL NÚMERO DE BOLETO EN GRANDE -->
+                                <div class="mt-3 p-2 rounded" style="background-color: #f8f9fa; border: 1px dashed #003366;">
+                                    <small class="text-muted d-block">N° de Boleto</small>
+                                    <h4 class="mb-0 fw-bold" style="color: #003366; letter-spacing: 1px;">
+                                        {{ boleto.numero_boleto|default:"Pendiente" }}
+                                    </h4>
+                                </div>
+                            </div>
+
+                            <!-- Columna Derecha: Código QR -->
+                            <div class="col-md-6 text-center border-start">
+                                <p class="text-muted small mb-1">Código QR de Validación</p>
+                                <div class="bg-light p-3 rounded d-inline-block border">
+                                    <!-- Aquí mostramos el texto del QR en un bloque grande -->
+                                    <h5 class="mb-0 fw-bold font-monospace text-break" style="letter-spacing: 2px; color: #003366;">
+                                        {{ boleto.codigo_qr }}
+                                    </h5>
+                                </div>
+                                <p class="text-muted small mt-2 mb-0">Presenta este código al abordar</p>
+                            </div>
                         </div>
                     </div>
                 </div>

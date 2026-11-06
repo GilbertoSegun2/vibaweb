@@ -4,41 +4,51 @@
 
 {% block extra_css %}
 <style>
+    /* Estilos para la pantalla del navegador */
     .boleto-container {
-        max-width: 400px;
+        max-width: 380px;
         margin: 0 auto 20px auto;
-        border: 2px dashed #003366;
-        border-radius: 12px;
-        padding: 20px;
         background: #fff;
+        font-family: 'Helvetica Neue', Arial, sans-serif;
+        color: #000;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        border-radius: 8px;
+        overflow: hidden;
     }
-    .boleto-header {
-        text-align: center;
-        border-bottom: 2px solid #003366;
-        padding-bottom: 10px;
-        margin-bottom: 15px;
-    }
-    .boleto-header h3 { color: #003366; margin: 0; }
-    .boleto-info p { margin: 5px 0; font-size: 0.9rem; }
-    .boleto-qr { text-align: center; margin: 20px 0; }
-    .boleto-qr img { max-width: 150px; }
-    .boleto-footer {
-        text-align: center;
-        border-top: 2px solid #003366;
-        padding-top: 10px;
-        margin-top: 15px;
-        font-size: 0.8rem;
-        color: #666;
-    }
+    .bg-header { background-color: #003366; color: #fff; padding: 15px; text-align: center; }
+    .bg-liquidacion { background-color: #f4f4f4; padding: 10px; border-top: 1px dashed #ccc; border-bottom: 1px dashed #ccc; }
+    .qr-box { border: 2px solid #000; padding: 5px; display: inline-block; margin-top: 5px; }
+    .qr-img { width: 130px; height: 130px; }
+    
+    /* Separadores */
+    .separator-dashed { border-top: 2px dashed #000; margin: 12px 0; }
+    
+    /* Tipografía y utilidades */
+    .section-title { font-size: 10px; font-weight: bold; color: #666; text-transform: uppercase; margin-bottom: 2px; letter-spacing: 0.5px; }
+    .text-small { font-size: 11px; }
+    .text-large { font-size: 14px; }
+    .fw-bold { font-weight: bold; }
+    .text-uppercase { text-transform: uppercase; }
+    
+    /* ESTILOS EXCLUSIVOS PARA IMPRESIÓN TÉRMICA (80mm) */
     @media print {
+        @page { margin: 0; size: 80mm auto; }
+        body { background: #fff; margin: 0; padding: 0; }
         .no-print { display: none !important; }
-        .boleto-container { border: none; }
+        .boleto-container {
+            width: 100%; max-width: 72mm; margin: 0; padding: 0;
+            box-shadow: none; border-radius: 0;
+        }
+        .bg-header { background: #000 !important; color: #fff !important; -webkit-print-color-adjust: exact; }
+        .bg-liquidacion { background: #eee !important; -webkit-print-color-adjust: exact; }
+        .boleto-container { page-break-after: always; } /* Corta el papel entre boletos */
     }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="container mt-4">
+    <!-- BOTONES DE ACCIÓN (No se imprimen) -->
     <div class="d-flex justify-content-between mb-3 no-print">
         <h2><i class="bi bi-check-circle text-success"></i> ¡Venta Exitosa!</h2>
         <div>
@@ -51,73 +61,114 @@
         </div>
     </div>
 
-    <p class="text-muted no-print">Código de transacción: <strong>{{ transaccion.codigo }}</strong></p>
+    <p class="text-muted no-print text-center mb-4">Código de transacción: <strong>{{ transaccion.codigo }}</strong></p>
 
     {% for boleto in boletos %}
     <div class="boleto-container">
-        <div class="boleto-header">
-            <h3>{{ transaccion.viaje.ruta.origen.nombre }} → {{ transaccion.viaje.ruta.destinos.first.nombre }}</h3>
-            <small>Boleto #{{ boleto.numero_boleto }}</small>
-        </div>
         
-        <div class="boleto-info">
-            <p><strong>Pasajero:</strong> {{ boleto.pasajero_nombre }}</p>
-            <p><strong>Cédula:</strong> {{ boleto.pasajero_cedula }}</p>
-            <p><strong>Asiento:</strong> {{ boleto.asiento.numero }} ({{ boleto.asiento.get_lado_display }})</p>
-            <p><strong>Fecha:</strong> {{ transaccion.viaje.fecha|date:"d/m/Y" }} {{ transaccion.viaje.hora|time:"h:i A" }}</p>
-            <p><strong>Bus:</strong> {{ transaccion.viaje.bus.modelo }} ({{ transaccion.viaje.bus.placa }})</p>
-            <p><strong>Precio:</strong> ${{ boleto.monto_total_usd|floatformat:2 }} / Bs. {{ boleto.monto_total_bs|floatformat:2 }}</p>
+        <!-- ENCABEZADO -->
+        <div class="bg-header">
+            <h3 style="margin: 0; font-size: 16px; letter-spacing: 1px; font-weight: 800;">EXPRESOS MÉRIDA C.A.</h3>
+            <p class="text-small" style="margin: 2px 0 0 0;">OFICINA: {{ transaccion.oficina_venta.nombre|upper|default:"TAQUILLA" }}</p>
         </div>
 
-        <!-- ⭐ CÓDIGO DEL PISTERO (Formato 1: P5 dinámico) -->
-        {% if transaccion.pistero and formato_impresion == 1 %}
-        <div class="boleto-info" style="border-top: 1px dashed #ccc; padding-top: 10px; margin-top: 10px; background: #fff3cd; padding: 10px; border-radius: 6px; text-align: center;">
-            <p style="font-size: 1.5rem; font-weight: bold; color: #003366; margin: 0;">
-                P{{ transaccion.comision_pistero_usd|floatformat:0 }}
-            </p>
-            <small class="text-muted">Pistero: {{ transaccion.pistero.nombre }}</small>
-        </div>
-        {% endif %}
+        <div style="padding: 15px;">
+            <!-- DATOS DEL PASAJERO -->
+            <div class="mb-2">
+                <div class="section-title">Pasajero</div>
+                <div class="fw-bold text-large text-uppercase">{{ boleto.pasajero_nombre }}</div>
+                <div class="text-small">C.I / R.I.F: {{ boleto.pasajero_cedula }}</div>
+            </div>
 
-        <!-- ⭐ DESGLOSE DEL PAGO (Formato 2: Vale pie) -->
-        {% if transaccion.pistero and formato_impresion == 2 %}
-        <div class="boleto-info" style="border-top: 1px dashed #ccc; padding-top: 10px; margin-top: 10px;">
-            <p><strong>Valor:</strong> ${{ boleto.monto_tarifa_usd|floatformat:2 }}</p>
-            <p><strong>Vale pie:</strong> ${{ transaccion.comision_pistero_usd|floatformat:2 }}</p>
-            <p><strong>Seguro de pasajero:</strong> ${{ boleto.monto_seguro_usd|floatformat:2 }}</p>
-            <p><strong>Total a pagar:</strong> ${{ boleto.monto_total_usd|floatformat:2 }}</p>
-        </div>
-        {% endif %}
+            <div class="separator-dashed"></div>
 
-        <!-- ⭐ DATOS DEL PAGO -->
-        <div class="boleto-info" style="border-top: 1px dashed #ccc; padding-top: 10px; margin-top: 10px;">
-            <p><strong>Forma de Pago:</strong></p>
-            {% for pago in pagos %}
-                <p style="margin-left: 10px;">
-                    • {{ pago.get_metodo_display }}: ${{ pago.monto_usd|floatformat:2 }} / Bs. {{ pago.monto_bs|floatformat:2 }}
-                    {% if pago.referencia %}<br><small class="text-muted">Ref: {{ pago.referencia }}</small>{% endif %}
-                </p>
-            {% endfor %}
-            <p><strong>Total Pagado:</strong> ${{ transaccion.monto_total_usd|floatformat:2 }} / Bs. {{ transaccion.monto_total_bs|floatformat:2 }}</p>
-        </div>
+            <!-- DATOS DEL VIAJE -->
+            <div>
+                <div class="section-title">Ruta</div>
+                <div class="fw-bold text-large">{{ transaccion.viaje.hora|time:"h:i A" }} | {{ transaccion.viaje.ruta.origen.nombre|upper }} → {{ transaccion.viaje.ruta.destinos.first.nombre|upper }}</div>
+                <div class="text-small mt-1">FECHA VIAJE: <strong>{{ transaccion.viaje.fecha|date:'d/m/Y' }}</strong></div>
+                <div class="text-small">ASIENTO: <strong class="text-large">{{ boleto.asiento.numero }}</strong> | BUS: {{ transaccion.viaje.bus.placa }}</div>
+            </div>
 
-        <div class="boleto-qr">
-            {% with boleto.codigo_qr as qr %}
-            <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={{ qr }}" alt="QR">
-            {% endwith %}
-            <p class="small text-muted">{{ boleto.codigo_qr }}</p>
-        </div>
+            <!-- MONTOS Y PISTEROS (Lógica Original Mantenida) -->
+            <table style="width: 100%; margin-top: 10px; border-collapse: collapse;">
+                {% if transaccion.pistero and formato_impresion == 1 %}
+                <tr>
+                    <td colspan="2" class="text-center" style="background: #fff3cd; padding: 5px; border: 1px dashed #ccc;">
+                        <span style="font-size: 1.2rem; font-weight: bold; color: #003366;">P{{ transaccion.comision_pistero_usd|floatformat:0 }}</span>
+                    </td>
+                </tr>
+                {% elif transaccion.pistero and formato_impresion == 2 %}
+                <tr>
+                    <td class="text-small">Valor:</td>
+                    <td class="text-right text-small">${{ boleto.monto_tarifa_usd|floatformat:2 }}</td>
+                </tr>
+                <tr>
+                    <td class="text-small">Vale pie (Pistero):</td>
+                    <td class="text-right text-small">${{ transaccion.comision_pistero_usd|floatformat:2 }}</td>
+                </tr>
+                {% endif %}
+                
+                <tr>
+                    <td class="text-small">Seguro Pasajero:</td>
+                    <td class="text-right text-small">${{ boleto.monto_seguro_usd|floatformat:2 }}</td>
+                </tr>
+                <tr style="border-top: 2px solid #000;">
+                    <td class="fw-bold" style="padding-top: 5px;">TOTAL A PAGAR:</td>
+                    <td class="text-right fw-bold" style="padding-top: 5px;">${{ boleto.monto_total_usd|floatformat:2 }}</td>
+                </tr>
+                <tr>
+                    <td colspan="2" class="text-right text-small">Bs. {{ boleto.monto_total_bs|floatformat:2 }}</td>
+                </tr>
+            </table>
 
-        <div class="boleto-footer">
-            <p><strong>{{ transaccion.oficina_venta.nombre|default:"Taquilla" }}</strong></p>
-            <p>Vendido por: {{ transaccion.vendido_por.first_name|default:"Sistema" }}</p>
-            <p>Fecha de venta: {{ transaccion.fecha_creacion|date:"d/m/Y h:i A" }}</p>
-            <p>¡Gracias por preferirnos!</p>
+            <!-- FORMAS DE PAGO -->
+            <div class="mt-2 text-small">
+                <span class="section-title">Forma de Pago:</span>
+                {% for pago in pagos %}
+                    <div style="margin-left: 5px;">
+                        • {{ pago.get_metodo_display }}: Bs. {{ pago.monto_bs|floatformat:2 }}
+                        {% if pago.referencia %}<br><span style="font-size: 9px; color: #666;">Ref: {{ pago.referencia }}</span>{% endif %}
+                    </div>
+                {% endfor %}
+            </div>
+
+            <div class="separator-dashed"></div>
+
+            <!-- LIQUIDACIÓN (TALÓN) -->
+            <div class="bg-liquidacion text-center">
+                <div class="fw-bold text-uppercase text-large mb-1" style="color: #003366;">Liquidación</div>
+                <div class="text-small">Factura: {{ transaccion.codigo }}</div>
+                <div class="text-small">Ruta: {{ transaccion.viaje.ruta.origen.nombre|upper }} → {{ transaccion.viaje.ruta.destinos.first.nombre|upper }}</div>
+                <div class="text-small">Asiento: {{ boleto.asiento.numero }} | Fecha: {{ transaccion.viaje.fecha|date:'d/m/Y' }}</div>
+                
+                <div class="mt-2" style="font-size: 12px; border-top: 1px dashed #000; padding-top: 5px;">
+                    <strong>Monto Neto:</strong> Bs. {{ boleto.monto_total_bs|floatformat:2 }}
+                </div>
+            </div>
+
+            <!-- CÓDIGO QR y NRO BOLETO -->
+            <div class="text-center mt-3">
+                <div class="fw-bold" style="font-family: 'Courier New', monospace; font-size: 16px; margin-bottom: 2px;">
+                    {{ boleto.numero_boleto }}
+                </div>
+                <div class="qr-box">
+                    <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={{ boleto.codigo_qr }}" alt="QR" class="qr-img">
+                </div>
+                <div class="text-small fw-bold mt-1">Escanee para abordar</div>
+            </div>
+
+            <!-- PIE DE PÁGINA -->
+            <div class="text-center mt-3 text-small" style="color: #666;">
+                <p style="margin: 0;">Vendido por: {{ transaccion.vendido_por.first_name|default:"Sistema" }}</p>
+                <p style="margin: 0;">Fecha: {{ transaccion.fecha_creacion|date:"d/m/Y h:i A" }}</p>
+                <p style="margin: 0; font-weight: bold; margin-top: 5px;">¡Gracias por preferirnos!</p>
+            </div>
         </div>
     </div>
     {% endfor %}
 
-    <div class="text-center no-print">
+    <div class="text-center no-print mt-4">
         <a href="{% url 'core:taquilla_inicio' %}" class="btn btn-outline-primary btn-lg">
             <i class="bi bi-ticket-perforated"></i> Vender otro boleto
         </a>
