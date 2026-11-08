@@ -557,6 +557,7 @@ class MovimientoAsiento(models.Model):
         ('bloqueo', 'Bloqueado por admin'),
         ('desbloqueo', 'Desbloqueado por admin'),
         ('liberacion_manual', 'Liberación manual'),
+        ('transferencia', 'Transferencia de asiento'),
     ]
 
     asiento = models.ForeignKey(Asiento, on_delete=models.PROTECT, related_name='movimientos', verbose_name="Asiento")
@@ -588,6 +589,7 @@ class Pago(models.Model):
         ('efectivo_usd', 'Efectivo USD'),
         ('efectivo_bs', 'Efectivo Bs.'),
         ('punto_venta', 'Punto de venta'),
+        ('reprogramacion', 'Reprogramación (Boleto Anterior)'),
     ]
     ESTADOS = [
         ('pendiente', 'Pendiente de verificación'),

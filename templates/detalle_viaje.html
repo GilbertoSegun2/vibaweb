@@ -1,3 +1,4 @@
+
 {% extends 'base.html' %}
 {% load core_extras %}
 
@@ -115,17 +116,40 @@
         </div>
 
         {% if user.usuarioempresa %}
-        <div class="card shadow-sm mt-3">
-            <div class="card-body py-2">
-                <h6 class="text-center text-muted mb-2"><i class="bi bi-tools"></i> Herramientas</h6>
-                <div class="d-flex flex-wrap justify-content-center gap-1">
-                    <button class="btn btn-outline-primary btn-sm" disabled>Bloquear</button>
-                    <button class="btn btn-outline-info btn-sm" disabled>Pista</button>
-                    <button class="btn btn-outline-warning btn-sm" disabled>Reservar</button>
-                    <button class="btn btn-outline-dark btn-sm" disabled>Distribución</button>
-                    <button class="btn btn-outline-danger btn-sm" disabled>Liberar</button>
-                    <button class="btn btn-outline-success btn-sm" disabled>Lista Pasajeros</button>
+        <div class="card shadow-sm mt-3 border-primary">
+            <div class="card-header bg-primary text-white py-2">
+                <h6 class="mb-0 fw-bold"><i class="bi bi-sliders"></i> Panel de Control</h6>
+            </div>
+            <div class="card-body py-3">
+                
+                <!-- Grupo 1: Gestión de Asientos -->
+                <p class="text-muted small fw-bold mb-1 text-uppercase" style="font-size: 0.7rem; letter-spacing: 1px;">Gestión de Asientos</p>
+                <div class="d-grid gap-2 mb-3">
+                    <div class="btn-group w-100" role="group">
+                        <button class="btn btn-outline-primary btn-sm" disabled><i class="bi bi-lock"></i> Bloquear</button>
+                        <button class="btn btn-outline-danger btn-sm" disabled><i class="bi bi-unlock"></i> Liberar</button>
+                        <button class="btn btn-outline-info btn-sm" disabled><i class="bi bi-info-circle"></i> Pista</button>
+                    </div>
                 </div>
+
+                <!-- Grupo 2: Operaciones Especiales (Destacadas) -->
+                <p class="text-muted small fw-bold mb-1 text-uppercase" style="font-size: 0.7rem; letter-spacing: 1px;">Operaciones Especiales</p>
+                <div class="d-grid gap-2 mb-3">
+                    <button class="btn btn-warning fw-bold text-dark shadow-sm" id="btn-modo-transferencia" onclick="activarModoTransferencia()">
+                        <i class="bi bi-arrow-left-right fs-5"></i> Transferir Asiento
+                    </button>
+                    <button class="btn btn-info fw-bold text-dark shadow-sm" onclick="activarModoReprogramar()">
+                        <i class="bi bi-arrow-repeat fs-5"></i> Reprogramar Viaje
+                    </button>
+                </div>
+
+                <!-- Grupo 3: Información -->
+                <p class="text-muted small fw-bold mb-1 text-uppercase" style="font-size: 0.7rem; letter-spacing: 1px;">Información</p>
+                <div class="d-grid gap-2">
+                    <button class="btn btn-outline-dark btn-sm" disabled><i class="bi bi-people"></i> Lista Pasajeros</button>
+                    <button class="btn btn-outline-secondary btn-sm" disabled><i class="bi bi-grid-3x3"></i> Distribución</button>
+                </div>
+
             </div>
         </div>
         {% endif %}
@@ -254,7 +278,62 @@
     <span class="arrow">↓</span><span>Desplace hacia abajo</span>
 </div>
 
-<!-- ⭐ SCRIPT COLOCADO DIRECTAMENTE DENTRO DEL CONTENT PARA GARANTIZAR SU EJECUCIÓN -->
+<!-- ⭐ MODAL DE TRANSFERENCIA ⭐ -->
+<div class="modal fade" id="modalTransferencia" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title"><i class="bi bi-arrow-left-right"></i> Transferir Asiento</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info py-2 small">
+                    <i class="bi bi-info-circle"></i> El boleto es <strong>personal e intransferible</strong>. Solo se cambiará el número de asiento del mismo pasajero.
+                </div>
+                <p class="text-muted small">Ingrese el número de boleto o cédula del pasajero:</p>
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="text" class="form-control form-control-lg" id="input-boleto-transferir" placeholder="Ej: 001-000123 o V-12345678" autocomplete="off">
+                </div>
+                <div id="info-pasajero-transferir" class="mt-3" style="display:none;">
+                    <div class="alert alert-secondary py-2 mb-0">
+                        <small class="text-muted d-block">Pasajero a mover (No modificable):</small>
+                        <strong><i class="bi bi-person-fill"></i> <span id="nombre-transferir"></span></strong><br>
+                        <span class="badge bg-dark"><i class="bi bi-lock-fill"></i> <span id="cedula-transferir"></span></span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" onclick="buscarBoletoParaTransferir()">Buscar y Mover</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ⭐ MODAL DE REPROGRAMACIÓN ⭐ -->
+<div class="modal fade" id="modalReprogramar" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-dark">
+                <h5 class="modal-title"><i class="bi bi-arrow-repeat"></i> Reprogramar Viaje</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info py-2 small">
+                    <i class="bi bi-info-circle"></i> El boleto es <strong>personal e intransferible</strong>. Solo se cambiará la fecha/hora del viaje para el mismo pasajero.
+                </div>
+                <p class="text-muted small">Ingrese el número de boleto o cédula del boleto ANTERIOR (que no viajó):</p>
+                <div class="input-group mb-3">
+                    <input type="text" class="form-control form-control-lg" id="input-boleto-reprogramar" placeholder="Ej: 005-000005">
+                    <button class="btn btn-primary" type="button" onclick="buscarBoletoParaReprogramar()">Buscar</button>
+                </div>
+                <div id="resultados_reprogramar" class="list-group"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 document.addEventListener("DOMContentLoaded", function() {
     console.log("⭐ DOM completamente cargado. Inicializando selector de asientos...");
@@ -436,6 +515,153 @@ document.addEventListener("DOMContentLoaded", function() {
         let url = `/taquilla/viaje/${VIAJE_ID}/cobrar/?destino=${DESTINO_ID}&origen=${ORIGEN_ID}`;
         seleccionados.forEach(id => url += `&asientos[]=${id}`);
         window.location.href = url;
+    };
+
+    // ============================================================
+    // LÓGICA DE TRANSFERENCIA (CON VALIDACIÓN)
+    // ============================================================
+    let modoTransferenciaActivo = false;
+    let boletoParaTransferir = null;
+
+    window.activarModoTransferencia = function() {
+        if (seleccionados.size === 0) {
+            alert('⚠️ ATENCIÓN: Primero debe seleccionar UN asiento en el mapa para Transferir.');
+            return;
+        }
+        if (seleccionados.size > 1) {
+            alert('⚠️ ATENCIÓN: Para Transferir, solo puede seleccionar UN puesto a la vez.');
+            return;
+        }
+        
+        document.getElementById('input-boleto-transferir').value = '';
+        document.getElementById('info-pasajero-transferir').style.display = 'none';
+        new bootstrap.Modal(document.getElementById('modalTransferencia')).show();
+        setTimeout(() => document.getElementById('input-boleto-transferir').focus(), 500);
+    };
+
+    window.buscarBoletoParaTransferir = function() {
+        const datoBusqueda = document.getElementById('input-boleto-transferir').value.trim();
+        if (!datoBusqueda) { alert("Por favor, ingrese un dato para buscar."); return; }
+
+        fetch(`/taquilla/api/buscar-boleto/?q=${encodeURIComponent(datoBusqueda)}`)
+            .then(res => res.json())
+            .then(data => {
+                if (!data.ok) { alert(data.error); return; }
+                if (data.resultados.length === 0) { 
+                    alert("No se encontró un boleto activo para esa búsqueda."); 
+                    return; 
+                }
+                
+                boletoParaTransferir = data.resultados[0];
+                
+                // Mostrar el candado con los datos del pasajero y el viaje actual
+                document.getElementById('nombre-transferir').innerText = boletoParaTransferir.nombre;
+                document.getElementById('cedula-transferir').innerText = boletoParaTransferir.cedula;
+                document.getElementById('info-pasajero-transferir').style.display = 'block';
+                
+                // Confirmación de identidad
+                if (confirm(`¿El pasajero ${boletoParaTransferir.nombre} (${boletoParaTransferir.cedula}) es la persona que está en taquilla?\n\nBoleto actual: Bus ${boletoParaTransferir.viaje_hora} - Asiento ${boletoParaTransferir.asiento_numero}.\n\nSi NO es la misma persona, cancele y véndale un boleto nuevo.`)) {
+                    
+                    const modalElement = document.getElementById('modalTransferencia');
+                    const modal = bootstrap.Modal.getInstance(modalElement);
+                    if (modal) modal.hide();
+
+                    // ⭐ Usamos el asiento que ya está seleccionado en el mapa
+                    const asientoSeleccionadoId = Array.from(seleccionados)[0] || '';
+                    
+                    if (!asientoSeleccionadoId) {
+                        alert("Error: No se ha seleccionado un asiento en el mapa para mover al pasajero.");
+                        return;
+                    }
+
+                    // Confirmar el movimiento
+                    if (confirm(`¿Confirma mover a ${boletoParaTransferir.nombre} del bus ${boletoParaTransferir.viaje_hora} (Asiento ${boletoParaTransferir.asiento_numero}) al asiento seleccionado en este bus?`)) {
+                        const formData = new FormData();
+                        formData.append('boleto_id', boletoParaTransferir.id);
+                        formData.append('nuevo_asiento_id', asientoSeleccionadoId);
+                        
+                        fetch('/taquilla/api/transferir/', {
+                            method: 'POST',
+                            headers: { 'X-CSRFToken': getCookie('csrftoken') },
+                            body: formData
+                        })
+                        .then(res => res.json())
+                        .then(data => {
+                            if (data.ok) {
+                                alert('✅ ' + data.mensaje);
+                                location.reload(); 
+                            } else {
+                                alert('❌ Error: ' + data.error);
+                            }
+                        })
+                        .catch(err => alert("Error de red al procesar la transferencia."));
+                    }
+                } else {
+                    document.getElementById('info-pasajero-transferir').style.display = 'none';
+                    alert("Operación cancelada. Si es otra persona, debe venderle un boleto nuevo.");
+                }
+            })
+            .catch(err => alert("Error de red buscando el boleto."));
+    };
+    
+    // ============================================================
+    // LÓGICA DE REPROGRAMACIÓN (CON VALIDACIÓN)
+    // ============================================================
+    window.activarModoReprogramar = function() {
+        // ⭐ VALIDACIÓN: Debe haber exactamente 1 asiento seleccionado
+        if (seleccionados.size === 0) {
+            alert('⚠️ ATENCIÓN: Primero debe seleccionar UN asiento en el mapa para Reprogramar.');
+            return;
+        }
+        if (seleccionados.size > 1) {
+            alert('⚠️ ATENCIÓN: Para Reprogramar, solo puede seleccionar UN puesto a la vez.\n\nPor favor, deseleccione los otros asientos y vuelva a intentarlo.');
+            return;
+        }
+
+        document.getElementById('input-boleto-reprogramar').value = '';
+        document.getElementById('resultados_reprogramar').innerHTML = '';
+        new bootstrap.Modal(document.getElementById('modalReprogramar')).show();
+    };
+
+    window.buscarBoletoParaReprogramar = function() {
+        const q = document.getElementById('input-boleto-reprogramar').value.trim();
+        if (!q) return;
+        const divResultados = document.getElementById('resultados_reprogramar');
+        divResultados.innerHTML = '<div class="text-center py-2">Buscando...</div>';
+
+        fetch(`/taquilla/api/buscar-boleto-reprogramar/?q=${encodeURIComponent(q)}`)
+            .then(res => res.json())
+            .then(data => {
+                if (!data.ok || data.resultados.length === 0) {
+                    divResultados.innerHTML = '<div class="alert alert-warning">No se encontraron boletos vendidos con ese dato.</div>';
+                    return;
+                }
+                divResultados.innerHTML = '';
+                data.resultados.forEach(b => {
+                    const btn = document.createElement('button');
+                    btn.className = 'list-group-item list-group-item-action';
+                    btn.innerHTML = `
+                        <div class="d-flex w-100 justify-content-between">
+                            <h6 class="mb-1">${b.nombre} (${b.cedula})</h6>
+                            <span class="badge bg-primary">$${b.monto_total_usd}</span>
+                        </div>
+                        <p class="mb-1">Boleto: <strong>${b.numero_boleto}</strong> | Asiento: ${b.asiento_numero}</p>
+                        <small>Viaje anterior: ${b.viaje_ruta} - ${b.viaje_fecha}</small>
+                    `;
+                    btn.onclick = function() {
+                        if (confirm(`¿El pasajero ${b.nombre} (${b.cedula}) es la persona que está en taquilla?`)) {
+                            const asientoSeleccionadoId = Array.from(seleccionados)[0] || '';
+                            const btnAsiento = document.querySelector(`button[data-asiento-id="${asientoSeleccionadoId}"]`);
+                            const numeroAsiento = btnAsiento ? btnAsiento.dataset.asientoNumero : '';
+                            
+                            window.location.href = `/taquilla/viaje/${VIAJE_ID}/reprogramar/${b.id}/?origen=${ORIGEN_ID}&destino=${DESTINO_ID}&asiento_id=${asientoSeleccionadoId}&numero=${numeroAsiento}`;
+                        } else {
+                            alert("Operación cancelada. Si es otra persona, debe venderle un boleto nuevo.");
+                        }
+                    };
+                    divResultados.appendChild(btn);
+                });
+            });
     };
 });
 </script>

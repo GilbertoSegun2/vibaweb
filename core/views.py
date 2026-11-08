@@ -62,7 +62,6 @@ def validar_tarifa_para_viaje(viaje, origen_id, destino_id):
     except (ValueError, TypeError):
         return (None, False)
     
-    # 1. Intentar validar por RutaParada (nuevo sistema de tramos)
     p_origen = viaje.ruta.paradas.filter(oficina_id=origen_id_int).first()
     p_destino = viaje.ruta.paradas.filter(oficina_id=destino_id_int).first()
     
@@ -70,7 +69,6 @@ def validar_tarifa_para_viaje(viaje, origen_id, destino_id):
         if p_origen.orden >= p_destino.orden:
             return (None, False)
     else:
-        # 2. Fallback al método clásico (M2M) si la ruta no tiene paradas configuradas
         origen_valido = (viaje.ruta.origen_id == origen_id_int)
         destino_valido = viaje.ruta.destinos.filter(id=destino_id_int).exists()
         if not (origen_valido and destino_valido):
@@ -80,7 +78,6 @@ def validar_tarifa_para_viaje(viaje, origen_id, destino_id):
     return (tarifa, True)
 
 def obtener_ordenes_tramo(viaje, origen_id, destino_id):
-    """Devuelve (orden_origen, orden_destino) o (None, None) si no aplica."""
     if not (origen_id and destino_id):
         return None, None
     try:
@@ -1462,14 +1459,12 @@ def buscar_viajes(request):
         )
     try:
         fecha = datetime.strptime(fecha_str, '%Y-%m-%d').date()
-        # ⭐ AQUÍ CAMBIAMOS EL HOY
         hoy = timezone.localtime(timezone.now()).date() 
         if fecha >= hoy:
             viajes = viajes.filter(fecha=fecha)
             
             if fecha == hoy:
                 minutos_bloqueo = int(obtener_parametro('184', default=60))
-                # ⭐ Y AQUÍ TAMBIÉN
                 ahora = timezone.localtime(timezone.now())
                 hora_limite = ahora + timedelta(minutes=minutos_bloqueo)
                 viajes = viajes.filter(hora__gt=hora_limite.time())
@@ -1694,3 +1689,298 @@ def api_buscar_oficinas(request):
     
     data = [{'id': o.id, 'nombre': o.nombre} for o in oficinas]
     return JsonResponse(data, safe=False)
+    
+@login_required
+def taquilla_buscar_boleto(request):
+    """Busca un boleto para TRANSFERIR (en cualquier viaje)."""
+    if not hasattr(request.user, 'usuarioempresa'):
+        return JsonResponse({'ok': False, 'error': 'No autorizado'}, status=403)
+        
+    query = request.GET.get('q', '').strip()
+    
+    if not query:
+        return JsonResponse({'ok': False, 'error': 'Ingrese un dato de búsqueda'}, status=400)
+        
+    filtros = Q(pasajero_cedula__icontains=query) | Q(codigo_qr__icontains=query) | Q(numero_boleto__icontains=query)
+    boletos = Boleto.objects.filter(filtros, estado='vendido').select_related('viaje', 'asiento', 'viaje__ruta').order_by('-fecha_venta')[:10]
+    
+    resultados = [{
+        'id': b.id,
+        'cedula': b.pasajero_cedula,
+        'nombre': b.pasajero_nombre,
+        'asiento_numero': b.asiento.numero,
+        'asiento_id': b.asiento.id,
+        'viaje_id': b.viaje_id,
+        'viaje_ruta': b.viaje.ruta.nombre,
+        'viaje_hora': b.viaje.hora.strftime('%I:%M %p'),
+    } for b in boletos]
+        
+    return JsonResponse({'ok': True, 'resultados': resultados})
+
+@require_POST
+@login_required
+def taquilla_ejecutar_transferencia(request):
+    """Mueve el asiento de un pasajero a otro asiento (mismo bus o distinto bus)."""
+    if not hasattr(request.user, 'usuarioempresa'):
+        return JsonResponse({'ok': False, 'error': 'No autorizado'}, status=403)
+        
+    boleto_id = request.POST.get('boleto_id')
+    nuevo_asiento_id = request.POST.get('nuevo_asiento_id')
+    
+    if not boleto_id or not nuevo_asiento_id:
+        return JsonResponse({'ok': False, 'error': 'Faltan datos.'}, status=400)
+        
+    try:
+        with transaction.atomic():
+            boleto = Boleto.objects.select_for_update().get(id=boleto_id, estado='vendido')
+            asiento_viejo = boleto.asiento
+            asiento_nuevo = Asiento.objects.select_for_update().get(id=nuevo_asiento_id)
+            
+            # ⭐ VALIDACIÓN: Acepta 'disponible' o 'reservado' por el mismo taquillero
+            if asiento_nuevo.estado != 'disponible' and asiento_nuevo.reservado_por != request.user:
+                return JsonResponse({'ok': False, 'error': 'El asiento ya fue tomado por otro usuario.'}, status=400)
+
+            # Liberar viejo, ocupar nuevo
+            asiento_viejo.estado = 'disponible'
+            asiento_viejo.save()
+            
+            asiento_nuevo.estado = 'vendido'
+            asiento_nuevo.reservado_por = None
+            asiento_nuevo.reservado_hasta = None
+            asiento_nuevo.save()
+            
+            # Actualizar boleto (cambia el asiento y el viaje)
+            boleto.asiento = asiento_nuevo
+            boleto.viaje = asiento_nuevo.viaje  # <--- CAMBIA EL VIAJE AL NUEVO BUS
+            boleto.save()
+            
+            # Auditoría
+            MovimientoAsiento.objects.create(
+                asiento=asiento_viejo, tipo='transferencia', 
+                estado_anterior='vendido', estado_nuevo='disponible', 
+                usuario=request.user, motivo=f'Transferido al asiento {asiento_nuevo.numero} (Bus {asiento_nuevo.viaje.id})', boleto_relacionado=boleto
+            )
+            MovimientoAsiento.objects.create(
+                asiento=asiento_nuevo, tipo='transferencia', 
+                estado_anterior='disponible', estado_nuevo='vendido', 
+                usuario=request.user, motivo=f'Recibido del asiento {asiento_viejo.numero} (Bus {asiento_viejo.viaje.id})', boleto_relacionado=boleto
+            )
+            
+        return JsonResponse({'ok': True, 'mensaje': f'Pasajero movido al asiento {asiento_nuevo.numero} del bus {asiento_nuevo.viaje.hora}.'})
+    except Boleto.DoesNotExist:
+        return JsonResponse({'ok': False, 'error': 'Boleto no encontrado.'}, status=404)
+    except Exception as e:
+        return JsonResponse({'ok': False, 'error': str(e)}, status=500)
+
+@login_required
+def taquilla_buscar_boleto_reprogramar(request):
+    """Busca un boleto en CUALQUIER viaje para REPROGRAMAR (cambiar de bus)."""
+    if not hasattr(request.user, 'usuarioempresa'):
+        return JsonResponse({'ok': False, 'error': 'No autorizado'}, status=403)
+        
+    query = request.GET.get('q', '').strip()
+    if not query:
+        return JsonResponse({'ok': False, 'error': 'Ingrese un dato'}, status=400)
+        
+    filtros = Q(pasajero_cedula__icontains=query) | Q(codigo_qr__icontains=query) | Q(numero_boleto__icontains=query)
+    boletos = Boleto.objects.filter(filtros, estado='vendido').select_related('viaje', 'asiento', 'viaje__ruta').order_by('-fecha_venta')[:10]
+    
+    resultados = [{
+        'id': b.id, 'numero_boleto': b.numero_boleto, 'cedula': b.pasajero_cedula, 'nombre': b.pasajero_nombre,
+        'viaje_ruta': b.viaje.ruta.nombre, 'viaje_fecha': b.viaje.fecha.strftime('%d/%m/%Y'),
+        'asiento_numero': b.asiento.numero, 'monto_total_usd': float(b.monto_total_usd), 
+        'monto_total_bs': float(b.monto_total_bs), 'tasa_bcv': float(b.tasa_bcv),
+    } for b in boletos]
+    return JsonResponse({'ok': True, 'resultados': resultados})
+
+@login_required
+def taquilla_reprogramar_cobro(request, viaje_id, boleto_id):
+    """Cobra la diferencia y hace el cambio de boleto."""
+    if not hasattr(request.user, 'usuarioempresa'):
+        return redirect('core:inicio')
+
+    viaje_nuevo = get_object_or_404(Viaje, id=viaje_id)
+    boleto_viejo = get_object_or_404(Boleto, id=boleto_id, estado='vendido')
+    
+    asiento_id_url = request.GET.get('asiento_id')
+    if not asiento_id_url:
+        messages.error(request, "Debe seleccionar un asiento en el mapa antes de reprogramar.")
+        return redirect('core:taquilla_mapa', viaje_id=viaje_id)
+    
+    destino_id = request.GET.get('destino')
+    origen_id = request.GET.get('origen') or request.user.usuarioempresa.oficina.id
+    
+    tarifa_nueva = Tarifa.objects.filter(origen_id=origen_id, destino_id=destino_id, activa=True).first()
+    if not tarifa_nueva:
+        messages.error(request, "No hay tarifa para el nuevo viaje.")
+        return redirect('core:taquilla_mapa', viaje_id=viaje_id)
+
+    tasa_bcv_actual = Decimal(str(obtener_parametro('107', default=0)))
+    valor_seguro = Decimal(str(obtener_parametro('100', default=0)))
+    
+    monto_nuevo_usd = tarifa_nueva.monto_usd + valor_seguro
+    monto_nuevo_bs = (monto_nuevo_usd * tasa_bcv_actual).quantize(Decimal('0.01'))
+    
+    # ⭐ CÁLCULO CORRECTO: Diferencia basada en Bolívares
+    diferencia_bs = monto_nuevo_bs - boleto_viejo.monto_total_bs
+    
+    # Convertimos esa diferencia en Bolívares a Dólares (a la tasa de hoy) solo para mostrarla
+    if tasa_bcv_actual > 0:
+        diferencia_usd = (diferencia_bs / tasa_bcv_actual).quantize(Decimal('0.01'))
+    else:
+        diferencia_usd = Decimal('0.00')
+
+    if diferencia_bs < 0:
+        messages.error(request, "El boleto nuevo es más barato en Bolívares. Use la opción de generar crédito.")
+        return redirect('core:taquilla_mapa', viaje_id=viaje_id)
+
+    if request.method == 'POST':
+        import json
+        asiento_nuevo_id = request.POST.get('asiento_id')
+        pagos_json = request.POST.get('pagos_json', '[]')
+        
+        try:
+            pagos_lista = json.loads(pagos_json)
+            
+            # ⭐ VALIDACIÓN DE REDONDEO (tolerancia de 5 céntimos)
+            total_pagado_bs = sum(Decimal(str(p['monto_bs'])) for p in pagos_lista)
+            if pagos_lista and abs(total_pagado_bs - diferencia_bs) > Decimal('0.05'):
+                messages.warning(request, f"El pago registrado (Bs. {total_pagado_bs}) no coincide con la diferencia (Bs. {diferencia_bs}). Verifique los montos.")
+                return redirect(request.path + f"?origen={origen_id}&destino={destino_id}&asiento_id={asiento_nuevo_id}&numero={request.GET.get('numero')}")
+
+            with transaction.atomic():
+                # 1. Anular boleto viejo y liberar su asiento
+                asiento_nuevo = Asiento.objects.select_for_update().get(id=asiento_nuevo_id)
+                boleto_viejo.estado = 'reprogramado'
+                boleto_viejo.save()
+                asiento_viejo = boleto_viejo.asiento
+                asiento_viejo.estado = 'disponible'
+                asiento_viejo.save()
+                
+                # 2. Ocupar asiento nuevo
+                asiento_nuevo.estado = 'vendido'
+                asiento_nuevo.save()
+                
+                # 3. Crear nueva Transacción
+                codigo_tx = generar_codigo_transaccion()
+                transaccion = Transaccion.objects.create(
+                    codigo=codigo_tx, cliente=None, viaje=viaje_nuevo, cantidad_boletos=1,
+                    monto_total_usd=monto_nuevo_usd, monto_total_bs=monto_nuevo_bs, tasa_bcv=tasa_bcv_actual,
+                    estado='confirmada', fecha_confirmacion=timezone.now(),
+                    vendido_por=request.user, oficina_venta=request.user.usuarioempresa.oficina,
+                    dispositivo_venta='Taquilla (Reprogramación)',
+                    observacion=f"Reprogramación del boleto {boleto_viejo.numero_boleto}"
+                )
+                
+                # 4. El pago del boleto viejo entra a la caja como "Reprogramación"
+                Pago.objects.create(
+                    transaccion=transaccion, metodo='reprogramacion',
+                    monto_usd=boleto_viejo.monto_total_usd, monto_bs=boleto_viejo.monto_total_bs,
+                    tasa_bcv=boleto_viejo.tasa_bcv, referencia=f"Boleto Nro: {boleto_viejo.numero_boleto}",
+                    estado='confirmado', confirmado_por=request.user, fecha_confirmacion=timezone.now(),
+                    observacion=f"Abono por reprogramación del boleto {boleto_viejo.numero_boleto}"
+                )
+                
+                # 5. Los pagos de la diferencia (Efectivo, Pago Móvil)
+                for p in pagos_lista:
+                    Pago.objects.create(
+                        transaccion=transaccion, metodo=p['metodo'], monto_usd=Decimal(p['monto_usd']),
+                        monto_bs=Decimal(p['monto_bs']), tasa_bcv=tasa_bcv_actual, referencia=p.get('referencia', ''),
+                        estado='confirmado', confirmado_por=request.user, fecha_confirmacion=timezone.now()
+                    )
+                
+                # 6. Crear nuevo boleto (Hereda los datos del pasajero viejo)
+                Boleto.objects.create(
+                    transaccion=transaccion, viaje=viaje_nuevo, asiento=asiento_nuevo,
+                    pasajero_cedula=boleto_viejo.pasajero_cedula, 
+                    pasajero_nombre=boleto_viejo.pasajero_nombre, 
+                    pasajero_telefono=boleto_viejo.pasajero_telefono,
+                    tipo_pasajero=boleto_viejo.tipo_pasajero, 
+                    monto_tarifa_usd=tarifa_nueva.monto_usd, 
+                    monto_seguro_usd=valor_seguro,
+                    monto_total_usd=monto_nuevo_usd, tasa_bcv=tasa_bcv_actual,
+                    monto_total_bs=monto_nuevo_bs,
+                    codigo_qr=generar_codigo_qr(), estado='vendido', vendido_por=request.user,
+                    numero_boleto=generar_numero_boleto(request.user.usuarioempresa.oficina, es_continuo=obtener_parametro('179', default=False)),
+                    observacion=f"Generado por reprogramación. Boleto original: {boleto_viejo.numero_boleto}"
+                )
+                
+            messages.success(request, f"Reprogramación exitosa. Nuevo código: {codigo_tx}")
+            return redirect('core:taquilla_confirmacion', transaccion_id=transaccion.id)
+            
+        except Exception as e:
+            messages.error(request, f"Error al reprogramar: {str(e)}")
+
+    return render(request, 'taquilla/reprogramar.html', {
+        'boleto_viejo': boleto_viejo,
+        'viaje_nuevo': viaje_nuevo,
+        'tarifa_nueva': tarifa_nueva,
+        'tasa_bcv': tasa_bcv_actual,
+        'monto_nuevo_usd': monto_nuevo_usd,
+        'monto_nuevo_bs': monto_nuevo_bs,
+        'diferencia_usd': diferencia_usd,
+        'diferencia_bs': diferencia_bs,
+        'asiento_id': request.GET.get('asiento_id'),
+    })
+
+@require_POST
+@login_required
+def taquilla_bloquear_asiento_reprogramar(request):
+    """Bloquea temporalmente un asiento mientras el taquillero confirma la reprogramación."""
+    if not hasattr(request.user, 'usuarioempresa'):
+        return JsonResponse({'ok': False, 'error': 'No autorizado'}, status=403)
+        
+    asiento_id = request.POST.get('asiento_id')
+    if not asiento_id:
+        return JsonResponse({'ok': False, 'error': 'Falta el asiento.'}, status=400)
+        
+    try:
+        with transaction.atomic():
+            asiento = Asiento.objects.select_for_update().get(id=asiento_id)
+            
+            # ⭐ VALIDACIÓN CLAVE: Si ya está reservado por este mismo taquillero, es válido.
+            if asiento.estado == 'reservado' and asiento.reservado_por == request.user:
+                return JsonResponse({'ok': True, 'mensaje': 'Asiento ya reservado por usted.'})
+            
+            if asiento.estado != 'disponible':
+                return JsonResponse({'ok': False, 'error': 'El asiento ya fue tomado por otro usuario.'}, status=400)
+                
+            # Lo bloqueamos por 5 minutos (parámetro 171)
+            minutos = int(obtener_parametro('171', default=5))
+            vence = timezone.now() + timedelta(minutes=minutos)
+            
+            asiento.estado = 'reservado'
+            asiento.reservado_por = request.user
+            asiento.reservado_hasta = vence
+            asiento.save()
+            
+        return JsonResponse({'ok': True, 'vence': vence.isoformat()})
+    except Exception as e:
+        return JsonResponse({'ok': False, 'error': str(e)}, status=500)
+
+@require_POST
+@login_required
+def taquilla_liberar_asiento_reprogramar(request):
+    """Libera el asiento si el taquillero cancela la operación."""
+    if not hasattr(request.user, 'usuarioempresa'):
+        return JsonResponse({'ok': False, 'error': 'No autorizado'}, status=403)
+        
+    asiento_id = request.POST.get('asiento_id')
+    if not asiento_id:
+        return JsonResponse({'ok': False, 'error': 'Falta el asiento.'}, status=400)
+        
+    try:
+        with transaction.atomic():
+            asiento = Asiento.objects.select_for_update().filter(
+                id=asiento_id, estado='reservado', reservado_por=request.user
+            ).first()
+            
+            if asiento:
+                asiento.estado = 'disponible'
+                asiento.reservado_por = None
+                asiento.reservado_hasta = None
+                asiento.save()
+                
+        return JsonResponse({'ok': True})
+    except Exception as e:
+        return JsonResponse({'ok': False, 'error': str(e)}, status=500)

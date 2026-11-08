@@ -1,19 +1,39 @@
 from django.contrib import admin
 from django.db import transaction
 from django.utils.safestring import mark_safe
-# 1. IMPORTAMOS EL ADMIN MÁGICO DE EXPORTACIÓN
-from import_export.admin import ImportExportModelAdmin 
+from django.contrib.admin.views.decorators import staff_member_required
+from django.shortcuts import render, redirect
+from django.urls import path
+from django.contrib import messages
+from django.utils import timezone
+import subprocess
+import sys
+
+# Librería de Importar/Exportar
+from import_export import resources
+from import_export.admin import ImportExportModelAdmin
 
 from .models import (
     Oficina, Empresa, Parametro, Bus, Tarifa, Ruta, Cliente, 
     Viaje, Asiento, Boleto, Credito, MovimientoAsiento, 
     PlantillaBus, PlantillaAsiento, RutaParada, Suscripcion, 
-    Transaccion, Pago, UsuarioEmpresa
+    Transaccion, Pago, UsuarioEmpresa, Banco, Pistero
 )
 
+# ============================================================
+# CLASE BASE PARA IMPORTAR/EXPORTAR
+# ============================================================
+class BaseImportExportAdmin(ImportExportModelAdmin):
+    """Clase base que agrega botones de Importar/Exportar a cualquier modelo."""
+    pass
+
+
+# ============================================================
+# MODELOS
+# ============================================================
 
 @admin.register(Oficina)
-class OficinaAdmin(admin.ModelAdmin):
+class OficinaAdmin(BaseImportExportAdmin):
     list_display = ('codigo', 'nombre', 'telefono', 'activa')
     list_filter = ('activa',)
     search_fields = ('codigo', 'nombre')
@@ -21,19 +41,17 @@ class OficinaAdmin(admin.ModelAdmin):
 
 
 @admin.register(Empresa)
-class EmpresaAdmin(admin.ModelAdmin):
+class EmpresaAdmin(BaseImportExportAdmin):
     list_display = ('nombre', 'rif', 'telefono', 'activa')
     list_filter = ('activa',)
     search_fields = ('nombre', 'rif')
     ordering = ('nombre',)
-    
+
 
 # ============================================================
 # ADMIN DE PARÁMETROS CON URLS PERSONALIZADAS
 # ============================================================
-
-# 2. HEREDAMOS DE ImportExportModelAdmin
-class ParametroAdmin(ImportExportModelAdmin, admin.ModelAdmin): 
+class ParametroAdmin(ImportExportModelAdmin):
     list_display = ('codigo', 'descripcion', 'tipo', 'valor_numerico', 'valor_texto', 'activo')
     list_filter = ('tipo', 'activo')
     search_fields = ('codigo', 'descripcion')
@@ -46,13 +64,13 @@ class ParametroAdmin(ImportExportModelAdmin, admin.ModelAdmin):
             path('actualizar-bcv/', self.admin_site.admin_view(actualizar_bcv_view), name='actualizar_bcv'),
         ]
         return custom_urls + urls
-        
-        
+
+
 admin.site.register(Parametro, ParametroAdmin)
 
 
 @admin.register(Bus)
-class BusAdmin(admin.ModelAdmin):
+class BusAdmin(BaseImportExportAdmin):
     list_display = ('placa', 'modelo', 'tipo', 'empresa', 'capacidad', 'puestos_descuento_max', 'activo')
     list_filter = ('tipo', 'activo', 'empresa')
     search_fields = ('placa', 'modelo')
@@ -76,7 +94,7 @@ class BusAdmin(admin.ModelAdmin):
 
 
 @admin.register(Tarifa)
-class TarifaAdmin(admin.ModelAdmin):
+class TarifaAdmin(BaseImportExportAdmin):
     list_display = ('origen', 'destino', 'monto_usd', 'seguro_usd', 'activa')
     list_filter = ('activa', 'origen', 'destino')
     search_fields = ('origen__codigo', 'origen__nombre', 'destino__codigo', 'destino__nombre')
@@ -88,17 +106,14 @@ class RutaParadaInline(admin.TabularInline):
     extra = 3
     ordering = ['orden']
 
+
 @admin.register(Ruta)
-class RutaAdmin(admin.ModelAdmin):
-    # Agregamos el destino final y el recorrido
+class RutaAdmin(BaseImportExportAdmin):
     list_display = ('nombre', 'origen', 'destino_final', 'ver_recorrido')
     search_fields = ('nombre', 'origen__nombre', 'paradas__oficina__nombre')
     inlines = [RutaParadaInline]
 
     def destino_final(self, obj):
-        """
-        Devuelve el nombre de la oficina de la última parada.
-        """
         ultima_parada = obj.paradas.order_by('-orden').first()
         if ultima_parada:
             return ultima_parada.oficina.nombre
@@ -108,10 +123,6 @@ class RutaAdmin(admin.ModelAdmin):
     destino_final.admin_order_field = 'paradas__oficina__nombre'
 
     def ver_recorrido(self, obj):
-        """
-        Muestra el recorrido ordenado de la ruta.
-        Ejemplo: CARACAS → MARACAY → VALENCIA → SAN CRISTÓBAL
-        """
         paradas = obj.paradas.all().order_by('orden')
         
         if not paradas.exists():
@@ -126,8 +137,9 @@ class RutaAdmin(admin.ModelAdmin):
 
     ver_recorrido.short_description = 'Recorrido de la Ruta'
 
+
 @admin.register(Cliente)
-class ClienteAdmin(admin.ModelAdmin):
+class ClienteAdmin(BaseImportExportAdmin):
     list_display = ('cedula', 'get_nombre_completo', 'telefono', 'whatsapp', 'es_discapacitado', 'es_tercera_edad')
     search_fields = ('cedula', 'user__username', 'user__first_name', 'user__last_name', 'telefono')
     list_filter = ('es_discapacitado', 'es_tercera_edad')
@@ -140,12 +152,11 @@ class ClienteAdmin(admin.ModelAdmin):
 
 
 @admin.register(Viaje)
-class ViajeAdmin(admin.ModelAdmin):
+class ViajeAdmin(BaseImportExportAdmin):
     list_display = ('id', 'ruta', 'bus', 'fecha', 'hora', 'precio_usd', 'estado', 'cerrado_venta')
     list_filter = ('estado', 'cerrado_venta', 'fecha', 'ruta')
     search_fields = ('ruta__nombre', 'bus__placa')
     ordering = ('-fecha', '-hora')
-    # date_hierarchy = 'fecha'
     raw_id_fields = ('ruta', 'bus', 'suspendido_por')
     readonly_fields = ('precio_usd', 'seguro_usd')
     
@@ -168,7 +179,7 @@ class ViajeAdmin(admin.ModelAdmin):
 
 
 @admin.register(Asiento)
-class AsientoAdmin(admin.ModelAdmin):
+class AsientoAdmin(BaseImportExportAdmin):
     list_display = ('viaje', 'numero', 'fila', 'columna', 'piso', 'lado', 'estado', 'reservado_hasta')
     list_filter = ('estado', 'piso', 'lado')
     search_fields = ('viaje__ruta__nombre', 'numero')
@@ -177,23 +188,21 @@ class AsientoAdmin(admin.ModelAdmin):
 
 
 @admin.register(Boleto)
-class BoletoAdmin(admin.ModelAdmin):
+class BoletoAdmin(BaseImportExportAdmin):
     list_display = ('codigo_qr', 'pasajero_nombre', 'pasajero_cedula', 'viaje', 'asiento', 'monto_total_usd', 'estado', 'fecha_venta')
     list_filter = ('estado', 'tipo_pasajero', 'viaje__ruta')
     search_fields = ('codigo_qr', 'pasajero_cedula', 'pasajero_nombre')
     ordering = ('-fecha_venta',)
-    # date_hierarchy = 'fecha_venta'
     raw_id_fields = ('viaje', 'asiento', 'vendido_por', 'chequeado_por', 'liberado_por')
     readonly_fields = ('fecha_venta',)
 
 
 @admin.register(Credito)
-class CreditoAdmin(admin.ModelAdmin):
+class CreditoAdmin(BaseImportExportAdmin):
     list_display = ('cedula', 'nombre', 'saldo_tarifa_usd', 'saldo_seguro_usd', 'get_saldo_total', 'fecha_vencimiento', 'estado')
     list_filter = ('estado', 'fecha_vencimiento')
     search_fields = ('cedula', 'nombre')
     ordering = ('-fecha_creacion',)
-    # date_hierarchy = 'fecha_creacion'
     raw_id_fields = ('boleto_origen',)
     
     def get_saldo_total(self, obj):
@@ -202,18 +211,17 @@ class CreditoAdmin(admin.ModelAdmin):
 
 
 @admin.register(MovimientoAsiento)
-class MovimientoAsientoAdmin(admin.ModelAdmin):
+class MovimientoAsientoAdmin(BaseImportExportAdmin):
     list_display = ('asiento', 'tipo', 'estado_anterior', 'estado_nuevo', 'usuario', 'fecha_hora', 'motivo')
     list_filter = ('tipo', 'fecha_hora', 'usuario')
     search_fields = ('asiento__numero', 'asiento__viaje__ruta__nombre', 'motivo')
     ordering = ('-fecha_hora',)
-    # date_hierarchy = 'fecha_hora'
     raw_id_fields = ('asiento', 'usuario', 'boleto_relacionado')
     readonly_fields = ('fecha_hora',)
     
 
 @admin.register(PlantillaBus)
-class PlantillaBusAdmin(admin.ModelAdmin):
+class PlantillaBusAdmin(BaseImportExportAdmin):
     list_display = ('nombre', 'tipo', 'capacidad', 'pisos', 'activa')
     list_filter = ('tipo', 'pisos', 'activa')
     search_fields = ('nombre',)
@@ -221,26 +229,19 @@ class PlantillaBusAdmin(admin.ModelAdmin):
 
 
 @admin.register(PlantillaAsiento)
-class PlantillaAsientoAdmin(admin.ModelAdmin):
+class PlantillaAsientoAdmin(BaseImportExportAdmin):
     list_display = ('plantilla', 'piso', 'fila', 'columna', 'numero', 'lado', 'tipo')
     list_filter = ('plantilla', 'piso', 'tipo', 'lado')
     search_fields = ('plantilla__nombre', 'numero')
     ordering = ('plantilla', 'piso', 'fila', 'columna')
     raw_id_fields = ('plantilla',)
-    
-from .models import Transaccion, Pago
-
-
-from .models import Transaccion, Pago
 
 
 # ============================================================
 # ACCIONES MASIVAS PARA TRANSACCIONES
 # ============================================================
-
 @admin.action(description='✅ Aprobar pago (marcar como confirmada)')
 def aprobar_pago_action(modeladmin, request, queryset):
-    """Aprueba las transacciones seleccionadas: asientos y boletos pasan a 'vendido'."""
     from django.utils import timezone
     from .models import Asiento, Boleto, MovimientoAsiento
     
@@ -253,17 +254,14 @@ def aprobar_pago_action(modeladmin, request, queryset):
             continue
         
         with transaction.atomic():
-            # 1. Actualizar transacción
             transaccion.estado = 'confirmada'
             transaccion.fecha_confirmacion = timezone.now()
             transaccion.confirmada_por = request.user
             transaccion.save()
             
-            # 2. Actualizar asientos y boletos
             for boleto in transaccion.boletos.all():
                 asiento = boleto.asiento
                 
-                # Registrar auditoría
                 MovimientoAsiento.objects.create(
                     asiento=asiento,
                     tipo='venta',
@@ -282,7 +280,6 @@ def aprobar_pago_action(modeladmin, request, queryset):
                 boleto.estado = 'vendido'
                 boleto.save()
             
-            # 3. Actualizar pagos
             transaccion.pagos.update(
                 estado='confirmado',
                 confirmado_por=request.user,
@@ -299,7 +296,6 @@ def aprobar_pago_action(modeladmin, request, queryset):
 
 @admin.action(description='❌ Rechazar pago (liberar asientos)')
 def rechazar_pago_action(modeladmin, request, queryset):
-    """Rechaza las transacciones seleccionadas: asientos vuelven a 'disponible'."""
     from django.utils import timezone
     from .models import Asiento, Boleto, MovimientoAsiento
     
@@ -312,16 +308,13 @@ def rechazar_pago_action(modeladmin, request, queryset):
             continue
         
         with transaction.atomic():
-            # 1. Actualizar transacción
             transaccion.estado = 'rechazada'
             transaccion.fecha_cancelacion = timezone.now()
             transaccion.save()
             
-            # 2. Liberar asientos y cancelar boletos
             for boleto in transaccion.boletos.all():
                 asiento = boleto.asiento
                 
-                # Registrar auditoría
                 MovimientoAsiento.objects.create(
                     asiento=asiento,
                     tipo='liberacion_manual',
@@ -340,7 +333,6 @@ def rechazar_pago_action(modeladmin, request, queryset):
                 boleto.estado = 'cancelado'
                 boleto.save()
             
-            # 3. Actualizar pagos
             transaccion.pagos.update(
                 estado='rechazado',
                 confirmado_por=request.user,
@@ -356,7 +348,7 @@ def rechazar_pago_action(modeladmin, request, queryset):
 
 
 @admin.register(Transaccion)
-class TransaccionAdmin(admin.ModelAdmin):
+class TransaccionAdmin(BaseImportExportAdmin):
     list_display = ('codigo', 'get_cliente_nombre', 'get_pasajeros_resumen', 'viaje', 'cantidad_boletos', 'monto_total_usd', 'estado', 'fecha_creacion')
     list_filter = ('estado', 'fecha_creacion', 'viaje__ruta')
     search_fields = ('codigo', 'cliente__cedula', 'cliente__user__username')
@@ -389,7 +381,6 @@ class TransaccionAdmin(admin.ModelAdmin):
     )
     
     def get_pasajeros_detalle(self, obj):
-        """Muestra el listado de pasajeros con asiento, nombre, cédula y tipo."""
         boletos = obj.boletos.all().order_by('asiento__numero')
         if not boletos:
             return '—'
@@ -411,7 +402,6 @@ class TransaccionAdmin(admin.ModelAdmin):
     get_pasajeros_detalle.short_description = 'Pasajeros'
     
     def get_cliente_nombre(self, obj):
-        """Muestra el nombre completo del cliente que compró."""
         if not obj.cliente:
             return '—'
         nombre = obj.cliente.user.get_full_name() or obj.cliente.user.username
@@ -420,7 +410,6 @@ class TransaccionAdmin(admin.ModelAdmin):
     get_cliente_nombre.admin_order_field = 'cliente__user__first_name'
     
     def get_pasajeros_resumen(self, obj):
-        """Muestra los nombres de los pasajeros de los boletos."""
         boletos = obj.boletos.all()
         if not boletos:
             return '—'
@@ -436,30 +425,20 @@ class TransaccionAdmin(admin.ModelAdmin):
 
 
 @admin.register(Pago)
-class PagoAdmin(admin.ModelAdmin):
+class PagoAdmin(BaseImportExportAdmin):
     list_display = ('id', 'transaccion', 'metodo', 'monto_usd', 'monto_bs', 'referencia', 'estado', 'fecha_pago')
     list_filter = ('metodo', 'estado', 'fecha_pago')
     search_fields = ('transaccion__codigo', 'referencia', 'banco_origen')
     ordering = ('-fecha_pago',)
-    # date_hierarchy = 'fecha_pago'
     raw_id_fields = ('transaccion', 'confirmado_por')
     readonly_fields = ('fecha_pago',)
+
 
 # ============================================================
 # VISTA PERSONALIZADA: ACTUALIZAR TASA BCV
 # ============================================================
-from django.contrib.admin.views.decorators import staff_member_required
-from django.shortcuts import render, redirect
-from django.urls import path
-from django.contrib import messages
-from django.utils import timezone
-import subprocess
-import sys
-
-
 @staff_member_required
 def actualizar_bcv_view(request):
-    """Vista personalizada para actualizar la tasa BCV desde el admin"""
     resultado = None
     
     if request.method == 'POST':
@@ -468,8 +447,8 @@ def actualizar_bcv_view(request):
                 [sys.executable, 'manage.py', 'actualizar_bcv'],
                 capture_output=True,
                 text=True,
-                encoding='utf-8',    # ← NUEVO
-                errors='replace',    # ← NUEVO
+                encoding='utf-8',
+                errors='replace',
                 timeout=30,
             )
             
@@ -502,7 +481,6 @@ def actualizar_bcv_view(request):
             }
             messages.error(request, f"Error: {str(e)}")
     
-    # Leer la tasa actual
     from .utils import obtener_parametro
     from .models import Parametro
     
@@ -522,11 +500,9 @@ def actualizar_bcv_view(request):
         'resultado': resultado,
     })
 
-from django.contrib import admin, messages
-from .models import Suscripcion
 
 @admin.register(Suscripcion)
-class SuscripcionAdmin(admin.ModelAdmin):
+class SuscripcionAdmin(BaseImportExportAdmin):
     list_display = ('empresa', 'fecha_vencimiento', 'dias_para_vencer', 'activa', 'monto_mensual')
     list_filter = ('activa',)
     readonly_fields = ('fecha_inicio', 'ultimo_pago', 'dias_para_vencer')
@@ -537,9 +513,10 @@ class SuscripcionAdmin(admin.ModelAdmin):
         for suscripcion in queryset:
             suscripcion.renovar_mes()
         self.message_user(request, f"Suscripciones renovadas exitosamente.", level=messages.SUCCESS)
-        
+
+
 @admin.register(UsuarioEmpresa)
-class UsuarioEmpresaAdmin(admin.ModelAdmin):
+class UsuarioEmpresaAdmin(BaseImportExportAdmin):
     list_display = ('cedula', 'get_nombre_completo', 'rol', 'oficina', 'activo')
     list_filter = ('rol', 'oficina', 'activo')
     search_fields = ('cedula', 'user__username', 'user__first_name', 'user__last_name')
@@ -548,21 +525,18 @@ class UsuarioEmpresaAdmin(admin.ModelAdmin):
     def get_nombre_completo(self, obj):
         return obj.user.get_full_name() or obj.user.username
     get_nombre_completo.short_description = 'Nombre'
-    
-from .models import Banco
+
 
 @admin.register(Banco)
-class BancoAdmin(admin.ModelAdmin):
+class BancoAdmin(BaseImportExportAdmin):
     list_display = ('codigo', 'nombre', 'activo')
     list_filter = ('activo',)
     search_fields = ('codigo', 'nombre')
     ordering = ('codigo',)
 
 
-from .models import Pistero
-
 @admin.register(Pistero)
-class PisteroAdmin(admin.ModelAdmin):
+class PisteroAdmin(BaseImportExportAdmin):
     list_display = ('nombre', 'cedula', 'oficina', 'comision_usd', 'activo')
     list_filter = ('oficina', 'activo')
     search_fields = ('nombre', 'cedula')

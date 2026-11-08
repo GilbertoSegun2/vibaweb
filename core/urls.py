@@ -25,7 +25,7 @@ urlpatterns = [
     path('desbloquear/solicitar/', views.solicitar_desbloqueo_login, name='solicitar_desbloqueo'),
     path('desbloquear/confirmar/', views.confirmar_desbloqueo_view, name='confirmar_desbloqueo'),
 
-    # ⭐ FLUJO DE RECUPERACIÓN DE CONTRASEÑA (Con current_app='core')
+    # ⭐ FLUJO DE RECUPERACIÓN DE CONTRASEÑA
     path('recuperar-clave/', auth_views.PasswordResetView.as_view(
         template_name='registration/password_reset_form.html',
         html_email_template_name='registration/password_reset_email.html',
@@ -50,7 +50,7 @@ urlpatterns = [
     ), name='password_reset_complete'),
 
     # ============================================================
-    # PROCESO DE COMPRA Y RESERVAS
+    # PROCESO DE COMPRA Y RESERVAS (WEB)
     # ============================================================
     path('reservar/', views.reservar_asientos, name='reservar_asientos'),
     path('liberar/', views.liberar_asientos, name='liberar_asientos'),
@@ -71,6 +71,16 @@ urlpatterns = [
     path('taquilla/viaje/<int:viaje_id>/cobrar/', views.taquilla_cobrar, name='taquilla_cobrar'),
     path('taquilla/confirmacion/<int:transaccion_id>/', views.taquilla_confirmacion, name='taquilla_confirmacion'),
     
+    # Transferencia de Asiento
+    path('taquilla/api/buscar-boleto/', views.taquilla_buscar_boleto, name='taquilla_buscar_boleto'),
+    path('taquilla/api/transferir/', views.taquilla_ejecutar_transferencia, name='taquilla_ejecutar_transferencia'),
+    
+    # Reprogramación de Viaje
+    path('taquilla/api/buscar-boleto-reprogramar/', views.taquilla_buscar_boleto_reprogramar, name='taquilla_buscar_boleto_reprogramar'),
+    path('taquilla/viaje/<int:viaje_id>/reprogramar/<int:boleto_id>/', views.taquilla_reprogramar_cobro, name='taquilla_reprogramar_cobro'),
+    path('taquilla/api/bloquear-asiento-reprogramar/', views.taquilla_bloquear_asiento_reprogramar, name='taquilla_bloquear_asiento_reprogramar'),
+    path('taquilla/api/liberar-asiento-reprogramar/', views.taquilla_liberar_asiento_reprogramar, name='taquilla_liberar_asiento_reprogramar'),
+
     # ============================================================
     # UTILIDADES Y APIS
     # ============================================================

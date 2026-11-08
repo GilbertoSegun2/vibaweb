@@ -1,0 +1,174 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Reprogramar Boleto{% endblock %}
+
+{% block content %}
+<div class="container mt-4" style="max-width: 900px;">
+    <div class="alert alert-info">
+        <h4><i class="bi bi-arrow-repeat"></i> Reprogramación de Boleto</h4>
+        <p class="mb-0">Pasajero: <strong>{{ boleto_viejo.pasajero_nombre }}</strong> ({{ boleto_viejo.pasajero_cedula }})</p>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card bg-light">
+                <div class="card-body">
+                    <h6 class="card-title text-muted">Boleto Anterior</h6>
+                    <p class="mb-1">Nro: {{ boleto_viejo.numero_boleto }}</p>
+                    <p class="mb-1">Viaje: {{ boleto_viejo.viaje.ruta.nombre }} ({{ boleto_viejo.viaje.fecha|date:"d/m/Y" }})</p>
+                    <h5 class="text-danger">Valor: ${{ boleto_viejo.monto_total_usd }} / Bs. {{ boleto_viejo.monto_total_bs|floatformat:2 }}</h5>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card bg-light border-success">
+                <div class="card-body">
+                    <h6 class="card-title text-muted">Nuevo Boleto</h6>
+                    <p class="mb-1">Viaje: {{ viaje_nuevo.ruta.nombre }} ({{ viaje_nuevo.fecha|date:"d/m/Y" }})</p>
+                    
+                    {% if request.GET.numero %}
+                        <h5 class="text-success mb-2">Puesto Seleccionado: <span class="badge bg-success fs-6">{{ request.GET.numero }}</span></h5>
+                    {% else %}
+                        <h5 class="text-danger mb-2">No ha seleccionado un puesto</h5>
+                    {% endif %}
+                    
+                    <p class="mb-1">Tarifa: ${{ tarifa_nueva.monto_usd }} + Seguro: ${{ valor_seguro }}</p>
+                    <h5 class="text-success">Valor: ${{ monto_nuevo_usd }} / Bs. {{ monto_nuevo_bs|floatformat:2 }}</h5>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <form method="post" id="form-reprogramar">
+        {% csrf_token %}
+        <input type="hidden" name="asiento_id" id="asiento_id" value="{{ request.GET.asiento_id }}" required>
+        <input type="hidden" name="pagos_json" id="pagos_json" value="[]">
+        
+        <div class="card shadow-sm mb-4 border-warning">
+            <div class="card-header bg-warning">
+                <h5 class="mb-0">Diferencia a Cobrar: ${{ diferencia_usd }} / Bs. {{ diferencia_bs|floatformat:2 }}</h5>
+            </div>
+            <div class="card-body">
+                
+                <div class="alert alert-info" id="estado-asiento">
+                    <i class="bi bi-hourglass-split"></i> <span id="texto-estado">Procesando el asiento seleccionado...</span>
+                </div>
+
+                {% if diferencia_bs > 0 %}
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Método de Pago de la Diferencia (Bs. {{ diferencia_bs|floatformat:2 }}):</label>
+                        <select class="form-select" id="metodo_pago">
+                            <option value="efectivo_usd">Efectivo USD</option>
+                            <option value="efectivo_bs">Efectivo Bs.</option>
+                            <option value="pago_movil">Pago Móvil</option>
+                            <option value="punto_venta">Punto de Venta</option>
+                        </select>
+                    </div>
+                    <button type="button" class="btn btn-primary w-100 mb-3" onclick="agregarPagoDiferencia()">Agregar Pago de Diferencia</button>
+                {% else %}
+                    <div class="alert alert-success">
+                        <i class="bi bi-check-circle-fill"></i> No hay diferencia a cobrar. El boleto anterior cubre el 100% del nuevo boleto.
+                    </div>
+                {% endif %}
+                
+                <div id="lista_pagos_mostrar" class="mb-3"></div>
+                
+                <button type="submit" class="btn btn-success w-100 fw-bold btn-lg" id="btn-confirmar" disabled>Confirmar Reprogramación</button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<script>
+    let pagos = [];
+    let asientoBloqueadoId = null;
+    
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const asientoId = "{{ request.GET.asiento_id }}";
+        if (!asientoId) {
+            document.getElementById('texto-estado').innerHTML = "❌ No se seleccionó un asiento en el mapa anterior. Regrese al mapa y seleccione uno.";
+            document.getElementById('estado-asiento').className = "alert alert-danger";
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('asiento_id', asientoId);
+
+        fetch('/taquilla/api/bloquear-asiento-reprogramar/', {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCookie('csrftoken') },
+            body: formData
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.ok) {
+                asientoBloqueadoId = asientoId;
+                document.getElementById('texto-estado').innerHTML = "✅ El asiento ha sido bloqueado temporalmente para su seguridad.";
+                document.getElementById('estado-asiento').className = "alert alert-success"; // Verde
+                document.getElementById('btn-confirmar').disabled = false;
+            } else {
+                document.getElementById('texto-estado').innerHTML = "❌ " + data.error;
+                document.getElementById('estado-asiento').className = "alert alert-danger"; // Rojo
+            }
+        })
+        .catch(err => {
+            document.getElementById('texto-estado').innerHTML = "❌ Error de red al bloquear el asiento.";
+            document.getElementById('estado-asiento').className = "alert alert-danger";
+        });
+    });
+
+    window.addEventListener('beforeunload', function (e) {
+        if (asientoBloqueadoId) {
+            const formData = new FormData();
+            formData.append('asiento_id', asientoBloqueadoId);
+            navigator.sendBeacon('/taquilla/api/liberar-asiento-reprogramar/', formData);
+        }
+    });
+
+    function agregarPagoDiferencia() {
+        const metodo = document.getElementById('metodo_pago').value;
+        
+        // ⭐ Usamos la variable pasada desde Django, convirtiendo coma a punto si es necesario
+        let difBsStr = "{{ diferencia_bs }}".replace(',', '.');
+        let difUsdStr = "{{ diferencia_usd }}".replace(',', '.');
+        
+        const difBs = parseFloat(difBsStr);
+        const difUsd = parseFloat(difUsdStr);
+        
+        pagos.push({
+            metodo: metodo,
+            monto_usd: difUsd.toFixed(2),
+            monto_bs: difBs.toFixed(2), // <--- AQUÍ ASEGURAMOS LOS 2 DECIMALES
+            referencia: prompt("Ingrese referencia (opcional):") || ''
+        });
+        
+        document.getElementById('pagos_json').value = JSON.stringify(pagos);
+        document.getElementById('lista_pagos_mostrar').innerHTML = `<div class="alert alert-success">Pago registrado: ${metodo} por Bs. ${difBs.toFixed(2)}</div>`;
+    }
+    // Evitar que el formulario se envíe si hay diferencia pendiente de pago
+    document.getElementById('form-reprogramar').addEventListener('submit', function(e) {
+        const dif = parseFloat("{{ diferencia_bs }}");
+        if (dif > 0 && pagos.length === 0) {
+            e.preventDefault();
+            alert("⚠️ Debe registrar el pago de la diferencia antes de confirmar la reprogramación.");
+        }
+    });
+</script>
+{% endblock %}
