@@ -1,4 +1,3 @@
-
 {% extends 'base.html' %}
 {% load core_extras %}
 
@@ -6,42 +5,95 @@
 
 {% block extra_css %}
 <style>
-    .mapa-bus { max-width: 290px; margin: 0 auto; background: linear-gradient(90deg, #d9d9d9 0%, #ffffff 4%, #f8f9fa 96%, #d9d9d9 100%); border: 3px solid #003366; border-radius: 16px; padding: 10px; position: relative; box-shadow: 0 8px 20px rgba(0, 51, 102, 0.15), inset 0 0 0 4px #ffffff, inset 0 0 0 6px #e7f0f7; }
+    /* ⭐ CONTENEDOR PRINCIPAL DEL BUS */
+    .mapa-bus { 
+        max-width: 300px; 
+        margin: 0 auto; 
+        background: linear-gradient(90deg, #e9ecef 0%, #ffffff 4%, #f8f9fa 96%, #e9ecef 100%); 
+        border: 3px solid #003366; 
+        border-radius: 20px; 
+        padding: 12px; 
+        position: relative; 
+        box-shadow: 0 10px 25px rgba(0, 51, 102, 0.15), inset 0 0 0 4px #ffffff; 
+    }
+
+    /* Frente y Trasera del Bus */
     .bus-frente { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; background: linear-gradient(180deg, #e7f0f7 0%, #c9dced 100%); border: 2px solid #003366; border-bottom: none; border-radius: 14px 14px 4px 4px; margin-bottom: 0; color: #003366; font-weight: bold; box-shadow: inset 0 -2px 6px rgba(0, 51, 102, 0.15); }
     .bus-frente__cabina { display: flex; align-items: center; justify-content: center; gap: 4px; background: #ffffff; padding: 6px 10px; border-radius: 20px; border: 2px solid #003366; box-shadow: 0 2px 4px rgba(0, 51, 102, 0.25); font-size: 1.2rem; color: #003366; }
-    .bus-frente__cabina .bi-record-circle { font-size: 0.85rem; color: #dc3545; animation: girarVolante 4s infinite ease-in-out; display: inline-block; }
-    @keyframes girarVolante { 0% { transform: rotate(0deg); } 25% { transform: rotate(15deg); } 50% { transform: rotate(0deg); } 75% { transform: rotate(-15deg); } 100% { transform: rotate(0deg); } }
     .bus-frente__label { flex: 1; text-align: center; font-size: 0.85rem; letter-spacing: 1.5px; color: #003366; font-weight: bold; }
+    
     .bus-trasero { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: linear-gradient(180deg, #c9dced 0%, #e7f0f7 100%); border: 2px solid #003366; border-top: none; border-radius: 4px 4px 14px 14px; margin-top: 0; box-shadow: inset 0 2px 6px rgba(0, 51, 102, 0.15); }
     .bus-trasero__luz { width: 16px; height: 16px; border-radius: 50%; background: radial-gradient(circle at 30% 30%, #ff6b6b, #dc3545 60%, #8b0000); box-shadow: 0 0 8px rgba(220, 53, 69, 0.8), 0 0 16px rgba(220, 53, 69, 0.4); animation: parpadeoLuz 2s infinite ease-in-out; }
     .bus-trasero__label { flex: 1; text-align: center; color: #003366; font-size: 0.9rem; font-weight: bold; letter-spacing: 1.5px; display: flex; align-items: center; justify-content: center; gap: 6px; }
     @keyframes parpadeoLuz { 0%, 100% { box-shadow: 0 0 8px rgba(220, 53, 69, 0.8), 0 0 16px rgba(220, 53, 69, 0.4); } 50% { box-shadow: 0 0 12px rgba(220, 53, 69, 1), 0 0 24px rgba(220, 53, 69, 0.6); } }
-    .piso-titulo { text-align: center; font-weight: bold; color: #ffffff; background: linear-gradient(90deg, #003366 0%, #004a99 50%, #003366 100%); padding: 8px 12px; border-radius: 6px; margin: 14px 6px 10px 6px; font-size: 0.85rem; letter-spacing: 2px; box-shadow: 0 2px 6px rgba(0, 51, 102, 0.3); }
-    .fila-asientos { display: flex; justify-content: space-between; gap: 4px; margin-bottom: 6px; padding: 0; }
-    .asiento { width: 42px; height: 42px; border-radius: 6px; border: 2px solid #adb5bd; background: #ffffff; color: #495057; font-size: 0.75rem; font-weight: bold; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; justify-content: center; padding: 0; }
-    .asiento:hover:not(:disabled) { transform: scale(1.08); border-color: #003366; }
-    .asiento.disponible { background: #d4edda; color: #155724; border-color: #28a745; }
-    .asiento.disponible:hover:not(:disabled) { background: #c3e6cb; border-color: #1e7e34; }
-    .asiento.seleccionado { background: #ffc107; color: #000; border-color: #cc9a06; }
-    .asiento.seleccionado:hover:not(:disabled) { background: #ffca2c; border-color: #b8860b; }
-    .asiento.vendido { background: #dc3545; color: #ffffff; border-color: #a71d2a; cursor: not-allowed; }
-    .asiento.reservado { background: #fd7e14; color: #ffffff; border-color: #e8590c; cursor: not-allowed; }
-    .asiento.pendiente_verificacion { background: #9b59b6; color: #ffffff; border-color: #7d3c98; cursor: not-allowed; }
-    .asiento.bloqueado { background: #6c757d; color: #ffffff; border-color: #495057; cursor: not-allowed; }
-    .asiento.especial { width: 42px; height: 42px; border-radius: 6px; background: #e9ecef; border: 2px dashed #adb5bd; color: #6c757d; font-size: 0.65rem; display: flex; align-items: center; justify-content: center; padding: 0; text-align: center; }
-    .pasillo { width: 20px; min-width: 20px; }
-    .leyenda { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; font-size: 0.8rem; }
+
+    /* Títulos de Piso */
+    .piso-titulo { text-align: center; font-weight: bold; color: #ffffff; background: linear-gradient(90deg, #003366 0%, #004a99 50%, #003366 100%); padding: 8px 12px; border-radius: 8px; margin: 14px 6px 10px 6px; font-size: 0.85rem; letter-spacing: 2px; box-shadow: 0 3px 8px rgba(0, 51, 102, 0.3); }
+
+    /* Filas de Asientos */
+    .fila-asientos { display: flex; justify-content: space-between; gap: 6px; margin-bottom: 8px; padding: 0; }
+    .pasillo { width: 25px; min-width: 25px; }
+
+    /* ⭐ BOTONES DE ASIENTOS (DISEÑO PREMIUM) ⭐ */
+    .asiento {
+        width: 44px;
+        height: 44px;
+        border-radius: 10px;
+        border: 2px solid #ced4da;
+        background: #ffffff;
+        color: #495057;
+        font-size: 0.9rem;
+        font-weight: 800;
+        cursor: pointer;
+        transition: all 0.2s ease-in-out;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    
+    .asiento:hover:not(:disabled) { 
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        border-color: #003366;
+    }
+
+    /* Estados de los Asientos */
+    .asiento.disponible { background: #d1e7dd; color: #0f5132; border-color: #198754; }
+    .asiento.disponible:hover:not(:disabled) { background: #badbcc; border-color: #146c43; }
+    .asiento.seleccionado { background: #ffc107; color: #000; border-color: #ffca2c; box-shadow: 0 0 0 3px rgba(255, 193, 7, 0.4); }
+    .asiento.vendido { background: #f8d7da; color: #842029; border-color: #dc3545; cursor: not-allowed; }
+    .asiento.reservado { background: #ffe5d0; color: #984c0c; border-color: #fd7e14; cursor: not-allowed; }
+    .asiento.pendiente_verificacion { background: #e2d9f3; color: #432874; border-color: #6f42c1; cursor: not-allowed; }
+    .asiento.bloqueado { background: #e2e3e5; color: #41464b; border-color: #6c757d; cursor: not-allowed; }
+    
+    /* Asientos Especiales (Baño, Escaleras) */
+    .asiento.especial { border-radius: 10px; background: #f8f9fa; border: 2px dashed #adb5bd; color: #adb5bd; font-size: 0.7rem; display: flex; align-items: center; justify-content: center; padding: 0; text-align: center; box-shadow: none; }
+
+    /* Leyenda */
+    .leyenda { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; font-size: 0.8rem; }
     .leyenda-card { max-width: 340px; margin-left: auto; margin-right: auto; }
     @media (min-width: 992px) { .leyenda-card { max-width: 760px; } }
-    .leyenda-item { display: flex; align-items: center; gap: 5px; }
-    .leyenda-cuadro { width: 16px; height: 18px; border-radius: 4px; border: 2px solid #adb5bd; }
+    .leyenda-item { display: flex; align-items: center; gap: 6px; }
+    .leyenda-cuadro { width: 18px; height: 18px; border-radius: 5px; border: 2px solid #adb5bd; }
+
+    /* Panel de Resumen */
     .panel-resumen { position: sticky; top: 20px; }
+    
+    /* Scroll Hint */
     .scroll-hint-flotante { display: none; }
     @media (max-width: 1024px) { .scroll-hint-flotante { display: flex; align-items: center; justify-content: center; gap: 8px; position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 9999; background: rgba(0, 51, 102, 0.95); color: #ffffff; padding: 10px 20px; border-radius: 25px; font-size: 0.85rem; font-weight: 600; box-shadow: 0 4px 15px rgba(0, 51, 102, 0.5); opacity: 0; visibility: hidden; transition: opacity 0.3s ease, visibility 0.3s ease; pointer-events: none; user-select: none; white-space: nowrap; } .scroll-hint-flotante.visible { opacity: 1; visibility: visible; animation: scrollHintBounce 1.5s infinite; } }
     @keyframes scrollHintBounce { 0%, 100% { transform: translateX(-50%) translateY(0); } 50% { transform: translateX(-50%) translateY(-5px); } }
     .scroll-hint-flotante .arrow { font-size: 1.1rem; font-weight: bold; animation: scrollHintArrow 1s infinite; }
     @keyframes scrollHintArrow { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(3px); } }
-    @media (max-width: 576px) { .asiento, .asiento.especial { width: 34px; height: 34px; font-size: 0.65rem; } .mapa-bus { padding: 10px; } .bus-frente__label { font-size: 0.8rem; letter-spacing: 1px; } }
+
+    /* Media Queries para Celulares */
+    @media (max-width: 576px) { 
+        .asiento, .asiento.especial { width: 36px; height: 36px; font-size: 0.75rem; } 
+        .mapa-bus { padding: 8px; } 
+        .pasillo { width: 15px; min-width: 15px; }
+    }
 </style>
 {% endblock %}
 
@@ -121,7 +173,6 @@
                 <h6 class="mb-0 fw-bold"><i class="bi bi-sliders"></i> Panel de Control</h6>
             </div>
             <div class="card-body py-3">
-                
                 <!-- Grupo 1: Gestión de Asientos -->
                 <p class="text-muted small fw-bold mb-1 text-uppercase" style="font-size: 0.7rem; letter-spacing: 1px;">Gestión de Asientos</p>
                 <div class="d-grid gap-2 mb-3">
@@ -132,7 +183,7 @@
                     </div>
                 </div>
 
-                <!-- Grupo 2: Operaciones Especiales (Destacadas) -->
+                <!-- Grupo 2: Operaciones Especiales -->
                 <p class="text-muted small fw-bold mb-1 text-uppercase" style="font-size: 0.7rem; letter-spacing: 1px;">Operaciones Especiales</p>
                 <div class="d-grid gap-2 mb-3">
                     <button class="btn btn-warning fw-bold text-dark shadow-sm" id="btn-modo-transferencia" onclick="activarModoTransferencia()">
@@ -149,7 +200,6 @@
                     <button class="btn btn-outline-dark btn-sm" disabled><i class="bi bi-people"></i> Lista Pasajeros</button>
                     <button class="btn btn-outline-secondary btn-sm" disabled><i class="bi bi-grid-3x3"></i> Distribución</button>
                 </div>
-
             </div>
         </div>
         {% endif %}
@@ -205,7 +255,7 @@
                                         {% if asiento.estado == 'bloqueado' %}bloqueado{% endif %}"
                                     data-asiento-id="{{ asiento.id }}" data-asiento-numero="{{ asiento.numero }}" data-asiento-lado="{{ asiento.lado }}"
                                     {% if asiento.estado != 'disponible' and asiento.reservado_por_id != usuario_id %}disabled{% endif %}
-                                    title="Asiento {{ asiento.numero }} ({{ asiento.get_lado_display }}) — {% if asiento.estado == 'reservado' and asiento.reservado_por_id == usuario_id %}Tu selección{% elif asiento.estado == 'reservado' %}Apartado temporalmente{% else %}{{ asiento.get_estado_display }}{% endif %}">
+                                    title="{% if user.usuarioempresa and asiento.estado == 'vendido' and asiento.info_pasajero %}Asiento {{ asiento.numero }} - {{ asiento.info_pasajero }}{% elif user.usuarioempresa and asiento.estado == 'pendiente_verificacion' and asiento.info_pasajero %}Asiento {{ asiento.numero }} (En verificación) - {{ asiento.info_pasajero }}{% else %}Asiento {{ asiento.numero }} ({{ asiento.get_lado_display }}) — {% if asiento.estado == 'reservado' and asiento.reservado_por_id == usuario_id %}Tu selección{% elif asiento.estado == 'reservado' %}Apartado temporalmente{% else %}{{ asiento.get_estado_display }}{% endif %}{% endif %}">
                                     {{ asiento.numero }}
                                 </button>
                             {% elif asiento.tipo == 'escalera' %}
@@ -231,11 +281,11 @@
             <div class="card-body py-2 px-3">
                 <p class="mb-2 text-center small fw-bold" style="color: #003366;"><i class="bi bi-info-circle"></i> Estados de los asientos</p>
                 <div class="leyenda">
-                    <div class="leyenda-item"><div class="leyenda-cuadro" style="background: #d4edda; border-color: #28a745;"></div><span>Disponible</span></div>
-                    <div class="leyenda-item"><div class="leyenda-cuadro" style="background: #ffc107; border-color: #cc9a06;"></div><span>Tu selección</span></div>
-                    <div class="leyenda-item"><div class="leyenda-cuadro" style="background: #fd7e14; border-color: #e8590c;"></div><span>Apartado temporal</span></div>
-                    <div class="leyenda-item"><div class="leyenda-cuadro" style="background: #9b59b6; border-color: #7d3c98;"></div><span>En verificación</span></div>
-                    <div class="leyenda-item"><div class="leyenda-cuadro" style="background: #dc3545; border-color: #a71d2a;"></div><span>Vendido</span></div>
+                    <div class="leyenda-item"><div class="leyenda-cuadro" style="background: #d1e7dd; border-color: #198754;"></div><span>Disponible</span></div>
+                    <div class="leyenda-item"><div class="leyenda-cuadro" style="background: #ffc107; border-color: #ffca2c;"></div><span>Tu selección</span></div>
+                    <div class="leyenda-item"><div class="leyenda-cuadro" style="background: #ffe5d0; border-color: #fd7e14;"></div><span>Apartado temporal</span></div>
+                    <div class="leyenda-item"><div class="leyenda-cuadro" style="background: #e2d9f3; border-color: #6f42c1;"></div><span>En verificación</span></div>
+                    <div class="leyenda-item"><div class="leyenda-cuadro" style="background: #f8d7da; border-color: #dc3545;"></div><span>Vendido</span></div>
                 </div>
             </div>
         </div>
@@ -554,19 +604,16 @@ document.addEventListener("DOMContentLoaded", function() {
                 
                 boletoParaTransferir = data.resultados[0];
                 
-                // Mostrar el candado con los datos del pasajero y el viaje actual
                 document.getElementById('nombre-transferir').innerText = boletoParaTransferir.nombre;
                 document.getElementById('cedula-transferir').innerText = boletoParaTransferir.cedula;
                 document.getElementById('info-pasajero-transferir').style.display = 'block';
                 
-                // Confirmación de identidad
                 if (confirm(`¿El pasajero ${boletoParaTransferir.nombre} (${boletoParaTransferir.cedula}) es la persona que está en taquilla?\n\nBoleto actual: Bus ${boletoParaTransferir.viaje_hora} - Asiento ${boletoParaTransferir.asiento_numero}.\n\nSi NO es la misma persona, cancele y véndale un boleto nuevo.`)) {
                     
                     const modalElement = document.getElementById('modalTransferencia');
                     const modal = bootstrap.Modal.getInstance(modalElement);
                     if (modal) modal.hide();
 
-                    // ⭐ Usamos el asiento que ya está seleccionado en el mapa
                     const asientoSeleccionadoId = Array.from(seleccionados)[0] || '';
                     
                     if (!asientoSeleccionadoId) {
@@ -574,7 +621,6 @@ document.addEventListener("DOMContentLoaded", function() {
                         return;
                     }
 
-                    // Confirmar el movimiento
                     if (confirm(`¿Confirma mover a ${boletoParaTransferir.nombre} del bus ${boletoParaTransferir.viaje_hora} (Asiento ${boletoParaTransferir.asiento_numero}) al asiento seleccionado en este bus?`)) {
                         const formData = new FormData();
                         formData.append('boleto_id', boletoParaTransferir.id);
@@ -608,7 +654,6 @@ document.addEventListener("DOMContentLoaded", function() {
     // LÓGICA DE REPROGRAMACIÓN (CON VALIDACIÓN)
     // ============================================================
     window.activarModoReprogramar = function() {
-        // ⭐ VALIDACIÓN: Debe haber exactamente 1 asiento seleccionado
         if (seleccionados.size === 0) {
             alert('⚠️ ATENCIÓN: Primero debe seleccionar UN asiento en el mapa para Reprogramar.');
             return;

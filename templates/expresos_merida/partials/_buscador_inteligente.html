@@ -1,0 +1,204 @@
+<!-- ⭐ BUSCADOR INTELIGENTE ESTILO OMIO -->
+<style>
+    /* Contenedor principal */
+    .search-bar-container {
+        background: transparent;
+        max-width: 950px;
+        margin: -40px auto 0 auto;
+        position: relative;
+        z-index: 10;
+    }
+
+    /* El contenedor blanco que agrupa los campos */
+    .search-bar-wrapper {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        justify-content: center;
+        align-items: center;
+        padding: 10px;
+        background: white;
+        border-radius: 50px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        border: 1px solid #e0e0e0;
+    }
+
+    /* Estilo de cada campo (la "pastilla") */
+    .search-pill {
+        background-color: #f0f4f8;
+        border-radius: 50px;
+        padding: 10px 20px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex: 1;
+        min-width: 180px;
+        transition: all 0.3s ease;
+    }
+
+    .search-pill:focus-within {
+        background-color: #e2e8f0;
+        box-shadow: 0 0 0 2px #0F75BB;
+    }
+
+    .search-pill i {
+        color: #0F75BB;
+        font-size: 1.3rem;
+    }
+
+    .search-pill input {
+        border: none;
+        outline: none;
+        background: transparent;
+        width: 100%;
+        font-size: 1rem;
+        color: #333;
+        font-weight: 500;
+    }
+
+    .search-pill input::placeholder {
+        color: #7a8b9e;
+        font-weight: 400;
+    }
+
+    /* Botón de Buscar */
+    .btn-buscar-omio {
+        background-color: #e74c3c;
+        color: white;
+        border: none;
+        border-radius: 50px;
+        padding: 12px 35px;
+        font-weight: bold;
+        font-size: 1rem;
+        transition: all 0.3s;
+        box-shadow: 0 4px 10px rgba(231, 76, 60, 0.3);
+        width: auto;
+    }
+
+    .btn-buscar-omio:hover {
+        background-color: #c0392b;
+        transform: translateY(-2px);
+        box-shadow: 0 6px 15px rgba(231, 76, 60, 0.4);
+    }
+
+    /* Sugerencias del autocomplete */
+    .autocomplete-suggestions {
+        position: absolute;
+        top: 55px;
+        left: 0;
+        right: 0;
+        z-index: 1000;
+        max-height: 250px;
+        overflow-y: auto;
+        border-radius: 15px;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        border: none;
+    }
+
+    /* ⭐ RESPONSIVE PARA CELULARES */
+    @media (max-width: 768px) {
+        .search-bar-wrapper {
+            border-radius: 20px;
+            flex-direction: column;
+            padding: 15px;
+        }
+        .search-pill {
+            width: 100%;
+            border-radius: 15px;
+        }
+        .btn-buscar-omio {
+            width: 100%;
+            margin-top: 5px;
+        }
+    }
+</style>
+
+<form method="get" action="{% url 'core:buscar_viajes' %}" class="search-bar-container">
+    <div class="search-bar-wrapper">
+        <!-- Origen -->
+        <div class="search-pill position-relative">
+            <i class="bi bi-geo-alt"></i>
+            <input type="text" id="input-origen" placeholder="¿Desde dónde sales?" autocomplete="off" required>
+            <input type="hidden" id="origen-id" name="origen">
+            <div id="sugerencias-origen" class="list-group autocomplete-suggestions" style="display: none;"></div>
+        </div>
+
+        <!-- Destino -->
+        <div class="search-pill position-relative">
+            <i class="bi bi-geo-alt-fill"></i>
+            <input type="text" id="input-destino" placeholder="¿A dónde vas?" autocomplete="off" required>
+            <input type="hidden" id="destino-id" name="destino">
+            <div id="sugerencias-destino" class="list-group autocomplete-suggestions" style="display: none;"></div>
+        </div>
+
+        <!-- Fecha -->
+        <div class="search-pill" style="flex: 0.8;">
+            <i class="bi bi-calendar-event"></i>
+            <input type="date" name="fecha" value="{{ hoy|default:'' }}" min="{{ hoy|default:'' }}" required>
+        </div>
+
+        <!-- Botón -->
+        <button type="submit" class="btn-buscar-omio">
+            Buscar
+        </button>
+    </div>
+</form>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    function setupAutocomplete(inputId, sugerenciasId, hiddenId) {
+        const input = document.getElementById(inputId);
+        const sugerencias = document.getElementById(sugerenciasId);
+        const hidden = document.getElementById(hiddenId);
+        let timeoutId;
+
+        input.addEventListener('input', function() {
+            clearTimeout(timeoutId);
+            const query = this.value;
+
+            if (query.length < 2) {
+                sugerencias.style.display = 'none';
+                hidden.value = '';
+                return;
+            }
+
+            timeoutId = setTimeout(() => {
+                fetch(`/api/buscar-oficinas/?q=${encodeURIComponent(query)}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        sugerencias.innerHTML = '';
+                        if (data.length === 0) {
+                            sugerencias.innerHTML = '<div class="list-group-item text-muted">No se encontraron resultados</div>';
+                            sugerencias.style.display = 'block';
+                            return;
+                        }
+                        data.forEach(oficina => {
+                            const item = document.createElement('a');
+                            item.href = '#';
+                            item.className = 'list-group-item list-group-item-action';
+                            item.textContent = oficina.nombre;
+                            item.addEventListener('click', function(e) {
+                                e.preventDefault();
+                                input.value = oficina.nombre;
+                                hidden.value = oficina.id;
+                                sugerencias.style.display = 'none';
+                            });
+                            sugerencias.appendChild(item);
+                        });
+                        sugerencias.style.display = 'block';
+                    })
+                    .catch(error => console.error('Error:', error));
+            }, 300);
+        });
+
+        document.addEventListener('click', function(e) {
+            if (e.target !== input && !sugerencias.contains(e.target)) {
+                sugerencias.style.display = 'none';
+            }
+        });
+    }
+
+    setupAutocomplete('input-origen', 'sugerencias-origen', 'origen-id');
+    setupAutocomplete('input-destino', 'sugerencias-destino', 'destino-id');
+});
+</script>

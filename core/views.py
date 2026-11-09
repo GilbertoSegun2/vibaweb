@@ -89,10 +89,13 @@ def obtener_ordenes_tramo(viaje, origen_id, destino_id):
         pass
     return None, None
 
-# ============================================================
-# VISTAS PÚBLICAS
-# ============================================================
 def inicio(request):
+    # ~ # ⭐ PRUEBA DE FUEGO: Forzar un error aquí mismo para ver si entra a la función
+    # ~ raise Exception(f"EL SLUG LEÍDO ES: {obtener_parametro('200', default='NO_EXISTE')}")
+    
+    # ~ if request.user.is_authenticated and getattr(request.user, 'usuarioempresa', None):
+        # ~ return redirect('core:taquilla_inicio')
+    
     if request.user.is_authenticated and getattr(request.user, 'usuarioempresa', None):
         return redirect('core:taquilla_inicio')
         
@@ -104,8 +107,17 @@ def inicio(request):
     bienvenida_subtitulo = obtener_parametro('161', default='Compra tus boletos de autobús de forma rápida y segura')
     hoy = timezone.localtime(timezone.now()).strftime('%Y-%m-%d')
     
-    usar_buscador = obtener_parametro('187', default=False)
-    template = 'inicio_inteligente.html' if usar_buscador else 'inicio.html'
+    empresa_slug = obtener_parametro('200', default='core')
+    template = f'{empresa_slug}/inicio.html'
+    
+    from django.template.loader import get_template
+    from django.template import TemplateDoesNotExist
+    
+    try:
+        get_template(template)
+    except TemplateDoesNotExist:
+        template = 'core/inicio.html'
+        # ~ empresa_slug = 'core' # Si hace fallback, usamos core
     
     return render(request, template, {
         'oficinas': oficinas, 
@@ -113,6 +125,7 @@ def inicio(request):
         'bienvenida_titulo': bienvenida_titulo, 
         'bienvenida_subtitulo': bienvenida_subtitulo,
         'hoy': hoy,
+        'prefijo_empresa': empresa_slug, # ⭐ ESTE ERA EL DETALLE FALTANTE
     })
 
 @login_required
@@ -276,6 +289,28 @@ def login_view(request):
                     messages.warning(request, mensaje)
                     return render(request, 'login.html', {'form': form, 'mostrar_desbloqueo': True, 'username_bloqueado': username})
                 
+                # ⭐ VERIFICAR SI YA HAY UNA SESIÓN ACTIVA ANTES DE LOGUEAR
+                from .models import SesionActiva
+                from django.utils import timezone
+                from datetime import timedelta
+                
+                if not (user.is_staff or user.is_superuser):
+                    sesion_existente = SesionActiva.objects.filter(user=user).first()
+                    
+                    if sesion_existente:
+                        minutos_espera = int(obtener_parametro('142', default=3))
+                        inactividad = timezone.now() - sesion_existente.ultima_actividad
+                        
+                        if inactividad < timedelta(minutes=minutos_espera):
+                            # El usuario ya tiene una sesión activa reciente -> BLOQUEAMOS el nuevo ingreso
+                            messages.warning(
+                                request, 
+                                f"Estimado usuario: su cuenta ya está activa en otro dispositivo (IP: {sesion_existente.ip_address}). "
+                                f"Por seguridad, no puede iniciar una nueva sesión hasta que la anterior expire o se cierre. "
+                                f"Si usted es el dueño de la cuenta, espere unos minutos o contacte al administrador."
+                            )
+                            return render(request, 'login.html', {'form': form})
+
                 auth_login(request, user)
                 request.session.set_expiry(0)
                 
@@ -296,20 +331,19 @@ def login_view(request):
                 request.session.pop('asientos_seleccionados', None)
                 request.session.pop('pasajeros_data', None)
                 
-                from .models import SesionActiva
-                if not (user.is_staff or user.is_superuser) and getattr(user, 'cliente', None):
-                    SesionActiva.objects.update_or_create(
+                # ⭐ REGISTRAMOS LA SESIÓN (Ahora sí, para todos los roles)
+                if not (user.is_staff or user.is_superuser):
+                    SesionActiva.objects.filter(user=user).delete()
+                    SesionActiva.objects.create(
                         user=user, 
-                        defaults={
-                            'session_key': request.session.session_key, 
-                            'ip_address': request.META.get('REMOTE_ADDR'), 
-                            'user_agent': request.META.get('HTTP_USER_AGENT', '')[:250], 
-                            'ultima_actividad': timezone.now()
-                        }
+                        session_key=request.session.session_key, 
+                        ip_address=request.META.get('REMOTE_ADDR'), 
+                        user_agent=request.META.get('HTTP_USER_AGENT', '')[:250], 
+                        ultima_actividad=timezone.now()
                     )
                 
                 nombre = user.first_name or user.username
-                messages.success(request, f"Estimado cliente {nombre}: bienvenido nuevamente. Es un gusto tenerlo de vuelta.")
+                messages.success(request, f"Estimado usuario {nombre}: bienvenido nuevamente. Es un gusto tenerlo de vuelta.")
                 
                 next_url = request.POST.get('next') or request.GET.get('next') or ''
                 
@@ -329,7 +363,7 @@ def login_view(request):
                 else:
                     return redirect('core:inicio')
             else:
-                messages.error(request, "Estimado cliente: los datos ingresados no coinciden con nuestros registros. Por favor, verifique su usuario y contraseña e intente nuevamente.")
+                messages.error(request, "Estimado usuario: los datos ingresados no coinciden con nuestros registros. Por favor, verifique su usuario y contraseña e intente nuevamente.")
     else:
         form = LoginForm()
     minutos_login = int(obtener_parametro('185', default=2))
@@ -878,6 +912,7 @@ def taquilla_inicio(request):
         try:
             fecha = datetime.strptime(fecha_str, '%Y-%m-%d').date()
             oficina_origen = Oficina.objects.get(id=origen_id)
+            oficina_destino = Oficina.objects.get(id=destino_id) # Obtenemos la oficina destino
             
             hoy = timezone.localtime(timezone.now()).date()
             ahora = timezone.localtime(timezone.now()).time()
@@ -890,11 +925,12 @@ def taquilla_inicio(request):
                 viajes_del_dia = viajes_del_dia.filter(hora__gt=ahora)
 
             for viaje in viajes_del_dia:
-                pasa_por_origen = viaje.ruta.paradas.filter(oficina=oficina_origen).exists()
-                pasa_por_destino = viaje.ruta.paradas.filter(oficina_id=destino_id).exists()
+                # ⭐ VALIDACIÓN ESTRICTA DE DIRECCIÓN
+                parada_origen = viaje.ruta.paradas.filter(oficina=oficina_origen).first()
+                parada_destino = viaje.ruta.paradas.filter(oficina=oficina_destino).first()
                 
-                if pasa_por_origen and pasa_por_destino:
-                    tarifa = Tarifa.objects.filter(origen=oficina_origen, destino_id=destino_id, activa=True).first()
+                if parada_origen and parada_destino and parada_origen.orden < parada_destino.orden:
+                    tarifa = Tarifa.objects.filter(origen=oficina_origen, destino=oficina_destino, activa=True).first()
                     disponibles = viaje.asientos.filter(estado='disponible').count()
                     
                     viajes_con_info.append({
@@ -903,8 +939,8 @@ def taquilla_inicio(request):
                         'precio_bs': (tarifa.monto_usd * tasa_bcv) if tarifa and tasa_bcv else 0,
                         'disponibles': disponibles
                     })
-        except ValueError:
-            messages.error(request, "Formato de fecha inválido.")
+        except (ValueError, Oficina.DoesNotExist):
+            messages.error(request, "Formato de fecha o datos inválidos.")
 
     return render(request, 'taquilla/inicio.html', {
         'empleado': empleado, 'oficinas': oficinas,
@@ -978,6 +1014,7 @@ def taquilla_mapa(request, viaje_id):
 
     asientos = viaje.asientos.order_by('piso', 'fila', 'columna')
     asientos_por_piso = {}
+    
     for asiento in asientos:
         if asiento.tipo == 'asiento':
             disponible_para_tramo = asiento_esta_disponible_en_tramo(asiento.id, viaje.id, parada_origen.orden, parada_destino.orden)
@@ -989,6 +1026,13 @@ def taquilla_mapa(request, viaje_id):
 
         asiento.estado_real = asiento.estado
         asiento.disponible_para_tramo = disponible_para_tramo
+
+        # ⭐ NUEVO: Buscar info del pasajero si el asiento está vendido
+        asiento.info_pasajero = None
+        if asiento.estado in ['vendido', 'pendiente_verificacion']:
+            boleto = Boleto.objects.filter(asiento=asiento, viaje=viaje).first()
+            if boleto:
+                asiento.info_pasajero = f"{boleto.pasajero_nombre} ({boleto.numero_boleto})"
 
         piso = asiento.piso
         if piso not in asientos_por_piso: asientos_por_piso[piso] = {}
@@ -1438,51 +1482,81 @@ def buscar_viajes(request):
     origen_id = request.GET.get('origen')
     destino_id = request.GET.get('destino')
     fecha_str = request.GET.get('fecha')
+    
     if not (origen_id and destino_id and fecha_str):
         return render(request, 'buscar_viajes.html', {'viajes_con_info': [], 'oficinas': Oficina.objects.filter(activa=True).order_by('nombre')})
-    viajes = Viaje.objects.filter(estado='programado', cerrado_venta=False, ruta__activa=True)
-    for viaje in viajes:
-        liberar_reservas_vencidas(viaje=viaje)
+    
+    try:
+        origen_id = int(origen_id)
+        destino_id = int(destino_id)
+    except ValueError:
+        return render(request, 'buscar_viajes.html', {'viajes_con_info': [], 'oficinas': Oficina.objects.filter(activa=True).order_by('nombre')})
+
     oficina_origen = Oficina.objects.filter(id=origen_id).first()
     oficina_destino = Oficina.objects.filter(id=destino_id).first()
+    
+    if not oficina_origen or not oficina_destino:
+        return render(request, 'buscar_viajes.html', {'viajes_con_info': [], 'oficinas': Oficina.objects.filter(activa=True).order_by('nombre')})
+
+    # ⭐ LA SOLUCIÓN: Buscar todos los viajes programados y filtrar manualmente
+    viajes_base = Viaje.objects.filter(
+        estado='programado', 
+        cerrado_venta=False, 
+        ruta__activa=True
+    ).select_related('ruta', 'bus')
+
+    viajes_validos = []
+    for viaje in viajes_base:
+        # Buscamos la parada de origen y la de destino en la ruta de ESTE viaje
+        parada_origen = viaje.ruta.paradas.filter(oficina=oficina_origen).first()
+        parada_destino = viaje.ruta.paradas.filter(oficina=oficina_destino).first()
+        
+        # Si el origen y destino están en la ruta, y el origen va ANTES que el destino -> ¡Es válido!
+        if parada_origen and parada_destino and parada_origen.orden < parada_destino.orden:
+            viajes_validos.append(viaje)
+
+    # Ahora filtramos por fecha
     fecha = None
     tarifa = None
-    if oficina_origen:
-        viajes = viajes.filter(
-            Q(ruta__origen=oficina_origen) | 
-            Q(ruta__paradas__oficina=oficina_origen)
-        )
-    if oficina_destino:
-        viajes = viajes.filter(
-            Q(ruta__destinos=oficina_destino) | 
-            Q(ruta__paradas__oficina=oficina_destino)
-        )
+    viajes_finales = []
+    
     try:
         fecha = datetime.strptime(fecha_str, '%Y-%m-%d').date()
-        hoy = timezone.localtime(timezone.now()).date() 
+        hoy = timezone.now().date()
+        
         if fecha >= hoy:
-            viajes = viajes.filter(fecha=fecha)
-            
-            if fecha == hoy:
-                minutos_bloqueo = int(obtener_parametro('184', default=60))
-                ahora = timezone.localtime(timezone.now())
-                hora_limite = ahora + timedelta(minutes=minutos_bloqueo)
-                viajes = viajes.filter(hora__gt=hora_limite.time())
-        else:
-            viajes = viajes.none()
+            for viaje in viajes_validos:
+                if viaje.fecha == fecha:
+                    # Validar hora si es hoy
+                    if fecha == hoy:
+                        minutos_bloqueo = int(obtener_parametro('184', default=60))
+                        ahora = timezone.localtime(timezone.now())
+                        hora_limite = ahora + timedelta(minutes=minutos_bloqueo)
+                        if viaje.hora > hora_limite.time():
+                            viajes_finales.append(viaje)
+                    else:
+                        viajes_finales.append(viaje)
     except ValueError:
-        viajes = viajes.none()
+        viajes_finales = []
+
+    # Calcular tarifa
     if oficina_origen and oficina_destino:
         tarifa = Tarifa.objects.filter(origen=oficina_origen, destino=oficina_destino, activa=True).first()
+    
+    # Guardar en sesión
     if oficina_origen:
         request.session['busqueda_origen_id'] = oficina_origen.id
     if oficina_destino:
         request.session['busqueda_destino_id'] = oficina_destino.id
-    viajes = viajes.select_related('ruta', 'bus', 'ruta__origen').order_by('fecha', 'hora').distinct()
+    
+    # Liberar reservas vencidas de estos viajes
+    for viaje in viajes_finales:
+        liberar_reservas_vencidas(viaje=viaje)
+        
     viajes_con_info = []
     tasa_bcv = obtener_parametro('107', default=0)
     
-    for viaje in viajes:
+    for viaje in viajes_finales:
         disponibles = viaje.asientos.filter(estado='disponible').count()
         precio_usd = tarifa.monto_usd if tarifa else 0
         
@@ -1496,9 +1570,14 @@ def buscar_viajes(request):
             'precio_usd': precio_usd,
             'precio_bs': precio_bs_formateado,
         })
+        
     return render(request, 'buscar_viajes.html', {
-        'viajes_con_info': viajes_con_info, 'oficina_origen': oficina_origen, 'oficina_destino': oficina_destino,
-        'fecha': fecha, 'tarifa': tarifa, 'oficinas': Oficina.objects.filter(activa=True).order_by('nombre'),
+        'viajes_con_info': viajes_con_info, 
+        'oficina_origen': oficina_origen, 
+        'oficina_destino': oficina_destino,
+        'fecha': fecha, 
+        'tarifa': tarifa, 
+        'oficinas': Oficina.objects.filter(activa=True).order_by('nombre'),
     })
     
 @require_POST

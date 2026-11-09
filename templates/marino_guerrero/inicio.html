@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Inicio - {{ empresa_nombre|default:"Viba-Web" }}{% endblock %}
+
+{% block content %}
+    <!-- Hero exclusivo de MG -->
+    {% include 'marino_guerrero/partials/_hero.html' %}
+    
+    <!-- Buscador Inteligente (Estilo Omio) compartido desde core -->
+    {% include 'core/partials/_buscador_inteligente.html' %}
+    
+    <!-- Los pilares compartidos -->
+    {% include 'core/partials/_pilares.html' %}
+{% endblock %}

@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Inicio - {{ empresa_nombre|default:"Viba-Web" }}{% endblock %}
+
+{% block content %}
+    <!-- Hero exclusivo de Expresos Mérida -->
+    {% include 'expresos_merida/partials/_hero.html' %}
+    
+    <!-- Buscador Inteligente compartido desde core -->
+    {% include 'core/partials/_buscador_inteligente.html' %}
+    
+    <!-- Los pilares compartidos desde core -->
+    {% include 'core/partials/_pilares.html' %}
+{% endblock %}

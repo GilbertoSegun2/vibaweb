@@ -64,11 +64,6 @@ class SessionTimeoutMiddleware:
         return self.get_response(request)
 
 class SesionUnicaMiddleware:
-    """
-    Garantiza que cada usuario-web (Cliente) tenga solo una sesión activa.
-    Exento: Admin, staff y Usuarios de Empresa (Taquilleros).
-    """
-    
     def __init__(self, get_response):
         self.get_response = get_response
     
@@ -80,17 +75,7 @@ class SesionUnicaMiddleware:
         if request.user.is_authenticated:
             user = request.user
             
-            # Admin/staff exento
             if user.is_staff or user.is_superuser:
-                return self.get_response(request)
-            
-            # ⭐ EMPLEADOS (TAQUILLEROS) EXENTOS DE LA RESTRICCIÓN
-            if getattr(user, 'usuarioempresa', None):
-                return self.get_response(request)
-            
-            # Solo aplica a clientes (usuarios-web)
-            cliente = getattr(user, 'cliente', None)
-            if not cliente:
                 return self.get_response(request)
             
             try:
@@ -107,7 +92,7 @@ class SesionUnicaMiddleware:
                     auth_logout(request)
                     messages.warning(
                         request,
-                        "Estimado cliente: su cuenta fue abierta en otro dispositivo. "
+                        "Estimado usuario: su cuenta fue abierta en otro dispositivo. "
                         "Por seguridad, esta sesión ha sido cerrada automáticamente."
                     )
                     return redirect('core:login')
@@ -207,5 +192,20 @@ class LimpiarMensajesMiddleware:
             list(get_messages(request))  # Consumir y borrar
         return self.get_response(request)
         
+import os
+from django.conf import settings
+from .utils import obtener_parametro
 
+class DynamicTemplateMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
 
+    def __call__(self, request):
+        # Leemos el Parámetro 200 (ej: 'marino_guerrero' o 'expresos_merida')
+        empresa_slug = obtener_parametro('200', default='')
+        
+        # Guardamos la carpeta base en el request
+        request.empresa_template_dir = empresa_slug if empresa_slug else 'core'
+        
+        response = self.get_response(request)
+        return response

@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% load static %}
-{% block title %}Inicio - Viba-Web{% endblock %}
+{% block title %}Inicio - {{ empresa_nombre|default:"Viba-Web" }}{% endblock %}
 
 {% block content %}
     {% include 'partials/_hero.html' %}

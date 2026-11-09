@@ -56,6 +56,8 @@ MIDDLEWARE = [
     'core.middleware.NoCacheMiddleware',          # Evita caché en páginas protegidas
     'core.middleware.LimpiarMensajesMiddleware',  # ⭐ NUEVO: Limpia mensajes viejos
     'core.middleware.LimpiarMensajesMiddleware',
+    
+    'core.middleware.DynamicTemplateMiddleware',
 ]
 
 AUTO_LOGOUT_DELAY = 120  # 15 minutos * 60 segundos
@@ -64,7 +66,11 @@ ROOT_URLCONF = 'vibaweb_proyecto.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [BASE_DIR / 'templates'],
+        'DIRS': [
+            BASE_DIR / 'templates' / 'marino_guerrero', # ⭐ La carpeta de MG
+            BASE_DIR / 'templates' / 'expresos_merida', # ⭐ La carpeta de Mérida
+            BASE_DIR / 'templates',                     # ⭐ La carpeta raíz (fallback)
+        ],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -73,7 +79,7 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 'core.context_processors.personalizacion',
-                'core.context_processors.tasa_bcv',  # ⭐ AGREGAR ESTA LÍNEA
+                'core.context_processors.tasa_bcv',
                 'core.context_processors.timeout_inactividad',
             ],
         },

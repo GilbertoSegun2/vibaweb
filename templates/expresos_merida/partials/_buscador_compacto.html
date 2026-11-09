@@ -1,0 +1,125 @@
+<!-- ⭐ BUSCADOR COMPACTO PARA RESULTADOS -->
+<style>
+    .search-compact-bar {
+        background: white;
+        border-radius: 12px;
+        padding: 8px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        border: 1px solid #e0e0e0;
+    }
+    .search-compact-field {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 8px;
+        flex: 1;
+        min-width: 150px;
+        background: #f8f9fa;
+    }
+    .search-compact-field i { color: #0F75BB; font-size: 1rem; }
+    .search-compact-field input {
+        border: none;
+        background: transparent;
+        outline: none;
+        width: 100%;
+        font-size: 0.9rem;
+        font-weight: 500;
+        color: #333;
+    }
+    .btn-buscar-compact {
+        background-color: #0F75BB;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 10px 20px;
+        font-weight: bold;
+        font-size: 0.9rem;
+        transition: 0.3s;
+    }
+    .btn-buscar-compact:hover { background-color: #0a5a8f; }
+
+    @media (max-width: 768px) {
+        .search-compact-bar { flex-direction: column; }
+        .search-compact-field { width: 100%; }
+        .btn-buscar-compact { width: 100%; }
+    }
+</style>
+
+<form method="get" action="{% url 'core:buscar_viajes' %}" class="search-compact-bar">
+    <!-- Origen -->
+    <div class="search-compact-field position-relative">
+        <i class="bi bi-geo-alt"></i>
+        <input type="text" id="input-origen-compact" value="{{ oficina_origen.nombre|default:'' }}" autocomplete="off" required>
+        <input type="hidden" id="origen-id-compact" name="origen" value="{{ oficina_origen.id|default:'' }}">
+        <div id="sugerencias-origen-compact" class="list-group autocomplete-suggestions" style="display: none; position: absolute; top: 40px; left: 0; right: 0; z-index: 1000;"></div>
+    </div>
+
+    <!-- Destino -->
+    <div class="search-compact-field position-relative">
+        <i class="bi bi-geo-alt-fill"></i>
+        <input type="text" id="input-destino-compact" value="{{ oficina_destino.nombre|default:'' }}" autocomplete="off" required>
+        <input type="hidden" id="destino-id-compact" name="destino" value="{{ oficina_destino.id|default:'' }}">
+        <div id="sugerencias-destino-compact" class="list-group autocomplete-suggestions" style="display: none; position: absolute; top: 40px; left: 0; right: 0; z-index: 1000;"></div>
+    </div>
+
+    <!-- Fecha -->
+    <div class="search-compact-field">
+        <i class="bi bi-calendar-event"></i>
+        <input type="date" name="fecha" value="{{ fecha|date:'Y-m-d'|default:'' }}" required>
+    </div>
+
+    <button type="submit" class="btn-buscar-compact">
+        <i class="bi bi-search"></i> Buscar
+    </button>
+</form>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    function setupAutocomplete(inputId, sugerenciasId, hiddenId) {
+        const input = document.getElementById(inputId);
+        const sugerencias = document.getElementById(sugerenciasId);
+        const hidden = document.getElementById(hiddenId);
+        let timeoutId;
+
+        input.addEventListener('input', function() {
+            clearTimeout(timeoutId);
+            const query = this.value;
+            if (query.length < 2) { sugerencias.style.display = 'none'; hidden.value = ''; return; }
+
+            timeoutId = setTimeout(() => {
+                fetch(`/api/buscar-oficinas/?q=${encodeURIComponent(query)}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        sugerencias.innerHTML = '';
+                        if (data.length === 0) {
+                            sugerencias.innerHTML = '<div class="list-group-item text-muted">Sin resultados</div>';
+                            sugerencias.style.display = 'block'; return;
+                        }
+                        data.forEach(oficina => {
+                            const item = document.createElement('a');
+                            item.href = '#'; item.className = 'list-group-item list-group-item-action';
+                            item.textContent = oficina.nombre;
+                            item.addEventListener('click', function(e) {
+                                e.preventDefault();
+                                input.value = oficina.nombre;
+                                hidden.value = oficina.id;
+                                sugerencias.style.display = 'none';
+                            });
+                            sugerencias.appendChild(item);
+                        });
+                        sugerencias.style.display = 'block';
+                    }).catch(error => console.error(error));
+            }, 300);
+        });
+        document.addEventListener('click', function(e) {
+            if (e.target !== input && !sugerencias.contains(e.target)) sugerencias.style.display = 'none';
+        });
+    }
+    setupAutocomplete('input-origen-compact', 'sugerencias-origen-compact', 'origen-id-compact');
+    setupAutocomplete('input-destino-compact', 'sugerencias-destino-compact', 'destino-id-compact');
+});
+</script>

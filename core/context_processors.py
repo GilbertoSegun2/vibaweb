@@ -39,6 +39,8 @@ def personalizacion(request):
         'inicio_fondo': obtener_parametro('151', default=''),
         'navbar_color_1': obtener_parametro('152', default='#003366'),
         'navbar_color_2': obtener_parametro('153', default='#001a33'),
+        # ⭐ NUEVA LÍNEA: Nombre de la empresa para el navbar y títulos
+        'empresa_nombre': obtener_parametro('1', default='Viba-Web'),
     }
 
 def timeout_inactividad(request):
