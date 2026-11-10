@@ -540,3 +540,38 @@ class PisteroAdmin(BaseImportExportAdmin):
     list_display = ('nombre', 'cedula', 'oficina', 'comision_usd', 'activo')
     list_filter = ('oficina', 'activo')
     search_fields = ('nombre', 'cedula')
+    
+from .models import Conductor, Liquidacion, GastoLiquidacion
+
+@admin.register(Conductor)
+class ConductorAdmin(admin.ModelAdmin):
+    list_display = ('cedula', 'nombre', 'telefono', 'activo')
+    list_filter = ('activo',)
+    search_fields = ('cedula', 'nombre')
+    ordering = ('nombre',)
+
+@admin.register(Liquidacion)
+class LiquidacionAdmin(admin.ModelAdmin):
+    list_display = ('numero_liquidacion', 'bus', 'oficina_liquidacion', 'fecha_liquidacion', 'neto_a_pagar_usd', 'liquidado_por')
+    list_filter = ('oficina_liquidacion', 'fecha_liquidacion')
+    search_fields = ('numero_liquidacion', 'bus__placa')
+    readonly_fields = ('numero_liquidacion', 'fecha_liquidacion', 'liquidado_por')
+    ordering = ('-fecha_liquidacion',)
+    
+    fieldsets = (
+        ('Información Básica', {
+            'fields': ('numero_liquidacion', 'viaje', 'bus', 'oficina_liquidacion', 'dueno', 'conductores_nombres')
+        }),
+        ('Montos', {
+            'fields': ('total_bruto_usd', 'total_bruto_bs', 'porcentaje_empresa', 'monto_porcentaje_empresa_usd', 'total_gastos_antes_usd', 'total_gastos_despues_usd', 'neto_a_pagar_usd', 'neto_a_pagar_bs')
+        }),
+        ('Auditoría', {
+            'fields': ('fecha_liquidacion', 'liquidado_por', 'observacion')
+        }),
+    )
+
+@admin.register(GastoLiquidacion)
+class GastoLiquidacionAdmin(admin.ModelAdmin):
+    list_display = ('liquidacion', 'concepto', 'monto_usd', 'tipo')
+    list_filter = ('tipo',)
+    search_fields = ('concepto', 'liquidacion__numero_liquidacion')

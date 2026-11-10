@@ -68,9 +68,17 @@
         
         <!-- ENCABEZADO -->
         <div class="bg-header">
-            <h3 style="margin: 0; font-size: 16px; letter-spacing: 1px; font-weight: 800;">EXPRESOS MÉRIDA C.A.</h3>
+            <h3 style="margin: 0; font-size: 16px; letter-spacing: 1px; font-weight: 800;">{{ empresa_nombre|upper|default:"VIBA-WEB" }}</h3>
             <p class="text-small" style="margin: 2px 0 0 0;">OFICINA: {{ transaccion.oficina_venta.nombre|upper|default:"TAQUILLA" }}</p>
         </div>
+
+        <!-- ⭐ AVISO DE AUTO-CHEQUEO -->
+        {% if boleto.estado == 'usado' %}
+        <div style="background: #fff3cd; border: 2px dashed #ffc107; padding: 10px; text-align: center; margin: 10px 15px 0 15px;">
+            <strong style="color: #856404; font-size: 14px;">✅ AUTO-CHEQUEADO</strong><br>
+            <small style="color: #856404;">Por favor, coloque el sello de "CHEQUEADO" en el boleto físico con sus iniciales.</small>
+        </div>
+        {% endif %}
 
         <div style="padding: 15px;">
             <!-- DATOS DEL PASAJERO -->

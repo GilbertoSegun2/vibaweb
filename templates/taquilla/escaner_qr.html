@@ -1,0 +1,160 @@
+{% extends 'base.html' %}
+{% block title %}Abordaje y Chequeo - Taquilla{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 style="color: #003366;"><i class="bi bi-qr-code-scan"></i> Abordaje y Chequeo</h2>
+        <a href="{% url 'core:taquilla_inicio' %}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Volver</a>
+    </div>
+
+    <div class="row">
+        <!-- Panel Izquierdo: Escáner -->
+        <div class="col-md-5">
+            <div class="card shadow-sm mb-3">
+                <div class="card-header bg-primary text-white"><strong><i class="bi bi-bus-front"></i> Seleccione la Salida</strong></div>
+                <div class="card-body">
+                    <select id="select-viaje" class="form-select mb-3">
+                        <option value="">-- Seleccione el viaje --</option>
+                        {% for viaje in viajes %}
+                            <option value="{{ viaje.id }}" {% if viaje_preseleccionado|stringformat:"s" == viaje.id|stringformat:"s" %}selected{% endif %}>
+                                {{ viaje.ruta.nombre }} - {{ viaje.hora|time:"h:i A" }} ({{ viaje.bus.placa }})
+                            </option>
+                        {% endfor %}
+                    </select>
+
+                    <!-- ⭐ CONTADOR DE ABORDADOS -->
+                    <div class="alert alert-info text-center py-2 mb-3">
+                        <i class="bi bi-people-fill"></i> 
+                        Pasajeros Abordados: <strong id="contador-abordados">{{ total_abordados }}</strong>
+                    </div>
+
+                    <!-- Lector QR -->
+                    <div id="reader" style="width: 100%; border-radius: 12px; overflow: hidden; border: 2px solid #003366; display: none;"></div>
+                    <p class="text-muted text-center mt-2 small" id="instruccion">Seleccione un viaje y active la cámara.</p>
+                    <button class="btn btn-primary w-100 mt-3" onclick="iniciarEscaner()"><i class="bi bi-camera-video"></i> Activar Cámara</button>
+
+                    <hr>
+                    
+                    <!-- Entrada Manual -->
+                    <label class="form-label fw-bold text-muted small">O ingrese el Número de Boleto:</label>
+                    <div class="input-group">
+                        <input type="text" id="input-boleto-manual" class="form-control form-control-lg" placeholder="Ej: 005-000123">
+                        <button class="btn btn-primary" onclick="validarBoletoManual()"><i class="bi bi-search"></i> Validar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Panel Derecho: Resultados -->
+        <div class="col-md-7">
+            <div id="resultado" class="card shadow-sm h-100" style="display: none;">
+                <div class="card-body text-center d-flex flex-column justify-content-center align-items-center">
+                    <h1 id="icono-resultado" style="font-size: 5rem;"></h1>
+                    <h4 id="mensaje-resultado"></h4>
+                    <p id="detalles-resultado" class="text-muted mt-2"></p>
+                    <div class="mt-4 w-100">
+                        <a href="#" id="btn-ir-liquidar" class="btn btn-success btn-lg w-100" style="display: none;">
+                            <i class="bi bi-cash-stack"></i> Ir a Liquidar este Viaje
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/html5-qrcode"></script>
+<script>
+    let html5QrCode;
+    
+    function iniciarEscaner() {
+        const viajeId = document.getElementById('select-viaje').value;
+        if (!viajeId) {
+            alert('Primero debe seleccionar un viaje.');
+            return;
+        }
+        
+        document.getElementById('reader').style.display = 'block';
+        document.getElementById('instruccion').innerText = 'Apunte la cámara al código QR del boleto.';
+        
+        html5QrCode = new Html5Qrcode("reader");
+        html5QrCode.start(
+            { facingMode: "environment" },
+            { fps: 10, qrbox: { width: 250, height: 250 } },
+            (decodedText) => {
+                html5QrCode.stop().then(() => {
+                    document.getElementById('reader').style.display = 'none';
+                    document.getElementById('instruccion').innerText = 'Procesando...';
+                    validarQR(decodedText, viajeId);
+                });
+            },
+            (errorMessage) => { /* Ignorar */ }
+        ).catch(err => alert('Error al iniciar la cámara: ' + err));
+    }
+
+    function validarBoletoManual() {
+        const numero = document.getElementById('input-boleto-manual').value.trim();
+        const viajeId = document.getElementById('select-viaje').value;
+        
+        if (!viajeId) { alert('Primero seleccione un viaje.'); return; }
+        if (!numero) { alert('Ingrese el número de boleto.'); return; }
+        
+        validarQR(null, viajeId, numero);
+    }
+
+    function validarQR(codigo, viajeId, numeroBoleto = null) {
+        const formData = new FormData();
+        if (codigo) formData.append('codigo_qr', codigo);
+        if (numeroBoleto) formData.append('numero_boleto', numeroBoleto);
+        formData.append('viaje_id', viajeId);
+        formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+        fetch('/taquilla/api/validar-qr/', {
+            method: 'POST',
+            body: formData
+        })
+        .then(res => res.json())
+        .then(data => {
+            const resDiv = document.getElementById('resultado');
+            resDiv.style.display = 'block';
+            
+            const icono = document.getElementById('icono-resultado');
+            const mensaje = document.getElementById('mensaje-resultado');
+            const detalles = document.getElementById('detalles-resultado');
+            const btnLiquidar = document.getElementById('btn-ir-liquidar');
+            const contadorEl = document.getElementById('contador-abordados');
+
+            if (data.ok) {
+                resDiv.className = 'card shadow-sm h-100 border-success';
+                icono.innerText = '✅';
+                mensaje.innerText = 'Abordado correctamente';
+                mensaje.className = 'text-success fw-bold';
+                detalles.innerHTML = `<strong>${data.pasajero}</strong><br>CI: ${data.cedula}<br>Asiento: ${data.asiento}<br>Boleto: ${data.boleto}`;
+                
+                btnLiquidar.style.display = 'block';
+                btnLiquidar.href = `/taquilla/liquidar/?viaje_id=${viajeId}`;
+
+                // ⭐ Incrementar el contador de abordados
+                if (contadorEl) {
+                    contadorEl.innerText = parseInt(contadorEl.innerText) + 1;
+                }
+            } else {
+                resDiv.className = 'card shadow-sm h-100 border-danger';
+                icono.innerText = '❌';
+                mensaje.innerText = 'Error de Validación';
+                mensaje.className = 'text-danger fw-bold';
+                detalles.innerHTML = `<strong>${data.error}</strong>`;
+                btnLiquidar.style.display = 'none';
+            }
+            
+            document.getElementById('instruccion').innerText = 'Listo para el siguiente escaneo.';
+            document.getElementById('input-boleto-manual').value = '';
+        })
+        .catch(err => {
+            console.error('Error:', err);
+            alert('Error de conexión al validar QR.');
+        });
+    }
+</script>
+{% endblock %}

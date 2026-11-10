@@ -85,6 +85,8 @@ class Bus(models.Model):
     modelo = models.CharField(max_length=50, verbose_name="Modelo")
     tipo = models.CharField(max_length=20, choices=TIPOS, default='otro', verbose_name="Tipo")
     capacidad = models.PositiveIntegerField(verbose_name="Capacidad total")
+    numero_bus = models.CharField(max_length=20, unique=True, null=True, blank=True, verbose_name="Número de Bus")
+    conductores = models.ManyToManyField('Conductor', blank=True, related_name='buses', verbose_name="Conductores asignados")
     puestos_descuento_max = models.PositiveIntegerField(
         null=True,
         blank=True,
@@ -409,6 +411,7 @@ class Boleto(models.Model):
         ('vendido', 'Vendido'),
         ('usado', 'Usado'),
         ('cancelado', 'Cancelado con crédito'),
+        ('anulado', 'Anulado por taquilla'),
         ('no_show', 'No se presentó'),
         ('reprogramado', 'Reprogramado'),
         ('liquidado', 'Liquidado'),
@@ -850,3 +853,81 @@ class Pistero(models.Model):
 
     def __str__(self):
         return f"{self.nombre} ({self.cedula}) - {self.oficina.nombre}"
+        
+class Conductor(models.Model):
+    """Conductores o Pilotos de la empresa (o de los socios)"""
+    cedula = models.CharField(max_length=20, unique=True, verbose_name="Cédula")
+    nombre = models.CharField(max_length=100, verbose_name="Nombre Completo")
+    telefono = models.CharField(max_length=20, blank=True, verbose_name="Teléfono")
+    activo = models.BooleanField(default=True, verbose_name="Activo")
+
+    class Meta:
+        verbose_name = "Conductor"
+        verbose_name_plural = "Conductores"
+        ordering = ['nombre']
+
+    def __str__(self):
+        return f"{self.nombre} ({self.cedula})"
+
+
+class Liquidacion(models.Model):
+    """Acta de liquidación de un viaje (bus + fecha + oficina)"""
+    # Numeración Correlativa (por oficina)
+    numero_liquidacion = models.CharField(max_length=20, unique=True, verbose_name="N° Liquidación")
+    
+    # Relaciones
+    viaje = models.ForeignKey(Viaje, on_delete=models.PROTECT, verbose_name="Viaje")
+    bus = models.ForeignKey(Bus, on_delete=models.PROTECT, verbose_name="Bus")
+    oficina_liquidacion = models.ForeignKey(Oficina, on_delete=models.PROTECT, verbose_name="Oficina que liquida")
+    
+    # Datos del bus al momento de liquidar
+    dueno = models.ForeignKey(Empresa, on_delete=models.PROTECT, verbose_name="Dueño del Bus")
+    conductores_nombres = models.CharField(max_length=250, verbose_name="Nombres de Conductores")
+    
+    # Totales (Snapshot al momento de liquidar)
+    total_bruto_usd = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Total Bruto USD")
+    total_bruto_bs = models.DecimalField(max_digits=20, decimal_places=2, default=0, verbose_name="Total Bruto Bs.")
+    
+    # Porcentaje de la empresa
+    porcentaje_empresa = models.DecimalField(max_digits=5, decimal_places=2, default=0, verbose_name="% Empresa")
+    monto_porcentaje_empresa_usd = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Monto Empresa USD")
+    
+    # Gastos
+    total_gastos_antes_usd = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Gastos antes del %")
+    total_gastos_despues_usd = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Gastos después del %")
+    
+    # Neto
+    neto_a_pagar_usd = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Neto a Pagar USD")
+    neto_a_pagar_bs = models.DecimalField(max_digits=20, decimal_places=2, default=0, verbose_name="Neto a Pagar Bs.")
+    
+    # Auditoría
+    fecha_liquidacion = models.DateTimeField(auto_now_add=True)
+    liquidado_por = models.ForeignKey(User, on_delete=models.PROTECT, verbose_name="Liquidado por")
+    observacion = models.TextField(blank=True, verbose_name="Observación")
+
+    class Meta:
+        verbose_name = "Liquidación"
+        verbose_name_plural = "Liquidaciones"
+        ordering = ['-fecha_liquidacion']
+
+    def __str__(self):
+        return f"Liq. {self.numero_liquidacion} - {self.bus.placa} - {self.fecha_liquidacion.strftime('%d/%m/%Y')}"
+
+
+class GastoLiquidacion(models.Model):
+    """Detalle de los gastos aplicados a una liquidación"""
+    TIPOS = [
+        ('antes', 'Antes del Porcentaje'),
+        ('despues', 'Después del Porcentaje'),
+    ]
+    liquidacion = models.ForeignKey(Liquidacion, on_delete=models.CASCADE, related_name='gastos')
+    concepto = models.CharField(max_length=100, verbose_name="Concepto")
+    monto_usd = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Monto USD")
+    tipo = models.CharField(max_length=10, choices=TIPOS, default='antes', verbose_name="Tipo")
+    
+    class Meta:
+        verbose_name = "Gasto de Liquidación"
+        verbose_name_plural = "Gastos de Liquidación"
+
+    def __str__(self):
+        return f"{self.concepto} - ${self.monto_usd}"

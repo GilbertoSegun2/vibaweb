@@ -68,6 +68,16 @@
     .asiento.pendiente_verificacion { background: #e2d9f3; color: #432874; border-color: #6f42c1; cursor: not-allowed; }
     .asiento.bloqueado { background: #e2e3e5; color: #41464b; border-color: #6c757d; cursor: not-allowed; }
     
+    /* ⭐ NUEVO: Asiento Abordado (Chequeado) - Azul Oscuro con letras blancas */
+    .asiento.usado { 
+        background: #003366; 
+        color: #ffffff; 
+        border-color: #001a33; 
+        cursor: not-allowed; 
+        text-decoration: underline; 
+        font-weight: 900; 
+    }
+    
     /* Asientos Especiales (Baño, Escaleras) */
     .asiento.especial { border-radius: 10px; background: #f8f9fa; border: 2px dashed #adb5bd; color: #adb5bd; font-size: 0.7rem; display: flex; align-items: center; justify-content: center; padding: 0; text-align: center; box-shadow: none; }
 
@@ -177,8 +187,20 @@
                 <p class="text-muted small fw-bold mb-1 text-uppercase" style="font-size: 0.7rem; letter-spacing: 1px;">Gestión de Asientos</p>
                 <div class="d-grid gap-2 mb-3">
                     <div class="btn-group w-100" role="group">
-                        <button class="btn btn-outline-primary btn-sm" disabled><i class="bi bi-lock"></i> Bloquear</button>
-                        <button class="btn btn-outline-danger btn-sm" disabled><i class="bi bi-unlock"></i> Liberar</button>
+                        <!-- ⭐ BOTÓN BLOQUEAR ACTIVADO -->
+                        <button class="btn btn-outline-primary btn-sm" onclick="abrirModalBloquear()"><i class="bi bi-lock"></i> Bloquear</button>
+                        
+                        <!-- ⭐ BOTÓN LIBERAR: AHORA TIENE UN MENÚ DESPLEGABLE -->
+                        <div class="btn-group" role="group">
+                            <button type="button" class="btn btn-outline-danger btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                                <i class="bi bi-unlock"></i> Liberar
+                            </button>
+                            <ul class="dropdown-menu">
+                                <li><a class="dropdown-item" href="#" onclick="abrirModalLiberarPuestos()"><i class="bi bi-person-x"></i> Lista de Espera</a></li>
+                                <li><a class="dropdown-item" href="#" onclick="abrirModalDesbloquear()"><i class="bi bi-check-circle"></i> Desbloquear Asientos</a></li>
+                            </ul>
+                        </div>
+                        
                         <button class="btn btn-outline-info btn-sm" disabled><i class="bi bi-info-circle"></i> Pista</button>
                     </div>
                 </div>
@@ -192,6 +214,18 @@
                     <button class="btn btn-info fw-bold text-dark shadow-sm" onclick="activarModoReprogramar()">
                         <i class="bi bi-arrow-repeat fs-5"></i> Reprogramar Viaje
                     </button>
+                    
+                    <!-- ⭐ NUEVO: Escanear / Abordar -->
+                    <a href="{% url 'core:taquilla_escaner' %}?viaje_id={{ viaje.id }}" class="btn btn-danger fw-bold text-white shadow-sm mt-2">
+                        <i class="bi bi-qr-code-scan fs-5"></i> Escanear / Abordar
+                    </a>
+                    
+                    <!-- ⭐ NUEVO: Cerrar Venta -->
+                    {% if viaje.estado == 'programado' and not viaje.cerrado_venta %}
+                    <button class="btn btn-dark fw-bold text-white shadow-sm mt-2" onclick="cerrarVentaViaje()">
+                        <i class="bi bi-lock-fill fs-5"></i> Cerrar Venta
+                    </button>
+                    {% endif %}
                 </div>
 
                 <!-- Grupo 3: Información -->
@@ -244,6 +278,7 @@
                                 <button type="button" class="asiento
                                         {% if asiento.estado == 'disponible' %}disponible{% endif %}
                                         {% if asiento.estado == 'vendido' %}vendido{% endif %}
+                                        {% if asiento.estado == 'usado' %}usado{% endif %}
                                         {% if asiento.estado == 'pendiente_verificacion' %}pendiente_verificacion{% endif %}
                                         {% if asiento.estado == 'reservado' %}
                                             {% if asiento.reservado_por_id == usuario_id %}
@@ -255,7 +290,7 @@
                                         {% if asiento.estado == 'bloqueado' %}bloqueado{% endif %}"
                                     data-asiento-id="{{ asiento.id }}" data-asiento-numero="{{ asiento.numero }}" data-asiento-lado="{{ asiento.lado }}"
                                     {% if asiento.estado != 'disponible' and asiento.reservado_por_id != usuario_id %}disabled{% endif %}
-                                    title="{% if user.usuarioempresa and asiento.estado == 'vendido' and asiento.info_pasajero %}Asiento {{ asiento.numero }} - {{ asiento.info_pasajero }}{% elif user.usuarioempresa and asiento.estado == 'pendiente_verificacion' and asiento.info_pasajero %}Asiento {{ asiento.numero }} (En verificación) - {{ asiento.info_pasajero }}{% else %}Asiento {{ asiento.numero }} ({{ asiento.get_lado_display }}) — {% if asiento.estado == 'reservado' and asiento.reservado_por_id == usuario_id %}Tu selección{% elif asiento.estado == 'reservado' %}Apartado temporalmente{% else %}{{ asiento.get_estado_display }}{% endif %}{% endif %}">
+                                    title="{% if user.usuarioempresa and asiento.estado == 'vendido' and asiento.info_pasajero %}Asiento {{ asiento.numero }} - {{ asiento.info_pasajero }}{% elif user.usuarioempresa and asiento.estado == 'usado' and asiento.info_pasajero %}Asiento {{ asiento.numero }} (Abordado) - {{ asiento.info_pasajero }}{% elif user.usuarioempresa and asiento.estado == 'pendiente_verificacion' and asiento.info_pasajero %}Asiento {{ asiento.numero }} (En verificación) - {{ asiento.info_pasajero }}{% else %}Asiento {{ asiento.numero }} ({{ asiento.get_lado_display }}) — {% if asiento.estado == 'reservado' and asiento.reservado_por_id == usuario_id %}Tu selección{% elif asiento.estado == 'reservado' %}Apartado temporalmente{% elif asiento.estado == 'bloqueado' %}Asiento bloqueado{% else %}{{ asiento.get_estado_display }}{% endif %}{% endif %}">
                                     {{ asiento.numero }}
                                 </button>
                             {% elif asiento.tipo == 'escalera' %}
@@ -285,6 +320,7 @@
                     <div class="leyenda-item"><div class="leyenda-cuadro" style="background: #ffc107; border-color: #ffca2c;"></div><span>Tu selección</span></div>
                     <div class="leyenda-item"><div class="leyenda-cuadro" style="background: #ffe5d0; border-color: #fd7e14;"></div><span>Apartado temporal</span></div>
                     <div class="leyenda-item"><div class="leyenda-cuadro" style="background: #e2d9f3; border-color: #6f42c1;"></div><span>En verificación</span></div>
+                    <div class="leyenda-item"><div class="leyenda-cuadro" style="background: #cff4fc; border-color: #0dcaf0;"></div><span>Abordado</span></div>
                     <div class="leyenda-item"><div class="leyenda-cuadro" style="background: #f8d7da; border-color: #dc3545;"></div><span>Vendido</span></div>
                 </div>
             </div>
@@ -379,6 +415,105 @@
                     <button class="btn btn-primary" type="button" onclick="buscarBoletoParaReprogramar()">Buscar</button>
                 </div>
                 <div id="resultados_reprogramar" class="list-group"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ⭐ MODAL DE LIBERAR PUESTOS VENDIDOS (Lista de Espera) ⭐ -->
+<div class="modal fade" id="modalLiberarPuestos" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="bi bi-unlock"></i> Liberar Puestos (Lista de Espera)</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning py-2 small">
+                    <i class="bi bi-exclamation-triangle-fill"></i> Esta acción devolverá los asientos seleccionados a estado <strong>Disponible</strong> para venderlos a última hora. El boleto original se mantendrá en estado "Vendido" para efectos contables.
+                </div>
+                <table class="table table-sm table-hover table-bordered">
+                    <thead class="table-light">
+                        <tr>
+                            <th width="50"><input type="checkbox" id="check-todos-liberar" onchange="toggleTodosLiberar(this)"></th>
+                            <th>Asiento</th>
+                            <th>Pasajero</th>
+                            <th>Cédula</th>
+                            <th>N° Boleto</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabla-boletos-liberar">
+                        <!-- Se llena con JS -->
+                    </tbody>
+                </table>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-danger" onclick="procesarLiberacionPuestos()">Procesar Liberación</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ⭐ MODAL PARA BLOQUEAR ASIENTOS ⭐ -->
+<div class="modal fade" id="modalBloquear" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="bi bi-lock"></i> Bloquear Asientos</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info py-2 small">
+                    <i class="bi bi-info-circle-fill"></i> Seleccione los asientos que desea bloquear (por ejemplo, por fallas mecánicas). No estarán disponibles para la venta.
+                </div>
+                <table class="table table-sm table-hover table-bordered">
+                    <thead class="table-light">
+                        <tr>
+                            <th width="50"><input type="checkbox" id="check-todos-bloquear" onchange="toggleTodosBloquear(this)"></th>
+                            <th>Asiento</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabla-asientos-bloquear">
+                        <!-- Se llena con JS -->
+                    </tbody>
+                </table>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" onclick="procesarBloqueo()">Bloquear Seleccionados</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ⭐ MODAL PARA DESBLOQUEAR ASIENTOS ⭐ -->
+<div class="modal fade" id="modalDesbloquear" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="bi bi-check-circle"></i> Desbloquear Asientos</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info py-2 small">
+                    <i class="bi bi-info-circle-fill"></i> Seleccione los asientos que desea volver a poner a la venta.
+                </div>
+                <table class="table table-sm table-hover table-bordered">
+                    <thead class="table-light">
+                        <tr>
+                            <th width="50"><input type="checkbox" id="check-todos-desbloquear" onchange="toggleTodosDesbloquear(this)"></th>
+                            <th>Asiento</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabla-asientos-desbloquear">
+                        <!-- Se llena con JS -->
+                    </tbody>
+                </table>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-success" onclick="procesarDesbloqueo()">Desbloquear Seleccionados</button>
             </div>
         </div>
     </div>
@@ -707,6 +842,262 @@ document.addEventListener("DOMContentLoaded", function() {
                     divResultados.appendChild(btn);
                 });
             });
+    };
+
+    // ⭐ FUNCIÓN PARA CERRAR VENTA
+    window.cerrarVentaViaje = function() {
+        if (!confirm('¿Está seguro de cerrar la venta de este viaje? Ya no aparecerá en los buscadores y no se podrán vender más boletos.')) {
+            return;
+        }
+        
+        const formData = new FormData();
+        formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+        
+        fetch(`/taquilla/viaje/${VIAJE_ID}/cerrar-venta/`, {
+            method: 'POST',
+            body: formData
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.ok) {
+                alert(data.mensaje);
+                location.reload();
+            } else {
+                alert('Error: ' + data.error);
+            }
+        })
+        .catch(err => console.error('Error:', err));
+    };
+
+    // ============================================================
+    // ⭐ LÓGICA DE LIBERAR PUESTOS (LISTA DE ESPERA) ⭐
+    // ============================================================
+    window.abrirModalLiberarPuestos = function() {
+        const tbody = document.getElementById('tabla-boletos-liberar');
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center">Cargando boletos vendidos...</td></tr>';
+        
+        new bootstrap.Modal(document.getElementById('modalLiberarPuestos')).show();
+        
+        fetch(`/taquilla/api/boletos-vendidos/?viaje_id=${VIAJE_ID}`)
+            .then(res => res.json())
+            .then(data => {
+                if (!data.ok) {
+                    tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger">${data.error}</td></tr>`;
+                    return;
+                }
+                if (data.boletos.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No hay boletos en estado "Vendido" en este viaje.</td></tr>';
+                    return;
+                }
+                
+                tbody.innerHTML = '';
+                data.boletos.forEach(b => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td class="text-center">
+                            <input type="checkbox" class="check-liberar" value="${b.asiento_id}" data-boleto-id="${b.boleto_id}">
+                        </td>
+                        <td><span class="badge bg-primary">${b.asiento_numero}</span></td>
+                        <td>${b.pasajero_nombre}</td>
+                        <td>${b.pasajero_cedula}</td>
+                        <td><small>${b.numero_boleto}</small></td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            })
+            .catch(err => {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">Error de red al cargar los boletos.</td></tr>';
+            });
+    };
+
+    window.toggleTodosLiberar = function(checkbox) {
+        const checks = document.querySelectorAll('.check-liberar');
+        checks.forEach(c => c.checked = checkbox.checked);
+    };
+
+    window.procesarLiberacionPuestos = function() {
+        const checksSeleccionados = document.querySelectorAll('.check-liberar:checked');
+        if (checksSeleccionados.length === 0) {
+            alert('Por favor, seleccione al menos un boleto para liberar.');
+            return;
+        }
+
+        if (!confirm(`¿Está seguro de liberar ${checksSeleccionados.length} puesto(s)?\n\nEl boleto original se mantendrá en "Vendido", pero el asiento volverá a estar disponible para la venta.`)) {
+            return;
+        }
+
+        const formData = new FormData();
+        checksSeleccionados.forEach(chk => {
+            formData.append('asientos_ids[]', chk.value);
+        });
+        formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+        fetch('/taquilla/api/liberar-puestos-vendidos/', {
+            method: 'POST',
+            body: formData
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.ok) {
+                alert('✅ ' + data.mensaje);
+                location.reload();
+            } else {
+                alert('❌ Error: ' + data.error);
+            }
+        })
+        .catch(err => alert('Error de red al procesar la liberación.'));
+    };
+
+    // ============================================================
+    // ⭐ LÓGICA DE BLOQUEAR ASIENTOS ⭐
+    // ============================================================
+    window.abrirModalBloquear = function() {
+        const tbody = document.getElementById('tabla-asientos-bloquear');
+        tbody.innerHTML = '<tr><td colspan="2" class="text-center">Cargando asientos disponibles...</td></tr>';
+        
+        new bootstrap.Modal(document.getElementById('modalBloquear')).show();
+        
+        fetch(`/taquilla/api/asientos-disponibles-bloquear/?viaje_id=${VIAJE_ID}`)
+            .then(res => res.json())
+            .then(data => {
+                if (!data.ok) {
+                    tbody.innerHTML = `<tr><td colspan="2" class="text-center text-danger">${data.error}</td></tr>`;
+                    return;
+                }
+                if (data.asientos.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted">No hay asientos disponibles para bloquear.</td></tr>';
+                    return;
+                }
+                
+                tbody.innerHTML = '';
+                data.asientos.forEach(a => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td class="text-center">
+                            <input type="checkbox" class="check-bloquear" value="${a.asiento_id}">
+                        </td>
+                        <td><span class="badge bg-success">${a.asiento_numero}</span></td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            })
+            .catch(err => {
+                tbody.innerHTML = '<tr><td colspan="2" class="text-center text-danger">Error de red.</td></tr>';
+            });
+    };
+
+    window.toggleTodosBloquear = function(checkbox) {
+        const checks = document.querySelectorAll('.check-bloquear');
+        checks.forEach(c => c.checked = checkbox.checked);
+    };
+
+    window.procesarBloqueo = function() {
+        const checksSeleccionados = document.querySelectorAll('.check-bloquear:checked');
+        if (checksSeleccionados.length === 0) {
+            alert('Por favor, seleccione al menos un asiento para bloquear.');
+            return;
+        }
+
+        if (!confirm(`¿Está seguro de bloquear ${checksSeleccionados.length} asiento(s)?\n\nNo estarán disponibles para la venta.`)) {
+            return;
+        }
+
+        const formData = new FormData();
+        checksSeleccionados.forEach(chk => {
+            formData.append('asientos_ids[]', chk.value);
+        });
+        formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+        fetch('/taquilla/api/bloquear-asientos/', {
+            method: 'POST',
+            body: formData
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.ok) {
+                alert('✅ ' + data.mensaje);
+                location.reload();
+            } else {
+                alert('❌ Error: ' + data.error);
+            }
+        })
+        .catch(err => alert('Error de red al procesar el bloqueo.'));
+    };
+
+    // ============================================================
+    // ⭐ LÓGICA DE DESBLOQUEAR ASIENTOS ⭐
+    // ============================================================
+    window.abrirModalDesbloquear = function() {
+        const tbody = document.getElementById('tabla-asientos-desbloquear');
+        tbody.innerHTML = '<tr><td colspan="2" class="text-center">Cargando asientos bloqueados...</td></tr>';
+        
+        new bootstrap.Modal(document.getElementById('modalDesbloquear')).show();
+        
+        fetch(`/taquilla/api/asientos-bloqueados/?viaje_id=${VIAJE_ID}`)
+            .then(res => res.json())
+            .then(data => {
+                if (!data.ok) {
+                    tbody.innerHTML = `<tr><td colspan="2" class="text-center text-danger">${data.error}</td></tr>`;
+                    return;
+                }
+                if (data.asientos.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted">No hay asientos bloqueados en este viaje.</td></tr>';
+                    return;
+                }
+                
+                tbody.innerHTML = '';
+                data.asientos.forEach(a => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td class="text-center">
+                            <input type="checkbox" class="check-desbloquear" value="${a.asiento_id}">
+                        </td>
+                        <td><span class="badge bg-secondary">${a.asiento_numero}</span></td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            })
+            .catch(err => {
+                tbody.innerHTML = '<tr><td colspan="2" class="text-center text-danger">Error de red.</td></tr>';
+            });
+    };
+
+    window.toggleTodosDesbloquear = function(checkbox) {
+        const checks = document.querySelectorAll('.check-desbloquear');
+        checks.forEach(c => c.checked = checkbox.checked);
+    };
+
+    window.procesarDesbloqueo = function() {
+        const checksSeleccionados = document.querySelectorAll('.check-desbloquear:checked');
+        if (checksSeleccionados.length === 0) {
+            alert('Por favor, seleccione al menos un asiento para desbloquear.');
+            return;
+        }
+
+        if (!confirm(`¿Está seguro de desbloquear ${checksSeleccionados.length} asiento(s)?\n\nVolverán a estar disponibles para la venta.`)) {
+            return;
+        }
+
+        const formData = new FormData();
+        checksSeleccionados.forEach(chk => {
+            formData.append('asientos_ids[]', chk.value);
+        });
+        formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+        fetch('/taquilla/api/desbloquear-asientos/', {
+            method: 'POST',
+            body: formData
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.ok) {
+                alert('✅ ' + data.mensaje);
+                location.reload();
+            } else {
+                alert('❌ Error: ' + data.error);
+            }
+        })
+        .catch(err => alert('Error de red al procesar el desbloqueo.'));
     };
 });
 </script>

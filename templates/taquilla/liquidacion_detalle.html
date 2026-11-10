@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block title %}Liquidación {{ liquidacion.numero_liquidacion }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between mb-4 d-print-none">
+        <h2><i class="bi bi-receipt"></i> Liquidación: {{ liquidacion.numero_liquidacion }}</h2>
+        <div>
+            <button onclick="window.print()" class="btn btn-primary"><i class="bi bi-printer"></i> Imprimir</button>
+            <a href="{% url 'core:taquilla_liquidar' %}" class="btn btn-secondary"><i class="bi bi-arrow-left"></i> Volver</a>
+        </div>
+    </div>
+
+    <div class="card shadow-sm p-4" style="max-width: 800px; margin: 0 auto;">
+        <div class="text-center mb-3">
+            <h3 class="fw-bold">EXPRESOS MÉRIDA C.A.</h3>
+            <p>RIF: J-12345678-9</p>
+            <p>Oficina: {{ liquidacion.oficina_liquidacion.nombre }}</p>
+            <h4 class="fw-bold text-danger">LIQUIDACIÓN N° {{ liquidacion.numero_liquidacion }}</h4>
+        </div>
+
+        <div class="row mb-3">
+            <div class="col-6">
+                <p><strong>Bus:</strong> {{ liquidacion.bus.numero_bus|default:liquidacion.bus.placa }}</p>
+                <p><strong>Dueño:</strong> {{ liquidacion.dueno.nombre }}</p>
+                <p><strong>Conductores:</strong> {{ liquidacion.conductores_nombres }}</p>
+            </div>
+            <div class="col-6 text-end">
+                <p><strong>Fecha Viaje:</strong> {{ liquidacion.viaje.fecha|date:"d/m/Y" }} - {{ liquidacion.viaje.hora|time:"h:i A" }}</p>
+                <p><strong>Ruta:</strong> {{ liquidacion.viaje.ruta.nombre }}</p>
+                <p><strong>Liquidado por:</strong> {{ liquidacion.liquidado_por.get_full_name|default:liquidacion.liquidado_por.username }}</p>
+            </div>
+        </div>
+
+        <hr>
+
+        <div class="row">
+            <div class="col-6">
+                <p><strong>Total Bruto:</strong> $ {{ liquidacion.total_bruto_usd|floatformat:2 }}</p>
+                <p><strong>Gastos Antes:</strong> - $ {{ liquidacion.total_gastos_antes_usd|floatformat:2 }}</p>
+                <p><strong>Porcentaje Empresa ({{ liquidacion.porcentaje_empresa }}%):</strong> - $ {{ liquidacion.monto_porcentaje_empresa_usd|floatformat:2 }}</p>
+                <p><strong>Gastos Después:</strong> - $ {{ liquidacion.total_gastos_despues_usd|floatformat:2 }}</p>
+                <hr>
+                <h5 class="fw-bold text-success">Neto a Pagar: $ {{ liquidacion.neto_a_pagar_usd|floatformat:2 }}</h5>
+                <h6>Bs. {{ liquidacion.neto_a_pagar_bs|floatformat:2 }}</h6>
+            </div>
+            <div class="col-6">
+                <h6>Detalle de Gastos:</h6>
+                <ul class="list-unstyled small">
+                    {% for g in liquidacion.gastos.all %}
+                        <li>- {{ g.concepto }}: ${{ g.monto_usd|floatformat:2 }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+
+        <div class="text-center mt-4">
+            <p>Firma del Liquidador: __________________________</p>
+            <p>Firma del Conductor: __________________________</p>
+        </div>
+    </div>
+</div>
+<style>@media print { .d-print-none { display: none !important; } .card { border: none !important; box-shadow: none !important; } }</style>
+{% endblock %}

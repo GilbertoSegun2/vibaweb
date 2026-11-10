@@ -921,8 +921,8 @@ def taquilla_inicio(request):
                 fecha=fecha, estado='programado', cerrado_venta=False
             ).select_related('ruta', 'bus')
 
-            if fecha == hoy:
-                viajes_del_dia = viajes_del_dia.filter(hora__gt=ahora)
+            # ~ if fecha == hoy:
+                # ~ viajes_del_dia = viajes_del_dia.filter(hora__gt=ahora)
 
             for viaje in viajes_del_dia:
                 # ⭐ VALIDACIÓN ESTRICTA DE DIRECCIÓN
@@ -1014,8 +1014,9 @@ def taquilla_mapa(request, viaje_id):
 
     asientos = viaje.asientos.order_by('piso', 'fila', 'columna')
     asientos_por_piso = {}
-    
+
     for asiento in asientos:
+        asiento.refresh_from_db()
         if asiento.tipo == 'asiento':
             disponible_para_tramo = asiento_esta_disponible_en_tramo(asiento.id, viaje.id, parada_origen.orden, parada_destino.orden)
         else:
@@ -1027,9 +1028,9 @@ def taquilla_mapa(request, viaje_id):
         asiento.estado_real = asiento.estado
         asiento.disponible_para_tramo = disponible_para_tramo
 
-        # ⭐ NUEVO: Buscar info del pasajero si el asiento está vendido
+        # ⭐ NUEVO: Buscar info del pasajero si el asiento está vendido o usado
         asiento.info_pasajero = None
-        if asiento.estado in ['vendido', 'pendiente_verificacion']:
+        if asiento.estado in ['vendido', 'usado', 'pendiente_verificacion']:
             boleto = Boleto.objects.filter(asiento=asiento, viaje=viaje).first()
             if boleto:
                 asiento.info_pasajero = f"{boleto.pasajero_nombre} ({boleto.numero_boleto})"
@@ -1243,6 +1244,32 @@ def taquilla_cobrar(request, viaje_id):
                         numero_boleto=generar_numero_boleto(empleado.oficina, es_continuo=obtener_parametro('179', default=False)),
                     )
 
+                # ⭐ AUTO-ABORDAR: DENTRO DEL WITH
+                minutos_auto = int(obtener_parametro('202', default=15))
+                ahora = timezone.localtime(timezone.now())
+                fecha_hora_viaje = timezone.make_aware(datetime.combine(viaje.fecha, viaje.hora))
+                minutos_para_salida = (fecha_hora_viaje - ahora).total_seconds() / 60
+
+                if 0 <= minutos_para_salida <= minutos_auto:
+                    for boleto_creado in transaccion.boletos.all():
+                        boleto_creado.estado = 'usado'
+                        boleto_creado.fecha_chequeo = timezone.now()
+                        boleto_creado.chequeado_por = request.user
+                        boleto_creado.observacion = f"Auto-chequeado al vender (faltan {int(minutos_para_salida)} min)."
+                        boleto_creado.save()
+                        
+                        # ⭐ NUEVO: Actualizar el estado del asiento también
+                        asiento_creado = boleto_creado.asiento
+                        asiento_creado.estado = 'usado'
+                        asiento_creado.save()
+                        
+                        MovimientoAsiento.objects.create(
+                            asiento=boleto_creado.asiento, tipo='chequeo',
+                            estado_anterior='vendido', estado_nuevo='usado',
+                            usuario=request.user, motivo=f'Auto-chequeo al vender. Boleto: {boleto_creado.numero_boleto}', 
+                            boleto_relacionado=boleto_creado
+                        )
+
             request.session.pop('reserva_inicio', None)
             messages.success(request, f"¡Venta exitosa! Código: {codigo}")
             return redirect('core:taquilla_confirmacion', transaccion_id=transaccion.id)
@@ -1261,8 +1288,8 @@ def taquilla_cobrar(request, viaje_id):
         'cobrar_seguro_cortesia': cobrar_seguro_cortesia,
         'expiracion_iso': expiracion_iso, 'segundos_restantes': segundos_restantes, 'minutos_reserva': minutos_reserva,
         'pisteros': pisteros, 
-    })   
-    
+    })
+
 @login_required
 def taquilla_confirmacion(request, transaccion_id):
     try:
@@ -2061,5 +2088,575 @@ def taquilla_liberar_asiento_reprogramar(request):
                 asiento.save()
                 
         return JsonResponse({'ok': True})
+    except Exception as e:
+        return JsonResponse({'ok': False, 'error': str(e)}, status=500)
+
+@login_required
+def taquilla_api_asientos_disponibles_bloquear(request):
+    """Devuelve los asientos disponibles para bloquear."""
+    if not hasattr(request.user, 'usuarioempresa'):
+        return JsonResponse({'ok': False, 'error': 'No autorizado'}, status=403)
+        
+    viaje_id = request.GET.get('viaje_id')
+    if not viaje_id:
+        return JsonResponse({'ok': False, 'error': 'Falta viaje_id'}, status=400)
+        
+    # Solo asientos disponibles y de tipo 'asiento'
+    asientos = Asiento.objects.filter(
+        viaje_id=viaje_id, estado='disponible', tipo='asiento'
+    ).exclude(numero='').order_by('numero')
+    
+    data = [{
+        'asiento_id': a.id,
+        'asiento_numero': a.numero,
+    } for a in asientos]
+    
+    return JsonResponse({'ok': True, 'asientos': data})
+
+
+@require_POST
+@login_required
+def taquilla_api_bloquear_asientos(request):
+    """Bloquea los asientos seleccionados."""
+    if not hasattr(request.user, 'usuarioempresa'):
+        return JsonResponse({'ok': False, 'error': 'No autorizado'}, status=403)
+        
+    asientos_ids = request.POST.getlist('asientos_ids[]')
+    if not asientos_ids:
+        return JsonResponse({'ok': False, 'error': 'No se seleccionaron asientos.'}, status=400)
+        
+    try:
+        with transaction.atomic():
+            asientos = Asiento.objects.select_for_update().filter(
+                id__in=asientos_ids, estado='disponible'
+            )
+            
+            bloqueados = 0
+            for asiento in asientos:
+                asiento.estado = 'bloqueado'
+                asiento.save()
+                
+                MovimientoAsiento.objects.create(
+                    asiento=asiento, tipo='bloqueo',
+                    estado_anterior='disponible', estado_nuevo='bloqueado',
+                    usuario=request.user,
+                    motivo='Asiento bloqueado desde la taquilla (posible falla mecánica).'
+                )
+                bloqueados += 1
+                
+        return JsonResponse({'ok': True, 'mensaje': f'{bloqueados} asiento(s) bloqueado(s) exitosamente.'})
+    except Exception as e:
+        return JsonResponse({'ok': False, 'error': str(e)}, status=500)
+
+
+@login_required
+def taquilla_api_asientos_bloqueados(request):
+    """Devuelve los asientos bloqueados para poder desbloquearlos."""
+    if not hasattr(request.user, 'usuarioempresa'):
+        return JsonResponse({'ok': False, 'error': 'No autorizado'}, status=403)
+        
+    viaje_id = request.GET.get('viaje_id')
+    if not viaje_id:
+        return JsonResponse({'ok': False, 'error': 'Falta viaje_id'}, status=400)
+        
+    asientos = Asiento.objects.filter(
+        viaje_id=viaje_id, estado='bloqueado'
+    ).exclude(numero='').order_by('numero')  
+    
+    data = [{
+        'asiento_id': a.id,
+        'asiento_numero': a.numero,
+    } for a in asientos]
+    
+    return JsonResponse({'ok': True, 'asientos': data})
+
+
+@require_POST
+@login_required
+def taquilla_api_desbloquear_asientos(request):
+    """Desbloquea los asientos seleccionados."""
+    if not hasattr(request.user, 'usuarioempresa'):
+        return JsonResponse({'ok': False, 'error': 'No autorizado'}, status=403)
+        
+    asientos_ids = request.POST.getlist('asientos_ids[]')
+    if not asientos_ids:
+        return JsonResponse({'ok': False, 'error': 'No se seleccionaron asientos.'}, status=400)
+        
+    try:
+        with transaction.atomic():
+            asientos = Asiento.objects.select_for_update().filter(
+                id__in=asientos_ids, estado='bloqueado'
+            )
+            
+            desbloqueados = 0
+            for asiento in asientos:
+                asiento.estado = 'disponible'
+                asiento.save()
+                
+                MovimientoAsiento.objects.create(
+                    asiento=asiento, tipo='desbloqueo',
+                    estado_anterior='bloqueado', estado_nuevo='disponible',
+                    usuario=request.user,
+                    motivo='Asiento desbloqueado desde la taquilla.'
+                )
+                desbloqueados += 1
+                
+        return JsonResponse({'ok': True, 'mensaje': f'{desbloqueados} asiento(s) desbloqueado(s) exitosamente.'})
+    except Exception as e:
+        return JsonResponse({'ok': False, 'error': str(e)}, status=500)
+
+@login_required
+def taquilla_liquidar(request):
+    try:
+        empleado = request.user.usuarioempresa
+    except UsuarioEmpresa.DoesNotExist:
+        messages.error(request, "No tiene permisos.")
+        return redirect('core:inicio')
+
+    porcentaje_empresa = Decimal(str(obtener_parametro('201', default=20)))
+    
+    if request.method == 'POST':
+        bus_id = request.POST.get('bus_id')
+        viaje_id = request.POST.get('viaje_id')
+        conductores_nombres = request.POST.get('conductores_nombres')
+        observacion = request.POST.get('observacion', '')
+        
+        if not bus_id or not viaje_id:
+            messages.error(request, "Debe seleccionar un bus y un viaje.")
+            return redirect('core:taquilla_liquidar')
+        
+        try:
+            with transaction.atomic():
+                bus = Bus.objects.get(id=bus_id)
+                viaje = Viaje.objects.get(id=viaje_id)
+                
+                boletos = Boleto.objects.filter(
+                    viaje=viaje, estado='usado',
+                    transaccion__oficina_venta=empleado.oficina
+                )
+                
+                if not boletos.exists():
+                    messages.warning(request, "No hay boletos escaneados para liquidar.")
+                    return redirect('core:taquilla_liquidar')
+                
+                total_bruto_usd = sum(b.monto_total_usd for b in boletos)
+                tasa_bcv = Decimal(str(obtener_parametro('107', default=0)))
+                total_bruto_bs = total_bruto_usd * tasa_bcv
+                monto_empresa_usd = total_bruto_usd * (porcentaje_empresa / 100)
+                
+                gastos_antes = request.POST.getlist('gasto_antes_monto[]')
+                gastos_despues = request.POST.getlist('gasto_despues_monto[]')
+                conceptos_antes = request.POST.getlist('gasto_antes_concepto[]')
+                conceptos_despues = request.POST.getlist('gasto_despues_concepto[]')
+                
+                total_gastos_antes = sum(Decimal(m) for m in gastos_antes if m)
+                total_gastos_despues = sum(Decimal(m) for m in gastos_despues if m)
+                
+                neto_usd = total_bruto_usd - total_gastos_antes - monto_empresa_usd - total_gastos_despues
+                neto_bs = neto_usd * tasa_bcv
+                
+                ultima_liq = Liquidacion.objects.filter(oficina_liquidacion=empleado.oficina).order_by('-id').first()
+                nuevo_num = int(ultima_liq.numero_liquidacion.split('-')[1]) + 1 if ultima_liq else 1
+                numero_liq = f"{empleado.oficina.codigo}-{nuevo_num:06d}"
+                
+                liquidacion = Liquidacion.objects.create(
+                    numero_liquidacion=numero_liq, viaje=viaje, bus=bus,
+                    oficina_liquidacion=empleado.oficina, dueno=bus.empresa,
+                    conductores_nombres=conductores_nombres,
+                    total_bruto_usd=total_bruto_usd, total_bruto_bs=total_bruto_bs,
+                    porcentaje_empresa=porcentaje_empresa, monto_porcentaje_empresa_usd=monto_empresa_usd,
+                    total_gastos_antes_usd=total_gastos_antes, total_gastos_despues_usd=total_gastos_despues,
+                    neto_a_pagar_usd=neto_usd, neto_a_pagar_bs=neto_bs,
+                    liquidado_por=request.user, observacion=observacion
+                )
+                
+                for i, c in enumerate(conceptos_antes):
+                    m = gastos_antes[i] if i < len(gastos_antes) else 0
+                    if m: GastoLiquidacion.objects.create(liquidacion=liquidacion, concepto=c, monto_usd=Decimal(m), tipo='antes')
+                for i, c in enumerate(conceptos_despues):
+                    m = gastos_despues[i] if i < len(gastos_despues) else 0
+                    if m: GastoLiquidacion.objects.create(liquidacion=liquidacion, concepto=c, monto_usd=Decimal(m), tipo='despues')
+                
+                boletos.update(estado='liquidado')
+                
+                messages.success(request, f"Liquidación {numero_liq} generada exitosamente.")
+                return redirect('core:taquilla_liquidacion_detalle', liquidacion.id)
+        except Exception as e:
+            messages.error(request, f"Error al liquidar: {str(e)}")
+            return redirect('core:taquilla_liquidar')
+    
+    hoy = timezone.localtime(timezone.now()).date()
+    viajes = Viaje.objects.filter(fecha=hoy, estado='programado').order_by('hora')
+    viaje_id_preseleccionado = request.GET.get('viaje_id')
+    
+    return render(request, 'taquilla/liquidar.html', {
+        'viajes': viajes,
+        'porcentaje_empresa': porcentaje_empresa,
+        'viaje_id_preseleccionado': viaje_id_preseleccionado,
+    })
+    
+@login_required
+def api_datos_liquidacion(request):
+    if not hasattr(request.user, 'usuarioempresa'):
+        return JsonResponse({'ok': False, 'error': 'No autorizado'}, status=403)
+    
+    viaje_id = request.GET.get('viaje_id')
+    if not viaje_id:
+        return JsonResponse({'ok': False, 'error': 'Falta viaje_id'}, status=400)
+    
+    try:
+        empleado = request.user.usuarioempresa
+        viaje = Viaje.objects.get(id=viaje_id)
+        
+        # Datos del bus
+        numero_bus = viaje.bus.numero_bus or 'Sin número'
+        dueno = viaje.bus.empresa.nombre if viaje.bus.empresa else 'Sin dueño'
+        
+        conductores = ', '.join([c.nombre for c in viaje.bus.conductores.all()])
+        
+        # Boletos escaneados (usados) de esta oficina para este viaje
+        boletos = Boleto.objects.filter(
+            viaje=viaje, 
+            estado='usado',
+            transaccion__oficina_venta=empleado.oficina
+        ).select_related('asiento')
+        
+        boletos_data = [{
+            'asiento': b.asiento.numero,
+            'nombre': b.pasajero_nombre,
+            'cedula': b.pasajero_cedula,
+            'monto_total_usd': float(b.monto_total_usd),
+        } for b in boletos]
+        
+        return JsonResponse({
+            'ok': True,
+            'bus_id': viaje.bus.id,  # ⭐ NUEVO: Necesario para el formulario
+            'numero_bus': numero_bus,
+            'dueno': dueno,
+            'conductores': conductores,
+            'boletos': boletos_data
+        })
+    except Exception as e:
+        return JsonResponse({'ok': False, 'error': str(e)}, status=500)
+        
+# ============================================================
+# MÓDULO DE ABORDAJE Y CHEQUEO QR
+# ============================================================
+@login_required
+def taquilla_escaner(request):
+    try:
+        empleado = request.user.usuarioempresa
+    except UsuarioEmpresa.DoesNotExist:
+        messages.error(request, "No tiene permisos.")
+        return redirect('core:inicio')
+
+    hoy = timezone.localtime(timezone.now()).date()
+    viajes = Viaje.objects.filter(
+        fecha=hoy, estado='programado', cerrado_venta=False
+    ).select_related('ruta', 'bus').order_by('hora')
+    
+    viaje_id_preseleccionado = request.GET.get('viaje_id')
+    
+    # ⭐ NUEVO: Contar los boletos ya abordados (usados) para este viaje
+    total_abordados = 0
+    if viaje_id_preseleccionado:
+        total_abordados = Boleto.objects.filter(viaje_id=viaje_id_preseleccionado, estado='usado').count()
+    
+    return render(request, 'taquilla/escaner_qr.html', {
+        'viajes': viajes,
+        'viaje_preseleccionado': viaje_id_preseleccionado,
+        'total_abordados': total_abordados, # ⭐ Se lo pasamos al template
+    })
+
+
+@require_POST
+@login_required
+def api_validar_qr(request):
+    """Valida un boleto (QR o número manual) para abordaje."""
+    if not hasattr(request.user, 'usuarioempresa'):
+        return JsonResponse({'ok': False, 'error': 'No autorizado'}, status=403)
+    
+    codigo_qr = request.POST.get('codigo_qr', '').strip()
+    numero_boleto_manual = request.POST.get('numero_boleto', '').strip()
+    viaje_id = request.POST.get('viaje_id')
+    
+    if not (codigo_qr or numero_boleto_manual):
+        return JsonResponse({'ok': False, 'error': 'Debe escanear el QR o escribir el número de boleto.'}, status=400)
+        
+    try:
+        with transaction.atomic():
+            boleto = None
+            if codigo_qr:
+                boleto = Boleto.objects.select_for_update().filter(codigo_qr=codigo_qr).first()
+            if not boleto and numero_boleto_manual:
+                boleto = Boleto.objects.select_for_update().filter(numero_boleto=numero_boleto_manual).first()
+            
+            if not boleto:
+                return JsonResponse({'ok': False, 'error': 'Boleto no encontrado. Verifique el código o el número.'})
+            
+            # Validar que sea para el viaje que está en puerta
+            if str(boleto.viaje.id) != str(viaje_id):
+                return JsonResponse({'ok': False, 'error': f'Este boleto es para otro viaje (Ruta: {boleto.viaje.ruta.nombre} - {boleto.viaje.hora}).'})
+            
+            # Validar que no haya sido usado ni liquidado
+            if boleto.estado == 'usado':
+                return JsonResponse({'ok': False, 'error': 'Este boleto ya fue abordado anteriormente.'})
+            if boleto.estado == 'liquidado':
+                return JsonResponse({'ok': False, 'error': 'Este boleto ya fue liquidado (viaje cerrado). No puede abordar.'})
+            if boleto.estado != 'vendido':
+                return JsonResponse({'ok': False, 'error': f'El boleto está en estado: {boleto.get_estado_display()}. No se puede abordar.'})
+            
+            # ¡Todo bien! Marcamos como usado (Abordado)
+            boleto.estado = 'usado'
+            boleto.fecha_chequeo = timezone.now()
+            boleto.chequeado_por = request.user
+            boleto.save()
+            
+            # ⭐ NUEVO: Actualizar el estado del asiento también
+            asiento = boleto.asiento
+            asiento.estado = 'usado'
+            asiento.save()
+            
+            # Auditoría
+            MovimientoAsiento.objects.create(
+                asiento=boleto.asiento, tipo='chequeo',
+                estado_anterior='vendido', estado_nuevo='usado',
+                usuario=request.user, motivo=f'Abordaje por QR/Nro Boleto. Boleto: {boleto.numero_boleto}', boleto_relacionado=boleto
+            )
+            
+            return JsonResponse({
+                'ok': True, 
+                'mensaje': '✅ Abordado correctamente',
+                'pasajero': boleto.pasajero_nombre,
+                'cedula': boleto.pasajero_cedula,
+                'asiento': boleto.asiento.numero,
+                'boleto': boleto.numero_boleto
+            })
+    except Exception as e:
+        return JsonResponse({'ok': False, 'error': str(e)}, status=500)
+
+
+@require_POST
+@login_required
+def taquilla_cerrar_venta(request, viaje_id):
+    if not hasattr(request.user, 'usuarioempresa'):
+        return JsonResponse({'ok': False, 'error': 'No autorizado'}, status=403)
+    try:
+        viaje = Viaje.objects.get(id=viaje_id)
+        if viaje.cerrado_venta:
+            return JsonResponse({'ok': False, 'error': 'La venta ya está cerrada.'}, status=400)
+        viaje.cerrado_venta = True
+        viaje.save()
+        return JsonResponse({'ok': True, 'mensaje': 'Venta cerrada exitosamente.'})
+    except Viaje.DoesNotExist:
+        return JsonResponse({'ok': False, 'error': 'Viaje no encontrado.'}, status=404)
+        
+@login_required
+def taquilla_liquidacion_detalle(request, liquidacion_id):
+    try:
+        empleado = request.user.usuarioempresa
+    except UsuarioEmpresa.DoesNotExist:
+        messages.error(request, "No tiene permisos.")
+        return redirect('core:inicio')
+
+    liquidacion = get_object_or_404(Liquidacion, id=liquidacion_id, oficina_liquidacion=empleado.oficina)
+    gastos = liquidacion.gastos.all().order_by('tipo')
+    
+    return render(request, 'taquilla/liquidacion_detalle.html', {
+        'liquidacion': liquidacion,
+        'gastos': gastos,
+    })
+
+@login_required
+def taquilla_consultar_boleto(request):
+    try:
+        empleado = request.user.usuarioempresa
+    except UsuarioEmpresa.DoesNotExist:
+        messages.error(request, "No tiene permisos.")
+        return redirect('core:inicio')
+
+    boleto = None
+    movimientos = []
+    busqueda = request.GET.get('q', '').strip()
+
+    if busqueda:
+        boleto = Boleto.objects.filter(numero_boleto__iexact=busqueda).first()
+        if boleto:
+            movimientos = MovimientoAsiento.objects.filter(
+                boleto_relacionado=boleto
+            ).order_by('-fecha_hora')
+
+    # ⭐ ACTIVAR (Solo si está USADO y con clave del usuario actual)
+    if request.method == 'POST' and request.POST.get('accion') == 'activar':
+        boleto_id = request.POST.get('boleto_id')
+        password = request.POST.get('password')
+        boleto = get_object_or_404(Boleto, id=boleto_id)
+
+        if boleto.estado != 'usado':
+            messages.error(
+                request, 
+                f"No se puede reactivar el boleto {boleto.numero_boleto}. "
+                f"Estado actual: {boleto.get_estado_display()}. "
+                f"Solo se reactivan boletos chequeados/abordados."
+            )
+            return redirect('core:taquilla_consultar_boleto')
+
+        if not request.user.check_password(password):
+            messages.error(request, "Clave incorrecta. No puede reactivar el boleto.")
+            return redirect('core:taquilla_consultar_boleto')
+
+        with transaction.atomic():
+            boleto.estado = 'vendido'
+            boleto.fecha_chequeo = None
+            boleto.chequeado_por = None
+            boleto.save()
+
+            asiento = boleto.asiento
+            asiento.estado = 'vendido'
+            asiento.save()
+
+            MovimientoAsiento.objects.create(
+                asiento=asiento, tipo='desbloqueo',
+                estado_anterior='usado', estado_nuevo='vendido',
+                usuario=request.user,
+                motivo=f'Boleto reactivado por el taquillero. Boleto: {boleto.numero_boleto}',
+                boleto_relacionado=boleto
+            )
+
+        messages.success(request, f"Boleto {boleto.numero_boleto} reactivado exitosamente.")
+        return redirect('core:taquilla_consultar_boleto')
+
+    # ⭐ ANULAR (Solo si está VENDIDO, es de HOY y clave del vendedor original)
+    if request.method == 'POST' and request.POST.get('accion') == 'anular':
+        boleto_id = request.POST.get('boleto_id')
+        password = request.POST.get('password')
+        boleto = get_object_or_404(Boleto, id=boleto_id)
+
+        if boleto.estado != 'vendido':
+            messages.error(
+                request, 
+                f"No se puede anular el boleto {boleto.numero_boleto}. "
+                f"Estado actual: {boleto.get_estado_display()}. "
+                f"Solo se anulan boletos con estado 'Vendido'."
+            )
+            return redirect('core:taquilla_consultar_boleto')
+
+        # Validación contable: Solo se anulan boletos vendidos HOY
+        hoy = timezone.localtime(timezone.now()).date()
+        fecha_venta_boleto = timezone.localtime(boleto.fecha_venta).date()
+        if fecha_venta_boleto < hoy:
+            messages.error(
+                request, 
+                f"No se puede anular el boleto {boleto.numero_boleto}. "
+                f"Fue vendido el {fecha_venta_boleto.strftime('%d/%m/%Y')} y la caja de esa fecha ya fue cerrada. "
+                f"Solo se pueden anular boletos vendidos el día de HOY."
+            )
+            return redirect('core:taquilla_consultar_boleto')
+
+        # Validar clave del vendedor original
+        if not boleto.vendido_por:
+            messages.error(request, "Este boleto no tiene un vendedor registrado.")
+            return redirect('core:taquilla_consultar_boleto')
+
+        if not boleto.vendido_por.check_password(password):
+            messages.error(request, "Clave incorrecta. Solo el taquillero que vendió el boleto puede anularlo.")
+            return redirect('core:taquilla_consultar_boleto')
+
+        with transaction.atomic():
+            boleto.estado = 'anulado' # ⭐ CAMBIADO DE 'cancelado' a 'anulado'
+            boleto.save()
+
+            asiento = boleto.asiento
+            asiento.estado = 'disponible'
+            asiento.reservado_por = None
+            asiento.reservado_hasta = None
+            asiento.save()
+
+            MovimientoAsiento.objects.create(
+                asiento=asiento, tipo='cancelacion',
+                estado_anterior='vendido', estado_nuevo='disponible',
+                usuario=request.user,
+                motivo=f'Boleto anulado por el taquillero original. Boleto: {boleto.numero_boleto}',
+                boleto_relacionado=boleto
+            )
+
+        messages.success(request, f"Boleto {boleto.numero_boleto} anulado exitosamente.")
+        return redirect('core:taquilla_consultar_boleto')
+
+    return render(request, 'taquilla/consultar_boleto.html', {
+        'boleto': boleto,
+        'movimientos': movimientos,
+        'busqueda': busqueda,
+    })
+    
+@login_required
+def taquilla_api_boletos_vendidos(request):
+    """Devuelve la lista de boletos en estado 'vendido' para el modal de liberación."""
+    if not hasattr(request.user, 'usuarioempresa'):
+        return JsonResponse({'ok': False, 'error': 'No autorizado'}, status=403)
+        
+    viaje_id = request.GET.get('viaje_id')
+    if not viaje_id:
+        return JsonResponse({'ok': False, 'error': 'Falta viaje_id'}, status=400)
+        
+    # ⭐ FILTRO MEJORADO: Solo boletos 'vendidos' CUYO ASIENTO siga 'vendido'
+    boletos = Boleto.objects.filter(
+        viaje_id=viaje_id, 
+        estado='vendido',
+        asiento__estado='vendido'  # <--- ESTA ES LA CLAVE
+    ).select_related('asiento').order_by('asiento__numero')
+    
+    data = [{
+        'boleto_id': b.id,
+        'asiento_numero': b.asiento.numero,
+        'asiento_id': b.asiento.id,
+        'pasajero_nombre': b.pasajero_nombre,
+        'pasajero_cedula': b.pasajero_cedula,
+        'numero_boleto': b.numero_boleto
+    } for b in boletos]
+    
+    return JsonResponse({'ok': True, 'boletos': data})
+
+
+@require_POST
+@login_required
+def taquilla_api_liberar_puestos_vendidos(request):
+    """Libera los asientos de boletos que están en estado 'vendido' (Lista de Espera)."""
+    if not hasattr(request.user, 'usuarioempresa'):
+        return JsonResponse({'ok': False, 'error': 'No autorizado'}, status=403)
+        
+    asientos_ids = request.POST.getlist('asientos_ids[]')
+    if not asientos_ids:
+        return JsonResponse({'ok': False, 'error': 'No se seleccionaron asientos.'}, status=400)
+        
+    try:
+        with transaction.atomic():
+            # Buscamos los boletos estrictamente en estado 'vendido'
+            boletos = Boleto.objects.select_for_update().filter(
+                asiento_id__in=asientos_ids, estado='vendido'
+            )
+            
+            liberados = 0
+            for boleto in boletos:
+                # ⭐ EL BOLETO SE QUEDA EN 'VENDIDO', NO LO TOCAMOS ⭐
+                
+                # Liberar el asiento (vuelve a estar disponible)
+                asiento = boleto.asiento
+                asiento.estado = 'disponible'
+                asiento.reservado_por = None
+                asiento.reservado_hasta = None
+                asiento.save()
+                
+                # Auditoría
+                MovimientoAsiento.objects.create(
+                    asiento=asiento, tipo='liberacion_manual',
+                    estado_anterior='vendido', estado_nuevo='disponible',
+                    usuario=request.user,
+                    motivo=f'Liberación de puesto (Lista de Espera). Boleto original: {boleto.numero_boleto}',
+                    boleto_relacionado=boleto
+                )
+                liberados += 1
+                
+        return JsonResponse({'ok': True, 'mensaje': f'{liberados} puesto(s) liberado(s) exitosamente.'})
     except Exception as e:
         return JsonResponse({'ok': False, 'error': str(e)}, status=500)

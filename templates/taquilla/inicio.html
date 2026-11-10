@@ -12,9 +12,16 @@
                 Taquillero: <strong>{{ empleado.user.first_name }}</strong>
             </p>
         </div>
-        <a href="/logout/" class="btn btn-outline-secondary btn-sm">
-            <i class="bi bi-box-arrow-right"></i> Cerrar Sesión
-        </a>
+        <div class="d-flex gap-2">
+            {% if user.usuarioempresa %}
+            <a href="{% url 'core:taquilla_consultar_boleto' %}" class="btn btn-primary">
+                <i class="bi bi-search"></i> Consultar Boleto
+            </a>
+            {% endif %}
+            <a href="/logout/" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-box-arrow-right"></i> Cerrar Sesión
+            </a>
+        </div>
     </div>
 
     <!-- Formulario de Búsqueda -->

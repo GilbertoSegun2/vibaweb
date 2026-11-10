@@ -28,12 +28,26 @@
     <div aria-live="polite" aria-atomic="true" class="position-fixed end-0 p-3" style="top: 75px; z-index: 1080; max-width: 380px; width: 100%;">
         {% if messages %}
             {% for message in messages %}
-                <div class="toast show align-items-center text-white bg-success border-0 mb-2 shadow-lg" role="alert" aria-live="assertive" aria-atomic="true">
+                <!-- ⭐ LÓGICA DE COLORES SEGÚN EL TIPO DE MENSAJE -->
+                <div class="toast show align-items-center text-white border-0 mb-2 shadow-lg 
+                    {% if message.tags == 'success' %}bg-success
+                    {% elif message.tags == 'error' %}bg-danger
+                    {% elif message.tags == 'warning' %}bg-warning text-dark
+                    {% elif message.tags == 'info' %}bg-info text-dark
+                    {% else %}bg-secondary{% endif %}" 
+                    role="alert" aria-live="assertive" aria-atomic="true">
+                    
                     <div class="d-flex">
                         <div class="toast-body">
+                            <!-- ⭐ ICONO SEGÚN EL TIPO -->
+                            {% if message.tags == 'success' %}<i class="bi bi-check-circle-fill me-1"></i>
+                            {% elif message.tags == 'error' %}<i class="bi bi-exclamation-octagon-fill me-1"></i>
+                            {% elif message.tags == 'warning' %}<i class="bi bi-exclamation-triangle-fill me-1"></i>
+                            {% elif message.tags == 'info' %}<i class="bi bi-info-circle-fill me-1"></i>
+                            {% endif %}
                             {{ message }}
                         </div>
-                        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+                        <button type="button" class="btn-close {% if message.tags == 'warning' or message.tags == 'info' %}{% else %}btn-close-white{% endif %} me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
                     </div>
                 </div>
             {% endfor %}

@@ -1,0 +1,133 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block title %}Liquidación - Taquilla{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between mb-4">
+        <h2><i class="bi bi-cash-stack"></i> Liquidación de Viaje</h2>
+        <a href="{% url 'core:taquilla_inicio' %}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Volver</a>
+    </div>
+
+    <form method="post" id="form-liquidacion">
+        {% csrf_token %}
+        <input type="hidden" name="bus_id" id="bus_id_hidden">
+        
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-primary text-white"><strong>1. Seleccione el Viaje</strong></div>
+            <div class="card-body">
+                <select name="viaje_id" id="viaje_id" class="form-select mb-3" onchange="cargarViaje(this.value)">
+                    <option value="">-- Seleccione --</option>
+                    {% for v in viajes %}
+                        <option value="{{ v.id }}" {% if viaje_id_preseleccionado|stringformat:"s" == v.id|stringformat:"s" %}selected{% endif %}>
+                            {{ v.ruta.nombre }} - {{ v.hora|time:"h:i A" }} ({{ v.bus.placa }})
+                        </option>
+                    {% endfor %}
+                </select>
+                <div class="row g-3">
+                    <div class="col-md-4"><label>Bus:</label><input type="text" id="numero_bus" class="form-control" readonly></div>
+                    <div class="col-md-4"><label>Dueño:</label><input type="text" id="dueno" class="form-control" readonly></div>
+                    <div class="col-md-4"><label>Conductores:</label><input type="text" name="conductores_nombres" id="conductores" class="form-control"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-success text-white"><strong>2. Boletos Escaneados</strong></div>
+            <div class="card-body">
+                <div id="info-boletos" class="text-center py-4"><p class="text-muted">Seleccione un viaje.</p></div>
+                <table class="table table-sm d-none" id="tabla-boletos">
+                    <thead><tr><th>Asiento</th><th>Pasajero</th><th class="text-end">Monto USD</th></tr></thead>
+                    <tbody id="lista-boletos"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-warning text-dark"><strong>3. Cálculo</strong></div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Gastos ANTES del %</h6>
+                        <div id="gastos-antes-container">
+                            <div class="input-group mb-2">
+                                <input type="text" name="gasto_antes_concepto[]" class="form-control" value="Seguro de Pasajeros">
+                                <input type="number" step="0.01" name="gasto_antes_monto[]" class="form-control" value="0.00">
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="agregarGasto('antes')"><i class="bi bi-plus"></i> Agregar</button>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Gastos DESPUÉS del %</h6>
+                        <div id="gastos-despues-container"></div>
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="agregarGasto('despues')"><i class="bi bi-plus"></i> Agregar</button>
+                    </div>
+                </div>
+                <hr>
+                <div class="row">
+                    <div class="col-md-4"><label>Total Bruto:</label><input type="text" id="resumen-bruto" class="form-control" readonly></div>
+                    <div class="col-md-4"><label>% Empresa ({{ porcentaje_empresa }}%):</label><input type="text" id="resumen-empresa" class="form-control" readonly></div>
+                    <div class="col-md-4"><label class="text-success">Neto a Pagar:</label><input type="text" id="resumen-neto" class="form-control fw-bold text-success" readonly></div>
+                </div>
+                <textarea name="observacion" class="form-control mt-3" rows="2" placeholder="Observación..."></textarea>
+                <div class="text-center mt-4">
+                    <button type="submit" class="btn btn-primary btn-lg px-5"><i class="bi bi-check-circle"></i> Cerrar y Liquidar</button>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+
+<script>
+    const porcentajeEmpresa = {{ porcentaje_empresa|default:20 }};
+    
+    function cargarViaje(viajeId) {
+        if (!viajeId) return;
+        fetch(`/taquilla/api/datos-liquidacion/?viaje_id=${viajeId}`)
+            .then(res => res.json())
+            .then(data => {
+                if (!data.ok) { alert(data.error); return; }
+                document.getElementById('numero_bus').value = data.numero_bus;
+                document.getElementById('dueno').value = data.dueno;
+                document.getElementById('conductores').value = data.conductores;
+                document.getElementById('bus_id_hidden').value = data.bus_id;
+                
+                const lista = document.getElementById('lista-boletos');
+                const tabla = document.getElementById('tabla-boletos');
+                lista.innerHTML = '';
+                let total = 0;
+                if (data.boletos.length === 0) {
+                    document.getElementById('info-boletos').innerHTML = '<p class="text-warning">No hay boletos usados.</p>';
+                    tabla.classList.add('d-none');
+                } else {
+                    document.getElementById('info-boletos').innerHTML = `<p class="text-success">${data.boletos.length} boletos.</p>`;
+                    tabla.classList.remove('d-none');
+                    data.boletos.forEach(b => {
+                        total += parseFloat(b.monto_total_usd);
+                        lista.innerHTML += `<tr><td>${b.asiento}</td><td>${b.nombre}</td><td class="text-end">$${parseFloat(b.monto_total_usd).toFixed(2)}</td></tr>`;
+                    });
+                }
+                document.getElementById('resumen-bruto').value = `$ ${total.toFixed(2)}`;
+                recalcular(total);
+            });
+    }
+    
+    function recalcular(totalBruto) {
+        const empresa = totalBruto * (porcentajeEmpresa / 100);
+        document.getElementById('resumen-empresa').value = `$ ${empresa.toFixed(2)}`;
+        let antes = 0; document.querySelectorAll('#gastos-antes-container input[name="gasto_antes_monto[]"]').forEach(i => antes += parseFloat(i.value) || 0);
+        let despues = 0; document.querySelectorAll('#gastos-despues-container input[name="gasto_despues_monto[]"]').forEach(i => despues += parseFloat(i.value) || 0);
+        document.getElementById('resumen-neto').value = `$ ${(totalBruto - antes - empresa - despues).toFixed(2)}`;
+    }
+    
+    function agregarGasto(tipo) {
+        const container = document.getElementById(`gastos-${tipo}-container`);
+        const div = document.createElement('div');
+        div.className = 'input-group mb-2';
+        div.innerHTML = `<input type="text" name="gasto_${tipo}_concepto[]" class="form-control" placeholder="Concepto">
+            <input type="number" step="0.01" name="gasto_${tipo}_monto[]" class="form-control" placeholder="Monto" value="0.00">
+            <button class="btn btn-outline-danger" type="button" onclick="this.parentElement.remove()"><i class="bi bi-trash"></i></button>`;
+        container.appendChild(div);
+    }
+</script>
+{% endblock %}

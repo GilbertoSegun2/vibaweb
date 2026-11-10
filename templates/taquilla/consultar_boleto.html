@@ -1,0 +1,175 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block title %}Consultar Boleto - Taquilla{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-search"></i> Consultar Boleto</h2>
+        <a href="{% url 'core:taquilla_inicio' %}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Volver</a>
+    </div>
+
+    <!-- Buscador (Solo Número de Boleto) -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3 align-items-end">
+                <div class="col-md-8">
+                    <label class="form-label fw-bold">Número de Boleto</label>
+                    <input type="text" name="q" class="form-control form-control-lg" 
+                           placeholder="Ej: 005-000123" 
+                           value="{{ busqueda }}" autofocus>
+                </div>
+                <div class="col-md-4">
+                    <button type="submit" class="btn btn-primary btn-lg w-100"><i class="bi bi-search"></i> Buscar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {% if busqueda %}
+        {% if not boleto %}
+            <div class="alert alert-warning text-center">
+                <h5><i class="bi bi-exclamation-triangle-fill"></i> Boleto no encontrado</h5>
+                <p class="mb-0">No se encontró ningún boleto con el número: <strong>{{ busqueda }}</strong></p>
+            </div>
+        {% else %}
+            <!-- Datos del Boleto -->
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-primary text-white d-flex justify-content-between">
+                    <strong><i class="bi bi-ticket-perforated"></i> Boleto: {{ boleto.numero_boleto }}</strong>
+                    <span class="badge {% if boleto.estado == 'anulado' %}bg-secondary{% elif boleto.estado == 'vendido' %}bg-success{% elif boleto.estado == 'usado' %}bg-info text-dark{% else %}bg-light text-dark{% endif %} fs-6">
+                        {{ boleto.get_estado_display }}
+                    </span>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <p><strong>Pasajero:</strong> {{ boleto.pasajero_nombre }}</p>
+                            <p><strong>Cédula:</strong> {{ boleto.pasajero_cedula }}</p>
+                            <p><strong>Teléfono:</strong> {{ boleto.pasajero_telefono|default:"-" }}</p>
+                            <p><strong>Tipo:</strong> {{ boleto.get_tipo_pasajero_display }}</p>
+                        </div>
+                        <div class="col-md-6">
+                            <p><strong>Ruta:</strong> {{ boleto.viaje.ruta.nombre }}</p>
+                            <p><strong>Fecha Viaje:</strong> {{ boleto.viaje.fecha|date:"d/m/Y" }} - {{ boleto.viaje.hora|time:"h:i A" }}</p>
+                            <p><strong>Asiento:</strong> <span class="badge bg-primary fs-6">{{ boleto.asiento.numero }}</span></p>
+                            <p><strong>Monto Total:</strong> ${{ boleto.monto_total_usd|floatformat:2 }} / Bs. {{ boleto.monto_total_bs|floatformat:2 }}</p>
+                            {% if boleto.vendido_por %}
+                            <p><strong>Vendido por:</strong> {{ boleto.vendido_por.get_full_name|default:boleto.vendido_por.username }}</p>
+                            {% endif %}
+                            {% if boleto.chequeado_por %}
+                            <p><strong>Chequeado por:</strong> {{ boleto.chequeado_por.get_full_name|default:boleto.chequeado_por.username }} 
+                               ({{ boleto.fecha_chequeo|date:"d/m/Y h:i A" }})</p>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <hr>
+                    <div class="d-flex gap-2 justify-content-center">
+                        {% if boleto.estado == 'usado' %}
+                        <button class="btn btn-warning btn-lg" data-bs-toggle="modal" data-bs-target="#modalActivar">
+                            <i class="bi bi-arrow-counterclockwise"></i> Activar (Regresar a Vendido)
+                        </button>
+                        {% endif %}
+                        
+                        {% if boleto.estado == 'vendido' %}
+                        <button class="btn btn-danger btn-lg" data-bs-toggle="modal" data-bs-target="#modalAnular">
+                            <i class="bi bi-x-circle"></i> Anular Boleto
+                        </button>
+                        {% endif %}
+                        
+                        {% if boleto.estado != 'vendido' and boleto.estado != 'usado' %}
+                        <div class="alert alert-info text-center w-100 mb-0">
+                            <i class="bi bi-info-circle"></i> 
+                            Este boleto está en estado <strong>{{ boleto.get_estado_display }}</strong>. No se puede anular ni reactivar.
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Historial de Movimientos -->
+            <div class="card shadow-sm">
+                <div class="card-header bg-secondary text-white">
+                    <strong><i class="bi bi-clock-history"></i> Historial del Boleto</strong>
+                </div>
+                <div class="card-body">
+                    <table class="table table-sm table-hover">
+                        <thead>
+                            <tr>
+                                <th>Fecha/Hora</th>
+                                <th>Acción</th>
+                                <th>Usuario</th>
+                                <th>Motivo</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for m in movimientos %}
+                            <tr>
+                                <td>{{ m.fecha_hora|date:"d/m/Y h:i A" }}</td>
+                                <td>{{ m.get_tipo_display }}</td>
+                                <td>{{ m.usuario.get_full_name|default:m.usuario.username|default:"Sistema" }}</td>
+                                <td>{{ m.motivo|default:"-" }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="4" class="text-center text-muted">Sin movimientos registrados.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        {% endif %}
+    {% endif %}
+</div>
+
+<!-- Modal para Activar -->
+<div class="modal fade" id="modalActivar" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title"><i class="bi bi-arrow-counterclockwise"></i> Reactivar Boleto</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="accion" value="activar">
+                <input type="hidden" name="boleto_id" value="{{ boleto.id }}">
+                <div class="modal-body">
+                    <p>Ingrese su clave para reactivar el boleto <strong>{{ boleto.numero_boleto }}</strong> y devolverlo al estado "Vendido".</p>
+                    <input type="password" name="password" class="form-control form-control-lg" placeholder="Su clave de usuario" required autofocus>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-warning">Reactivar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal para Anular -->
+<div class="modal fade" id="modalAnular" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="bi bi-x-circle"></i> Anular Boleto</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="accion" value="anular">
+                <input type="hidden" name="boleto_id" value="{{ boleto.id }}">
+                <div class="modal-body">
+                    <p>Ingrese la clave del taquillero que <strong>vendió</strong> el boleto <strong>{{ boleto.numero_boleto }}</strong>.</p>
+                    <p class="text-danger small">Solo el vendedor original puede anular este boleto, y solo si fue vendido hoy.</p>
+                    <input type="password" name="password" class="form-control form-control-lg" placeholder="Clave del vendedor original" required autofocus>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-danger">Anular Boleto</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -70,6 +70,23 @@ urlpatterns = [
     path('taquilla/viaje/<int:viaje_id>/', views.taquilla_mapa, name='taquilla_mapa'),
     path('taquilla/viaje/<int:viaje_id>/cobrar/', views.taquilla_cobrar, name='taquilla_cobrar'),
     path('taquilla/confirmacion/<int:transaccion_id>/', views.taquilla_confirmacion, name='taquilla_confirmacion'),
+    path('taquilla/viaje/<int:viaje_id>/cerrar-venta/', views.taquilla_cerrar_venta, name='taquilla_cerrar_venta'),
+    path('taquilla/liquidacion/<int:liquidacion_id>/', views.taquilla_liquidacion_detalle, name='taquilla_liquidacion_detalle'),
+    path('taquilla/consultar-boleto/', views.taquilla_consultar_boleto, name='taquilla_consultar_boleto'),
+    
+    # ============================================================
+    # MÓDULO DE ABORDAJE Y CHEQUEO QR
+    # ============================================================
+    path('taquilla/escaner/', views.taquilla_escaner, name='taquilla_escaner'),
+    path('taquilla/api/validar-qr/', views.api_validar_qr, name='api_validar_qr'),
+    
+    # Liberar Puestos para Lista de Espera
+    path('taquilla/api/boletos-vendidos/', views.taquilla_api_boletos_vendidos, name='taquilla_api_boletos_vendidos'),
+    path('taquilla/api/liberar-puestos-vendidos/', views.taquilla_api_liberar_puestos_vendidos, name='taquilla_api_liberar_puestos_vendidos'),
+    path('taquilla/api/asientos-disponibles-bloquear/', views.taquilla_api_asientos_disponibles_bloquear, name='taquilla_api_asientos_disponibles_bloquear'),
+    path('taquilla/api/bloquear-asientos/', views.taquilla_api_bloquear_asientos, name='taquilla_api_bloquear_asientos'),
+    path('taquilla/api/asientos-bloqueados/', views.taquilla_api_asientos_bloqueados, name='taquilla_api_asientos_bloqueados'),
+    path('taquilla/api/desbloquear-asientos/', views.taquilla_api_desbloquear_asientos, name='taquilla_api_desbloquear_asientos'),
     
     # Transferencia de Asiento
     path('taquilla/api/buscar-boleto/', views.taquilla_buscar_boleto, name='taquilla_buscar_boleto'),
@@ -89,4 +106,7 @@ urlpatterns = [
     path('api/heartbeat/', views.heartbeat, name='heartbeat'),
     path('api/destinos-populares/', views.api_destinos_populares, name='api_destinos_populares'),
     path('api/buscar-oficinas/', views.api_buscar_oficinas, name='api_buscar_oficinas'),
+    
+    path('taquilla/liquidar/', views.taquilla_liquidar, name='taquilla_liquidar'),
+    path('taquilla/api/datos-liquidacion/', views.api_datos_liquidacion, name='api_datos_liquidacion'),
 ]
