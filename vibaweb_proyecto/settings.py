@@ -183,8 +183,9 @@ CSRF_TRUSTED_ORIGINS = config(
     cast=Csv()
 )
 
-# Si estamos en producción (Railway), permitir el dominio real
-if 'RAILWAY_ENVIRONMENT' in os.environ:
+# ⭐ NUEVO: Si estamos en producción (Railway), permitir el dominio real
+# Verificamos DATABASE_URL, que es la variable que Railway siempre define.
+if 'DATABASE_URL' in os.environ:
     CSRF_TRUSTED_ORIGINS += [
         'https://boletoexpreso.com',
         'https://www.boletoexpreso.com',
