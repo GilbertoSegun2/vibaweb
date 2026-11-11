@@ -206,7 +206,17 @@
             if (distance < 0) {
                 clearInterval(timerInterval);
                 alert("Tu tiempo de reserva ha expirado. Los asientos han sido liberados.");
-                window.location.href = "/";
+                
+                // ⭐ NUEVO: Avisar al servidor que libere SOLO LOS ASIENTOS DE ESTE USUARIO
+                fetch('/taquilla/api/liberar-reservas-usuario/', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': getCookie('csrftoken'),
+                        'Content-Type': 'application/json'
+                    },
+                }).catch(() => {}).finally(() => {
+                    window.location.href = "/";
+                });
                 return;
             }
 

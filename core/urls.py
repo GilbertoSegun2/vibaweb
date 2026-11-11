@@ -73,6 +73,8 @@ urlpatterns = [
     path('taquilla/viaje/<int:viaje_id>/cerrar-venta/', views.taquilla_cerrar_venta, name='taquilla_cerrar_venta'),
     path('taquilla/liquidacion/<int:liquidacion_id>/', views.taquilla_liquidacion_detalle, name='taquilla_liquidacion_detalle'),
     path('taquilla/consultar-boleto/', views.taquilla_consultar_boleto, name='taquilla_consultar_boleto'),
+    path('taquilla/api/liberar-reservas-usuario/', views.liberar_reservas_usuario_api, name='liberar_reservas_usuario_api'),
+    path('taquilla/api/buscar-pasajero/', views.taquilla_buscar_pasajero, name='taquilla_buscar_pasajero'),
     
     # ============================================================
     # MÓDULO DE ABORDAJE Y CHEQUEO QR

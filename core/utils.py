@@ -67,14 +67,16 @@ def obtener_parametro(codigo, default=None):
         return default
     return default
 
-def liberar_reservas_vencidas(viaje=None):
+def liberar_reservas_vencidas(viaje=None, usuario=None):
     """
     Libera asientos reservados cuyo tiempo ha expirado.
-    ⭐ RELOJ ÚNICO: NO libera los asientos del usuario actual (para no interrumpir su compra).
+    
+    - Si se pasa 'usuario': respeta al usuario actual (NO libera sus asientos).
+      Libera los huérfanos y los de OTROS usuarios.
+    - Si NO se pasa 'usuario': libera todos los vencidos (comportamiento global).
     """
     from django.utils import timezone
     from .models import Asiento
-    from django.contrib.auth.models import AnonymousUser
     
     ahora = timezone.now()
     total_liberados = 0
@@ -89,8 +91,7 @@ def liberar_reservas_vencidas(viaje=None):
         qs_huerfanos = qs_huerfanos.filter(viaje=viaje)
     total_liberados += qs_huerfanos.update(estado='disponible', reservado_hasta=None, reservado_por=None)
     
-    # ⭐ CASO 2: Asientos de usuarios que ya expiraron (pero NO los del usuario actual)
-    # Nota: El usuario actual se maneja en las vistas, aquí solo liberamos los "ajenos" vencidos.
+    # CASO 2: Asientos de OTROS usuarios que expiraron (respetando al actual)
     qs_vencidos = Asiento.objects.filter(
         estado='reservado',
         reservado_hasta__lt=ahora,
@@ -98,9 +99,9 @@ def liberar_reservas_vencidas(viaje=None):
     )
     if viaje is not None:
         qs_vencidos = qs_vencidos.filter(viaje=viaje)
-    
-    # Excluimos al usuario actual si está logueado (esto se pasa desde la vista)
-    # Como no tenemos el request aquí, dejamos que la vista maneje al usuario actual.
+    if usuario is not None:
+        # ⭐ CLAVE: Excluir al usuario actual para no interrumpirlo
+        qs_vencidos = qs_vencidos.exclude(reservado_por=usuario)
     total_liberados += qs_vencidos.update(estado='disponible', reservado_hasta=None, reservado_por=None)
     
     # CASO 3: Pendientes de verificación

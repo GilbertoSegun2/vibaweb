@@ -49,16 +49,23 @@
                 <div class="row mb-3">
                     <div class="col-md-6">
                         <label class="form-label">Cédula (V-XXXX)</label>
-                        <input type="text" name="cedula_{{ a.id }}" class="form-control" required placeholder="Ej: V-12345678">
+                        <!-- ⭐ AGREGADO: id y onblur para búsqueda -->
+                        <input type="text" name="cedula_{{ a.id }}" id="cedula_{{ a.id }}" 
+                               class="form-control" required placeholder="Ej: V-12345678"
+                               onblur="buscarPasajeroPorCedula('{{ a.id }}')">
                     </div>
                     <div class="col-md-6">
                         <label class="form-label">Teléfono</label>
-                        <input type="text" name="telefono_{{ a.id }}" class="form-control" placeholder="0414-1234567">
+                        <!-- ⭐ AGREGADO: id -->
+                        <input type="text" name="telefono_{{ a.id }}" id="telefono_{{ a.id }}" 
+                               class="form-control" placeholder="0414-1234567">
                     </div>
                 </div>
                 <div class="mb-3">
                     <label class="form-label">Nombre y Apellido</label>
-                    <input type="text" name="nombre_{{ a.id }}" class="form-control" required placeholder="Nombre completo">
+                    <!-- ⭐ AGREGADO: id -->
+                    <input type="text" name="nombre_{{ a.id }}" id="nombre_{{ a.id }}" 
+                           class="form-control" required placeholder="Nombre completo">
                 </div>
                 <div class="mb-3">
                     <label class="form-label">Tipo de Pasajero</label>
@@ -185,6 +192,42 @@
     const TASA_BCV = parseFloat("{{ tasa_bcv|default:'0' }}".replace(',', '.')) || 0;
     const DESCUENTO_PREFERENCIAL = parseFloat("{{ descuento_preferencial|default:0 }}") || 0;
     const COBRAR_SEGURO_CORTESIA = {{ cobrar_seguro_cortesia|yesno:"true,false" }};
+
+    // ============================================================
+    // ⭐ NUEVA FUNCIÓN: BÚSQUEDA AUTOMÁTICA DE PASAJERO POR CÉDULA
+    // ============================================================
+    function buscarPasajeroPorCedula(asientoId) {
+        const inputCedula = document.getElementById(`cedula_${asientoId}`);
+        const inputNombre = document.getElementById(`nombre_${asientoId}`);
+        const inputTelefono = document.getElementById(`telefono_${asientoId}`);
+        const cedula = inputCedula.value.trim();
+
+        // Si el campo está vacío o el nombre ya está lleno, no hacemos nada
+        if (cedula.length < 5 || inputNombre.value.trim() !== '') {
+            return;
+        }
+
+        // Hacemos la petición al servidor
+        fetch(`/taquilla/api/buscar-pasajero/?cedula=${encodeURIComponent(cedula)}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.encontrado) {
+                    // Autocompletamos los campos
+                    inputNombre.value = data.nombre;
+                    inputTelefono.value = data.telefono || '';
+                    
+                    // Efecto visual para que el taquillero sepa que se llenó
+                    inputNombre.style.backgroundColor = '#d1e7dd'; // Verde clarito
+                    inputTelefono.style.backgroundColor = '#d1e7dd';
+                    
+                    setTimeout(() => {
+                        inputNombre.style.backgroundColor = '';
+                        inputTelefono.style.backgroundColor = '';
+                    }, 1000);
+                }
+            })
+            .catch(error => console.error('Error buscando pasajero:', error));
+    }
 
     (function() {
         const expiracionStr = "{{ expiracion_iso|default:'' }}";

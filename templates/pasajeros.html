@@ -36,11 +36,18 @@
             
             {% for asiento, form in formularios %}
                 <div class="card mb-3 shadow-sm">
-                    <div class="card-header" style="background-color: #003366; color: white;">
-                        <strong><i class="bi bi-person-badge"></i> Asiento {{ asiento.numero }}</strong>
-                        <span class="badge bg-light text-dark ms-2">
-                            {{ asiento.get_lado_display }}
-                        </span>
+                    <div class="card-header d-flex justify-content-between align-items-center" style="background-color: #003366; color: white;">
+                        <div>
+                            <strong><i class="bi bi-person-badge"></i> Asiento {{ asiento.numero }}</strong>
+                            <span class="badge bg-light text-dark ms-2">
+                                {{ asiento.get_lado_display }}
+                            </span>
+                        </div>
+                        {% if forloop.first and cliente %}
+                        <button type="button" class="btn btn-outline-light btn-sm" onclick="limpiarPrimerPasajero('{{ asiento.id }}')">
+                            <i class="bi bi-x-circle"></i> No soy yo
+                        </button>
+                        {% endif %}
                     </div>
                     <div class="card-body">
                         <div class="row g-3">
@@ -134,4 +141,21 @@
         </div>
     </div>
 </div>
+
+<script>
+    // ⭐ FUNCIÓN PARA LIMPIAR LOS DATOS DEL PRIMER PASAJERO
+    function limpiarPrimerPasajero(asientoId) {
+        // Los IDs que genera Django con prefix son: id_asiento_<id>-nombre, etc.
+        const inputNombre = document.getElementById(`id_asiento_${asientoId}-nombre`);
+        const inputCedula = document.getElementById(`id_asiento_${asientoId}-cedula`);
+        const inputTelefono = document.getElementById(`id_asiento_${asientoId}-telefono`);
+        
+        if (inputNombre) inputNombre.value = '';
+        if (inputCedula) inputCedula.value = '';
+        if (inputTelefono) inputTelefono.value = '';
+        
+        // Enfocar el campo de cédula para que el cliente empiece a escribir
+        if (inputCedula) inputCedula.focus();
+    }
+</script>
 {% endblock %}

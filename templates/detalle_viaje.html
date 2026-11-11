@@ -187,10 +187,10 @@
                 <p class="text-muted small fw-bold mb-1 text-uppercase" style="font-size: 0.7rem; letter-spacing: 1px;">Gestión de Asientos</p>
                 <div class="d-grid gap-2 mb-3">
                     <div class="btn-group w-100" role="group">
-                        <!-- ⭐ BOTÓN BLOQUEAR ACTIVADO -->
-                        <button class="btn btn-outline-primary btn-sm" onclick="abrirModalBloquear()"><i class="bi bi-lock"></i> Bloquear</button>
+                        <!-- ⭐ BOTÓN BLOQUEAR AHORA LLAMA A LA NUEVA FUNCIÓN -->
+                        <button class="btn btn-outline-primary btn-sm" onclick="bloquearAsientosSeleccionados()"><i class="bi bi-lock"></i> Bloquear</button>
                         
-                        <!-- ⭐ BOTÓN LIBERAR: AHORA TIENE UN MENÚ DESPLEGABLE -->
+                        <!-- ⭐ BOTÓN LIBERAR: MENÚ DESPLEGABLE -->
                         <div class="btn-group" role="group">
                             <button type="button" class="btn btn-outline-danger btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
                                 <i class="bi bi-unlock"></i> Liberar
@@ -450,38 +450,6 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
                 <button type="button" class="btn btn-danger" onclick="procesarLiberacionPuestos()">Procesar Liberación</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- ⭐ MODAL PARA BLOQUEAR ASIENTOS ⭐ -->
-<div class="modal fade" id="modalBloquear" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg">
-        <div class="modal-content">
-            <div class="modal-header bg-primary text-white">
-                <h5 class="modal-title"><i class="bi bi-lock"></i> Bloquear Asientos</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <div class="alert alert-info py-2 small">
-                    <i class="bi bi-info-circle-fill"></i> Seleccione los asientos que desea bloquear (por ejemplo, por fallas mecánicas). No estarán disponibles para la venta.
-                </div>
-                <table class="table table-sm table-hover table-bordered">
-                    <thead class="table-light">
-                        <tr>
-                            <th width="50"><input type="checkbox" id="check-todos-bloquear" onchange="toggleTodosBloquear(this)"></th>
-                            <th>Asiento</th>
-                        </tr>
-                    </thead>
-                    <tbody id="tabla-asientos-bloquear">
-                        <!-- Se llena con JS -->
-                    </tbody>
-                </table>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                <button type="button" class="btn btn-primary" onclick="procesarBloqueo()">Bloquear Seleccionados</button>
             </div>
         </div>
     </div>
@@ -949,64 +917,33 @@ document.addEventListener("DOMContentLoaded", function() {
     };
 
     // ============================================================
-    // ⭐ LÓGICA DE BLOQUEAR ASIENTOS ⭐
+    // ⭐ NUEVA LÓGICA DE BLOQUEO (SELECCIÓN DIRECTA) ⭐
     // ============================================================
-    window.abrirModalBloquear = function() {
-        const tbody = document.getElementById('tabla-asientos-bloquear');
-        tbody.innerHTML = '<tr><td colspan="2" class="text-center">Cargando asientos disponibles...</td></tr>';
-        
-        new bootstrap.Modal(document.getElementById('modalBloquear')).show();
-        
-        fetch(`/taquilla/api/asientos-disponibles-bloquear/?viaje_id=${VIAJE_ID}`)
-            .then(res => res.json())
-            .then(data => {
-                if (!data.ok) {
-                    tbody.innerHTML = `<tr><td colspan="2" class="text-center text-danger">${data.error}</td></tr>`;
-                    return;
-                }
-                if (data.asientos.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted">No hay asientos disponibles para bloquear.</td></tr>';
-                    return;
-                }
-                
-                tbody.innerHTML = '';
-                data.asientos.forEach(a => {
-                    const tr = document.createElement('tr');
-                    tr.innerHTML = `
-                        <td class="text-center">
-                            <input type="checkbox" class="check-bloquear" value="${a.asiento_id}">
-                        </td>
-                        <td><span class="badge bg-success">${a.asiento_numero}</span></td>
-                    `;
-                    tbody.appendChild(tr);
-                });
-            })
-            .catch(err => {
-                tbody.innerHTML = '<tr><td colspan="2" class="text-center text-danger">Error de red.</td></tr>';
-            });
-    };
-
-    window.toggleTodosBloquear = function(checkbox) {
-        const checks = document.querySelectorAll('.check-bloquear');
-        checks.forEach(c => c.checked = checkbox.checked);
-    };
-
-    window.procesarBloqueo = function() {
-        const checksSeleccionados = document.querySelectorAll('.check-bloquear:checked');
-        if (checksSeleccionados.length === 0) {
-            alert('Por favor, seleccione al menos un asiento para bloquear.');
+    window.bloquearAsientosSeleccionados = function() {
+        if (seleccionados.size === 0) {
+            alert('⚠️ ATENCIÓN: Primero debe seleccionar los asientos que desea bloquear en el mapa (se pondrán amarillos).');
             return;
         }
 
-        if (!confirm(`¿Está seguro de bloquear ${checksSeleccionados.length} asiento(s)?\n\nNo estarán disponibles para la venta.`)) {
+        // Obtener los números de asiento para el mensaje
+        const numeros = [];
+        document.querySelectorAll('.asiento.seleccionado').forEach(a => { numeros.push(a.dataset.asientoNumero); });
+        numeros.sort();
+        const listaFormateada = numeros.join(', ');
+
+        if (!confirm(`¿Está seguro de bloquear los siguientes puestos?\n\n${listaFormateada}\n\nEstos asientos pasarán a color gris y no se podrán vender.`)) {
             return;
         }
 
         const formData = new FormData();
-        checksSeleccionados.forEach(chk => {
-            formData.append('asientos_ids[]', chk.value);
+        seleccionados.forEach(id => {
+            formData.append('asientos_ids[]', id);
         });
         formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+        // Deshabilitar botón para evitar doble clic
+        const btn = document.querySelector('button[onclick="bloquearAsientosSeleccionados()"]');
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Bloqueando...'; }
 
         fetch('/taquilla/api/bloquear-asientos/', {
             method: 'POST',
@@ -1016,12 +953,16 @@ document.addEventListener("DOMContentLoaded", function() {
         .then(data => {
             if (data.ok) {
                 alert('✅ ' + data.mensaje);
-                location.reload();
+                location.reload(); // Recargar para ver el mapa actualizado en gris
             } else {
                 alert('❌ Error: ' + data.error);
+                if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-lock"></i> Bloquear'; }
             }
         })
-        .catch(err => alert('Error de red al procesar el bloqueo.'));
+        .catch(err => {
+            alert('Error de red al procesar el bloqueo.');
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-lock"></i> Bloquear'; }
+        });
     };
 
     // ============================================================

@@ -456,6 +456,30 @@ def reservar_asientos(request):
 
 @require_POST
 @login_required
+def liberar_reservas_usuario_api(request):
+    """API para liberar asientos expirados del usuario actual (llamada desde JS)."""
+    if not hasattr(request.user, 'usuarioempresa') and not hasattr(request.user, 'cliente'):
+        return JsonResponse({'ok': False, 'error': 'No autorizado'}, status=403)
+    
+    from .utils import liberar_reservas_vencidas
+    
+    # ⭐ Forzamos la liberación de los asientos del usuario actual
+    # (porque este endpoint lo llama SOLO cuando el usuario ya sabe que expiró)
+    ahora = timezone.now()
+    liberados = Asiento.objects.filter(
+        estado='reservado',
+        reservado_por=request.user,
+        reservado_hasta__lt=ahora
+    ).update(estado='disponible', reservado_hasta=None, reservado_por=None)
+    
+    # Limpiamos la sesión
+    request.session.pop('reserva_inicio', None)
+    request.session.pop('asientos_seleccionados', None)
+    
+    return JsonResponse({'ok': True, 'liberados': liberados})
+
+@require_POST
+@login_required
 def liberar_asientos(request):
     asientos_ids = request.POST.getlist('asientos[]')
     if not asientos_ids:
@@ -553,19 +577,32 @@ def pasajeros(request, viaje_id):
         pasajeros_previos = request.session.get('pasajeros_data', [])
         pasajeros_dict = {p['asiento_id']: p for p in pasajeros_previos}
         formularios = []
-        for asiento in asientos:
+
+        # ⭐ Datos del cliente logueado para pre-llenar el primer pasajero
+        datos_cliente = {}
+        if cliente and not pasajeros_previos:
+            datos_cliente = {
+                'nombre': cliente.user.get_full_name() or cliente.user.username,
+                'cedula': cliente.cedula,
+                'telefono': cliente.telefono,
+            }
+
+        for i, asiento in enumerate(asientos):
             prefix = f"asiento_{asiento.id}"
             inicial = {}
             if asiento.id in pasajeros_dict:
                 p = pasajeros_dict[asiento.id]
                 inicial = {'nombre': p.get('nombre', ''), 'cedula': p.get('cedula', ''), 'telefono': p.get('telefono', ''), 'tipo_pasajero': p.get('tipo_pasajero', 'normal')}
+            elif i == 0 and datos_cliente:
+                # ⭐ El primer asiento se pre-llena con los datos del cliente
+                inicial = datos_cliente
             form = PasajeroForm(prefix=prefix, initial=inicial)
             formularios.append((asiento, form))
     cantidad = asientos.count()
     precio_unitario = (tarifa.monto_usd + valor_seguro) if tarifa else 0
     total_usd = precio_unitario * cantidad
     expiracion_iso = (timezone.now() + timedelta(seconds=segundos_restantes)).isoformat()
-    return render(request, 'pasajeros.html', {'viaje': viaje, 'formularios': formularios, 'cantidad': cantidad, 'total_usd': total_usd, 'tarifa': tarifa, 'seguro': valor_seguro, 'segundos_restantes': segundos_restantes, 'expiracion_iso': expiracion_iso, 'minutos_reserva': minutos})
+    return render(request, 'pasajeros.html', {'viaje': viaje, 'formularios': formularios, 'cantidad': cantidad, 'total_usd': total_usd, 'tarifa': tarifa, 'seguro': valor_seguro, 'segundos_restantes': segundos_restantes, 'expiracion_iso': expiracion_iso, 'minutos_reserva': minutos, 'cliente': cliente})
 
 @login_required
 def pago(request, viaje_id):
@@ -992,7 +1029,9 @@ def taquilla_mapa(request, viaje_id):
         reservado_por=request.user
     ).update(reservado_hasta=expira_en)
 
-    liberar_reservas_vencidas(viaje=viaje)
+    # ~ liberar_reservas_vencidas(viaje=viaje)
+    liberar_reservas_vencidas(viaje=viaje, usuario=request.user)
+
 
     origen_id = request.GET.get('origen', empleado.oficina.id)
     destino_id = request.GET.get('destino')
@@ -1121,7 +1160,8 @@ def taquilla_cobrar(request, viaje_id):
     expiracion_iso = expira_en.isoformat()
     segundos_restantes = max(0, int((expira_en - tiempo_actual).total_seconds()))
 
-    liberar_reservas_vencidas(viaje=viaje)
+    # ~ liberar_reservas_vencidas(viaje=viaje)
+    liberar_reservas_vencidas(viaje=viaje, usuario=request.user)
 
     asientos_ids = request.GET.getlist('asientos[]')
     asientos_seleccionados = list(Asiento.objects.filter(id__in=asientos_ids).values_list('numero', flat=True).order_by('numero'))
@@ -1313,17 +1353,33 @@ def taquilla_confirmacion(request, transaccion_id):
 
 @login_required
 def taquilla_buscar_pasajero(request):
-    cedula = request.GET.get('cedula', '')
-    if not cedula:
+    cedula_raw = request.GET.get('cedula', '').strip()
+    if not cedula_raw:
         return JsonResponse({'encontrado': False})
     
-    cliente = Cliente.objects.filter(cedula__iexact=cedula).first()
+    # Limpiamos la cédula de letras y guiones para buscar solo los números
+    cedula_numeros = ''.join(filter(str.isdigit, cedula_raw))
+    if len(cedula_numeros) < 5: # Si es muy corto, no buscar
+        return JsonResponse({'encontrado': False})
+
+    # 1. Buscamos primero en los Clientes registrados
+    cliente = Cliente.objects.filter(cedula__icontains=cedula_numeros).first()
     if cliente:
         return JsonResponse({
             'encontrado': True,
             'nombre': cliente.user.get_full_name() or cliente.user.username,
             'telefono': cliente.telefono
         })
+
+    # 2. Si no está registrado, buscamos en el historial de boletos (por si viajó como invitado)
+    boleto_historico = Boleto.objects.filter(pasajero_cedula__icontains=cedula_numeros).order_by('-fecha_venta').first()
+    if boleto_historico:
+        return JsonResponse({
+            'encontrado': True,
+            'nombre': boleto_historico.pasajero_nombre,
+            'telefono': boleto_historico.pasajero_telefono
+        })
+
     return JsonResponse({'encontrado': False})
     
 import random
@@ -1415,9 +1471,12 @@ def reservar_temporal(request):
     if not cliente and not empleado:
         return JsonResponse({'ok': False, 'error': 'Usuario no autorizado.'}, status=400)
     
+    # ⭐ VALIDACIÓN DE LÍMITE DIFERENCIADO
     if empleado:
+        max_puestos = int(obtener_parametro('203', default=60)) # Límite para taquilla
         minutos = float(obtener_parametro('171', default=5))
     else:
+        max_puestos = int(obtener_parametro('103', default=5))  # Límite para web
         minutos = float(obtener_parametro('101', default=10))
     
     vence = timezone.now() + timedelta(minutes=minutos)
@@ -1434,7 +1493,7 @@ def reservar_temporal(request):
                 asiento.save()
                 return JsonResponse({'ok': True, 'vence': vence.isoformat()})
                 
-            max_puestos = int(obtener_parametro('103', default=5))
+            # ⭐ Usamos el max_puestos calculado arriba
             asientos_actuales = Asiento.objects.filter(
                 viaje_id=viaje_id, estado='reservado', reservado_por=request.user, reservado_hasta__gt=timezone.now()
             ).count()
@@ -2113,7 +2172,6 @@ def taquilla_api_asientos_disponibles_bloquear(request):
     
     return JsonResponse({'ok': True, 'asientos': data})
 
-
 @require_POST
 @login_required
 def taquilla_api_bloquear_asientos(request):
@@ -2127,27 +2185,38 @@ def taquilla_api_bloquear_asientos(request):
         
     try:
         with transaction.atomic():
+            # ⭐ CAMBIO CLAVE: Buscamos asientos 'reservado' por ESTE usuario (los que él seleccionó)
             asientos = Asiento.objects.select_for_update().filter(
-                id__in=asientos_ids, estado='disponible'
+                id__in=asientos_ids, 
+                estado='reservado',
+                reservado_por=request.user
             )
             
             bloqueados = 0
             for asiento in asientos:
                 asiento.estado = 'bloqueado'
+                asiento.reservado_por = None  # Limpiamos la reserva
+                asiento.reservado_hasta = None
                 asiento.save()
                 
                 MovimientoAsiento.objects.create(
                     asiento=asiento, tipo='bloqueo',
-                    estado_anterior='disponible', estado_nuevo='bloqueado',
+                    estado_anterior='reservado', estado_nuevo='bloqueado',
                     usuario=request.user,
                     motivo='Asiento bloqueado desde la taquilla (posible falla mecánica).'
                 )
                 bloqueados += 1
+            
+            # Si no se bloquearon todos (porque alguno fue tomado), avisamos
+            if bloqueados < len(asientos_ids):
+                return JsonResponse({
+                    'ok': True, 
+                    'mensaje': f'{bloqueados} de {len(asientos_ids)} asientos bloqueados. Algunos ya habían sido tomados por otro usuario y se omitieron.'
+                })
                 
         return JsonResponse({'ok': True, 'mensaje': f'{bloqueados} asiento(s) bloqueado(s) exitosamente.'})
     except Exception as e:
         return JsonResponse({'ok': False, 'error': str(e)}, status=500)
-
 
 @login_required
 def taquilla_api_asientos_bloqueados(request):
