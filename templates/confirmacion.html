@@ -122,12 +122,19 @@
                             <div class="col-md-6 text-center border-start">
                                 <p class="text-muted small mb-1">Código QR de Validación</p>
                                 <div class="bg-light p-3 rounded d-inline-block border">
-                                    <!-- Aquí mostramos el texto del QR en un bloque grande -->
-                                    <h5 class="mb-0 fw-bold font-monospace text-break" style="letter-spacing: 2px; color: #003366;">
-                                        {{ boleto.codigo_qr }}
-                                    </h5>
+                                    <!-- ⭐ IMAGEN QR GENERADA -->
+                                    {% if boleto.imagen_qr %}
+                                        <img src="{{ boleto.imagen_qr }}" alt="QR {{ boleto.codigo_qr }}" 
+                                             class="img-fluid" style="max-width: 200px;">
+                                    {% else %}
+                                        <!-- Fallback: si por alguna razón no se generó la imagen, mostramos el texto -->
+                                        <h5 class="mb-0 fw-bold font-monospace text-break" style="letter-spacing: 2px; color: #003366;">
+                                            {{ boleto.codigo_qr }}
+                                        </h5>
+                                    {% endif %}
                                 </div>
-                                <p class="text-muted small mt-2 mb-0">Presenta este código al abordar</p>
+                                <p class="text-muted small mt-2 mb-0">{{ boleto.codigo_qr }}</p>
+                                <p class="text-muted small mb-0">Presenta este código al abordar</p>
                             </div>
                         </div>
                     </div>

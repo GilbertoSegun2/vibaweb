@@ -20,10 +20,11 @@ from .models import (
     Pistero, SesionActiva
 )
 from .forms import RegistroForm, LoginForm, PagoWebForm, PasajeroForm, PasarelaVirtualForm
+
 from .utils import (
     obtener_parametro, liberar_reservas_vencidas, generar_codigo_transaccion,
     generar_codigo_qr, asiento_esta_disponible_en_tramo,
-    generar_numero_boleto,
+    generar_numero_boleto, generar_imagen_qr_base64, enmascarar_email,
 )
 
 # ============================================================
@@ -90,12 +91,6 @@ def obtener_ordenes_tramo(viaje, origen_id, destino_id):
     return None, None
 
 def inicio(request):
-    # ~ # ⭐ PRUEBA DE FUEGO: Forzar un error aquí mismo para ver si entra a la función
-    # ~ raise Exception(f"EL SLUG LEÍDO ES: {obtener_parametro('200', default='NO_EXISTE')}")
-    
-    # ~ if request.user.is_authenticated and getattr(request.user, 'usuarioempresa', None):
-        # ~ return redirect('core:taquilla_inicio')
-    
     if request.user.is_authenticated and getattr(request.user, 'usuarioempresa', None):
         return redirect('core:taquilla_inicio')
         
@@ -117,7 +112,6 @@ def inicio(request):
         get_template(template)
     except TemplateDoesNotExist:
         template = 'core/inicio.html'
-        # ~ empresa_slug = 'core' # Si hace fallback, usamos core
     
     return render(request, template, {
         'oficinas': oficinas, 
@@ -125,7 +119,7 @@ def inicio(request):
         'bienvenida_titulo': bienvenida_titulo, 
         'bienvenida_subtitulo': bienvenida_subtitulo,
         'hoy': hoy,
-        'prefijo_empresa': empresa_slug, # ⭐ ESTE ERA EL DETALLE FALTANTE
+        'prefijo_empresa': empresa_slug,
     })
 
 @login_required
@@ -251,23 +245,6 @@ def detalle_viaje(request, viaje_id):
         'expiracion_iso': expiracion_iso,
     })
 
-# ============================================================
-# VISTAS DE AUTENTICACIÓN
-# ============================================================
-def registro(request):
-    if request.user.is_authenticated:
-        return redirect('core:perfil')
-    if request.method == 'POST':
-        form = RegistroForm(request.POST)
-        if form.is_valid():
-            user = form.save()
-            auth_login(request, user)
-            messages.success(request, f"¡Bienvenido, {user.first_name}! Tu cuenta fue creada exitosamente.")
-            return redirect('core:perfil')
-    else:
-        form = RegistroForm()
-    return render(request, 'registro.html', {'form': form})
-
 def login_view(request):
     if request.user.is_authenticated:
         next_url = request.GET.get('next') or ''
@@ -284,10 +261,10 @@ def login_view(request):
                 if user_obj: username = user_obj.username
             user = authenticate(request, username=username, password=password)
             if user is not None:
-                exito, mensaje = procesar_login_con_espera(request, user)
-                if not exito:
-                    messages.warning(request, mensaje)
-                    return render(request, 'login.html', {'form': form, 'mostrar_desbloqueo': True, 'username_bloqueado': username})
+                # ~ exito, mensaje = procesar_login_con_espera(request, user)
+                # ~ if not exito:
+                    # ~ messages.warning(request, mensaje)
+                    # ~ return render(request, 'login.html', {'form': form, 'mostrar_desbloqueo': True, 'username_bloqueado': username})
                 
                 # ⭐ VERIFICAR SI YA HAY UNA SESIÓN ACTIVA ANTES DE LOGUEAR
                 from .models import SesionActiva
@@ -302,14 +279,44 @@ def login_view(request):
                         inactividad = timezone.now() - sesion_existente.ultima_actividad
                         
                         if inactividad < timedelta(minutes=minutos_espera):
-                            # El usuario ya tiene una sesión activa reciente -> BLOQUEAMOS el nuevo ingreso
-                            messages.warning(
-                                request, 
-                                f"Estimado usuario: su cuenta ya está activa en otro dispositivo (IP: {sesion_existente.ip_address}). "
-                                f"Por seguridad, no puede iniciar una nueva sesión hasta que la anterior expire o se cierre. "
-                                f"Si usted es el dueño de la cuenta, espere unos minutos o contacte al administrador."
-                            )
-                            return render(request, 'login.html', {'form': form})
+                            # ⭐ HAY SESIÓN ACTIVA RECIENTE:
+                            # 1. Generar token para el correo
+                            import uuid
+                            token = uuid.uuid4().hex
+                            sesion_existente.token_desbloqueo = token
+                            sesion_existente.save()
+                            
+                            # 2. Construir enlaces
+                            base_url = request.build_absolute_uri('/')[:-1]
+                            link_si = f"{base_url}/desbloqueo/confirmar/{token}/si/"
+                            link_no = f"{base_url}/desbloqueo/confirmar/{token}/no/"
+                            
+                            # 3. Enviar correo
+                            try:
+                                from django.core.mail import send_mail
+                                from django.conf import settings
+                                from django.template.loader import render_to_string
+                                
+                                html_content = render_to_string('email_desbloqueo.html', {
+                                    'user': user,
+                                    'link_si': link_si,
+                                    'link_no': link_no,
+                                })
+                                
+                                send_mail(
+                                    subject='Alerta de seguridad - Viba-Web',
+                                    message=f'Hola {user.first_name},\n\nAlguien está intentando iniciar sesión en tu cuenta.\nSi eres tú, haz clic aquí: {link_si}\nSi no eres tú, haz clic aquí: {link_no}',
+                                    from_email=settings.DEFAULT_FROM_EMAIL,
+                                    recipient_list=[user.email],
+                                    html_message=html_content,
+                                    fail_silently=False,
+                                )
+                                email_oculto = enmascarar_email(user.email)
+                                messages.info(request, f"Estimado usuario: se ha enviado un correo a {email_oculto} para confirmar el inicio de sesión.")
+                                return render(request, 'login.html', {'form': form, 'mostrar_confirmacion_email': True})
+                            except Exception as e:
+                                messages.error(request, f"Error al enviar el correo: {str(e)}")
+                                return render(request, 'login.html', {'form': form})
 
                 auth_login(request, user)
                 request.session.set_expiry(0)
@@ -735,7 +742,12 @@ def confirmacion(request, transaccion_id):
         messages.error(request, "No tienes acceso a esta transacción.")
         return redirect('core:inicio')
     boletos = transaccion.boletos.all().order_by('asiento__numero')
-    pagos = transaccion.pagos.all() 
+    pagos = transaccion.pagos.all()
+    
+    # ⭐ Generar imagen QR para cada boleto
+    for boleto in boletos:
+        boleto.imagen_qr = generar_imagen_qr_base64(boleto.codigo_qr)
+    
     return render(request, 'confirmacion.html', {
         'transaccion': transaccion, 
         'boletos': boletos, 
@@ -895,6 +907,9 @@ def mis_boletos(request):
     transacciones_con_boletos = []
     for t in transacciones:
         boletos = t.boletos.all().order_by('asiento__numero')
+        # ⭐ Generar imagen QR para cada boleto
+        for boleto in boletos:
+            boleto.imagen_qr = generar_imagen_qr_base64(boleto.codigo_qr)
         transacciones_con_boletos.append({'transaccion': t, 'boletos': boletos, 'cantidad': boletos.count()})
     return render(request, 'mis_boletos.html', {'cliente': cliente, 'transacciones_con_boletos': transacciones_con_boletos})
 
@@ -949,7 +964,7 @@ def taquilla_inicio(request):
         try:
             fecha = datetime.strptime(fecha_str, '%Y-%m-%d').date()
             oficina_origen = Oficina.objects.get(id=origen_id)
-            oficina_destino = Oficina.objects.get(id=destino_id) # Obtenemos la oficina destino
+            oficina_destino = Oficina.objects.get(id=destino_id)
             
             hoy = timezone.localtime(timezone.now()).date()
             ahora = timezone.localtime(timezone.now()).time()
@@ -958,11 +973,7 @@ def taquilla_inicio(request):
                 fecha=fecha, estado='programado', cerrado_venta=False
             ).select_related('ruta', 'bus')
 
-            # ~ if fecha == hoy:
-                # ~ viajes_del_dia = viajes_del_dia.filter(hora__gt=ahora)
-
             for viaje in viajes_del_dia:
-                # ⭐ VALIDACIÓN ESTRICTA DE DIRECCIÓN
                 parada_origen = viaje.ruta.paradas.filter(oficina=oficina_origen).first()
                 parada_destino = viaje.ruta.paradas.filter(oficina=oficina_destino).first()
                 
@@ -1029,9 +1040,7 @@ def taquilla_mapa(request, viaje_id):
         reservado_por=request.user
     ).update(reservado_hasta=expira_en)
 
-    # ~ liberar_reservas_vencidas(viaje=viaje)
     liberar_reservas_vencidas(viaje=viaje, usuario=request.user)
-
 
     origen_id = request.GET.get('origen', empleado.oficina.id)
     destino_id = request.GET.get('destino')
@@ -1067,7 +1076,6 @@ def taquilla_mapa(request, viaje_id):
         asiento.estado_real = asiento.estado
         asiento.disponible_para_tramo = disponible_para_tramo
 
-        # ⭐ NUEVO: Buscar info del pasajero si el asiento está vendido o usado
         asiento.info_pasajero = None
         if asiento.estado in ['vendido', 'usado', 'pendiente_verificacion']:
             boleto = Boleto.objects.filter(asiento=asiento, viaje=viaje).first()
@@ -1160,7 +1168,6 @@ def taquilla_cobrar(request, viaje_id):
     expiracion_iso = expira_en.isoformat()
     segundos_restantes = max(0, int((expira_en - tiempo_actual).total_seconds()))
 
-    # ~ liberar_reservas_vencidas(viaje=viaje)
     liberar_reservas_vencidas(viaje=viaje, usuario=request.user)
 
     asientos_ids = request.GET.getlist('asientos[]')
@@ -1284,7 +1291,6 @@ def taquilla_cobrar(request, viaje_id):
                         numero_boleto=generar_numero_boleto(empleado.oficina, es_continuo=obtener_parametro('179', default=False)),
                     )
 
-                # ⭐ AUTO-ABORDAR: DENTRO DEL WITH
                 minutos_auto = int(obtener_parametro('202', default=15))
                 ahora = timezone.localtime(timezone.now())
                 fecha_hora_viaje = timezone.make_aware(datetime.combine(viaje.fecha, viaje.hora))
@@ -1298,7 +1304,6 @@ def taquilla_cobrar(request, viaje_id):
                         boleto_creado.observacion = f"Auto-chequeado al vender (faltan {int(minutos_para_salida)} min)."
                         boleto_creado.save()
                         
-                        # ⭐ NUEVO: Actualizar el estado del asiento también
                         asiento_creado = boleto_creado.asiento
                         asiento_creado.estado = 'usado'
                         asiento_creado.save()
@@ -1340,7 +1345,11 @@ def taquilla_confirmacion(request, transaccion_id):
     
     transaccion = get_object_or_404(Transaccion, id=transaccion_id)
     boletos = transaccion.boletos.all().order_by('asiento__numero')
-    pagos = transaccion.pagos.all() 
+    pagos = transaccion.pagos.all()
+    
+    # ⭐ Generar imagen QR para cada boleto
+    for boleto in boletos:
+        boleto.imagen_qr = generar_imagen_qr_base64(boleto.codigo_qr)
     
     return render(request, 'taquilla/confirmacion.html', {
         'transaccion': transaccion,
@@ -1421,7 +1430,9 @@ def registro_usuario(request):
                 whatsapp=data.get('whatsapp', ''),
                 codigo_verificacion=codigo,
                 fecha_expiracion_codigo=timezone.now() + timedelta(minutes=minutos_expiracion), 
-                email_verificado=False
+                email_verificado=False,
+                acepto_terminos=True,
+                fecha_aceptacion_terminos=timezone.now(),
             )
             
             try:
@@ -1443,7 +1454,7 @@ def registro_usuario(request):
                 email_response = resend.Emails.send(params)
                 
                 request.session['verificacion_user_id'] = user.id
-                messages.success(request, f"¡Registro exitoso, {user.first_name}! Te hemos enviado un código de verificación a tu correo.")
+                messages.success(request, f"¡Registro exitoso, {user.first_name}! Te hemos enviado un código de verificación a tu correo: {user.email}. Revisa tu bandeja de entrada y/o la carpeta de spam.")
                 return redirect('core:verificar_email')
                 
             except Exception as e:
@@ -1584,7 +1595,6 @@ def buscar_viajes(request):
     if not oficina_origen or not oficina_destino:
         return render(request, 'buscar_viajes.html', {'viajes_con_info': [], 'oficinas': Oficina.objects.filter(activa=True).order_by('nombre')})
 
-    # ⭐ LA SOLUCIÓN: Buscar todos los viajes programados y filtrar manualmente
     viajes_base = Viaje.objects.filter(
         estado='programado', 
         cerrado_venta=False, 
@@ -1593,15 +1603,12 @@ def buscar_viajes(request):
 
     viajes_validos = []
     for viaje in viajes_base:
-        # Buscamos la parada de origen y la de destino en la ruta de ESTE viaje
         parada_origen = viaje.ruta.paradas.filter(oficina=oficina_origen).first()
         parada_destino = viaje.ruta.paradas.filter(oficina=oficina_destino).first()
         
-        # Si el origen y destino están en la ruta, y el origen va ANTES que el destino -> ¡Es válido!
         if parada_origen and parada_destino and parada_origen.orden < parada_destino.orden:
             viajes_validos.append(viaje)
 
-    # Ahora filtramos por fecha
     fecha = None
     tarifa = None
     viajes_finales = []
@@ -1613,7 +1620,6 @@ def buscar_viajes(request):
         if fecha >= hoy:
             for viaje in viajes_validos:
                 if viaje.fecha == fecha:
-                    # Validar hora si es hoy
                     if fecha == hoy:
                         minutos_bloqueo = int(obtener_parametro('184', default=60))
                         ahora = timezone.localtime(timezone.now())
@@ -1625,17 +1631,14 @@ def buscar_viajes(request):
     except ValueError:
         viajes_finales = []
 
-    # Calcular tarifa
     if oficina_origen and oficina_destino:
         tarifa = Tarifa.objects.filter(origen=oficina_origen, destino=oficina_destino, activa=True).first()
     
-    # Guardar en sesión
     if oficina_origen:
         request.session['busqueda_origen_id'] = oficina_origen.id
     if oficina_destino:
         request.session['busqueda_destino_id'] = oficina_destino.id
     
-    # Liberar reservas vencidas de estos viajes
     for viaje in viajes_finales:
         liberar_reservas_vencidas(viaje=viaje)
         
@@ -1901,11 +1904,9 @@ def taquilla_ejecutar_transferencia(request):
             asiento_viejo = boleto.asiento
             asiento_nuevo = Asiento.objects.select_for_update().get(id=nuevo_asiento_id)
             
-            # ⭐ VALIDACIÓN: Acepta 'disponible' o 'reservado' por el mismo taquillero
             if asiento_nuevo.estado != 'disponible' and asiento_nuevo.reservado_por != request.user:
                 return JsonResponse({'ok': False, 'error': 'El asiento ya fue tomado por otro usuario.'}, status=400)
 
-            # Liberar viejo, ocupar nuevo
             asiento_viejo.estado = 'disponible'
             asiento_viejo.save()
             
@@ -1914,12 +1915,10 @@ def taquilla_ejecutar_transferencia(request):
             asiento_nuevo.reservado_hasta = None
             asiento_nuevo.save()
             
-            # Actualizar boleto (cambia el asiento y el viaje)
             boleto.asiento = asiento_nuevo
-            boleto.viaje = asiento_nuevo.viaje  # <--- CAMBIA EL VIAJE AL NUEVO BUS
+            boleto.viaje = asiento_nuevo.viaje
             boleto.save()
             
-            # Auditoría
             MovimientoAsiento.objects.create(
                 asiento=asiento_viejo, tipo='transferencia', 
                 estado_anterior='vendido', estado_nuevo='disponible', 
@@ -1986,10 +1985,8 @@ def taquilla_reprogramar_cobro(request, viaje_id, boleto_id):
     monto_nuevo_usd = tarifa_nueva.monto_usd + valor_seguro
     monto_nuevo_bs = (monto_nuevo_usd * tasa_bcv_actual).quantize(Decimal('0.01'))
     
-    # ⭐ CÁLCULO CORRECTO: Diferencia basada en Bolívares
     diferencia_bs = monto_nuevo_bs - boleto_viejo.monto_total_bs
     
-    # Convertimos esa diferencia en Bolívares a Dólares (a la tasa de hoy) solo para mostrarla
     if tasa_bcv_actual > 0:
         diferencia_usd = (diferencia_bs / tasa_bcv_actual).quantize(Decimal('0.01'))
     else:
@@ -2007,14 +2004,12 @@ def taquilla_reprogramar_cobro(request, viaje_id, boleto_id):
         try:
             pagos_lista = json.loads(pagos_json)
             
-            # ⭐ VALIDACIÓN DE REDONDEO (tolerancia de 5 céntimos)
             total_pagado_bs = sum(Decimal(str(p['monto_bs'])) for p in pagos_lista)
             if pagos_lista and abs(total_pagado_bs - diferencia_bs) > Decimal('0.05'):
                 messages.warning(request, f"El pago registrado (Bs. {total_pagado_bs}) no coincide con la diferencia (Bs. {diferencia_bs}). Verifique los montos.")
                 return redirect(request.path + f"?origen={origen_id}&destino={destino_id}&asiento_id={asiento_nuevo_id}&numero={request.GET.get('numero')}")
 
             with transaction.atomic():
-                # 1. Anular boleto viejo y liberar su asiento
                 asiento_nuevo = Asiento.objects.select_for_update().get(id=asiento_nuevo_id)
                 boleto_viejo.estado = 'reprogramado'
                 boleto_viejo.save()
@@ -2022,11 +2017,9 @@ def taquilla_reprogramar_cobro(request, viaje_id, boleto_id):
                 asiento_viejo.estado = 'disponible'
                 asiento_viejo.save()
                 
-                # 2. Ocupar asiento nuevo
                 asiento_nuevo.estado = 'vendido'
                 asiento_nuevo.save()
                 
-                # 3. Crear nueva Transacción
                 codigo_tx = generar_codigo_transaccion()
                 transaccion = Transaccion.objects.create(
                     codigo=codigo_tx, cliente=None, viaje=viaje_nuevo, cantidad_boletos=1,
@@ -2037,7 +2030,6 @@ def taquilla_reprogramar_cobro(request, viaje_id, boleto_id):
                     observacion=f"Reprogramación del boleto {boleto_viejo.numero_boleto}"
                 )
                 
-                # 4. El pago del boleto viejo entra a la caja como "Reprogramación"
                 Pago.objects.create(
                     transaccion=transaccion, metodo='reprogramacion',
                     monto_usd=boleto_viejo.monto_total_usd, monto_bs=boleto_viejo.monto_total_bs,
@@ -2046,7 +2038,6 @@ def taquilla_reprogramar_cobro(request, viaje_id, boleto_id):
                     observacion=f"Abono por reprogramación del boleto {boleto_viejo.numero_boleto}"
                 )
                 
-                # 5. Los pagos de la diferencia (Efectivo, Pago Móvil)
                 for p in pagos_lista:
                     Pago.objects.create(
                         transaccion=transaccion, metodo=p['metodo'], monto_usd=Decimal(p['monto_usd']),
@@ -2054,7 +2045,6 @@ def taquilla_reprogramar_cobro(request, viaje_id, boleto_id):
                         estado='confirmado', confirmado_por=request.user, fecha_confirmacion=timezone.now()
                     )
                 
-                # 6. Crear nuevo boleto (Hereda los datos del pasajero viejo)
                 Boleto.objects.create(
                     transaccion=transaccion, viaje=viaje_nuevo, asiento=asiento_nuevo,
                     pasajero_cedula=boleto_viejo.pasajero_cedula, 
@@ -2103,14 +2093,12 @@ def taquilla_bloquear_asiento_reprogramar(request):
         with transaction.atomic():
             asiento = Asiento.objects.select_for_update().get(id=asiento_id)
             
-            # ⭐ VALIDACIÓN CLAVE: Si ya está reservado por este mismo taquillero, es válido.
             if asiento.estado == 'reservado' and asiento.reservado_por == request.user:
                 return JsonResponse({'ok': True, 'mensaje': 'Asiento ya reservado por usted.'})
             
             if asiento.estado != 'disponible':
                 return JsonResponse({'ok': False, 'error': 'El asiento ya fue tomado por otro usuario.'}, status=400)
                 
-            # Lo bloqueamos por 5 minutos (parámetro 171)
             minutos = int(obtener_parametro('171', default=5))
             vence = timezone.now() + timedelta(minutes=minutos)
             
@@ -2160,7 +2148,6 @@ def taquilla_api_asientos_disponibles_bloquear(request):
     if not viaje_id:
         return JsonResponse({'ok': False, 'error': 'Falta viaje_id'}, status=400)
         
-    # Solo asientos disponibles y de tipo 'asiento'
     asientos = Asiento.objects.filter(
         viaje_id=viaje_id, estado='disponible', tipo='asiento'
     ).exclude(numero='').order_by('numero')
@@ -2185,7 +2172,6 @@ def taquilla_api_bloquear_asientos(request):
         
     try:
         with transaction.atomic():
-            # ⭐ CAMBIO CLAVE: Buscamos asientos 'reservado' por ESTE usuario (los que él seleccionó)
             asientos = Asiento.objects.select_for_update().filter(
                 id__in=asientos_ids, 
                 estado='reservado',
@@ -2195,7 +2181,7 @@ def taquilla_api_bloquear_asientos(request):
             bloqueados = 0
             for asiento in asientos:
                 asiento.estado = 'bloqueado'
-                asiento.reservado_por = None  # Limpiamos la reserva
+                asiento.reservado_por = None
                 asiento.reservado_hasta = None
                 asiento.save()
                 
@@ -2207,7 +2193,6 @@ def taquilla_api_bloquear_asientos(request):
                 )
                 bloqueados += 1
             
-            # Si no se bloquearon todos (porque alguno fue tomado), avisamos
             if bloqueados < len(asientos_ids):
                 return JsonResponse({
                     'ok': True, 
@@ -2377,13 +2362,11 @@ def api_datos_liquidacion(request):
         empleado = request.user.usuarioempresa
         viaje = Viaje.objects.get(id=viaje_id)
         
-        # Datos del bus
         numero_bus = viaje.bus.numero_bus or 'Sin número'
         dueno = viaje.bus.empresa.nombre if viaje.bus.empresa else 'Sin dueño'
         
         conductores = ', '.join([c.nombre for c in viaje.bus.conductores.all()])
         
-        # Boletos escaneados (usados) de esta oficina para este viaje
         boletos = Boleto.objects.filter(
             viaje=viaje, 
             estado='usado',
@@ -2399,7 +2382,7 @@ def api_datos_liquidacion(request):
         
         return JsonResponse({
             'ok': True,
-            'bus_id': viaje.bus.id,  # ⭐ NUEVO: Necesario para el formulario
+            'bus_id': viaje.bus.id,
             'numero_bus': numero_bus,
             'dueno': dueno,
             'conductores': conductores,
@@ -2426,7 +2409,6 @@ def taquilla_escaner(request):
     
     viaje_id_preseleccionado = request.GET.get('viaje_id')
     
-    # ⭐ NUEVO: Contar los boletos ya abordados (usados) para este viaje
     total_abordados = 0
     if viaje_id_preseleccionado:
         total_abordados = Boleto.objects.filter(viaje_id=viaje_id_preseleccionado, estado='usado').count()
@@ -2434,7 +2416,7 @@ def taquilla_escaner(request):
     return render(request, 'taquilla/escaner_qr.html', {
         'viajes': viajes,
         'viaje_preseleccionado': viaje_id_preseleccionado,
-        'total_abordados': total_abordados, # ⭐ Se lo pasamos al template
+        'total_abordados': total_abordados,
     })
 
 
@@ -2463,11 +2445,9 @@ def api_validar_qr(request):
             if not boleto:
                 return JsonResponse({'ok': False, 'error': 'Boleto no encontrado. Verifique el código o el número.'})
             
-            # Validar que sea para el viaje que está en puerta
             if str(boleto.viaje.id) != str(viaje_id):
                 return JsonResponse({'ok': False, 'error': f'Este boleto es para otro viaje (Ruta: {boleto.viaje.ruta.nombre} - {boleto.viaje.hora}).'})
             
-            # Validar que no haya sido usado ni liquidado
             if boleto.estado == 'usado':
                 return JsonResponse({'ok': False, 'error': 'Este boleto ya fue abordado anteriormente.'})
             if boleto.estado == 'liquidado':
@@ -2475,18 +2455,15 @@ def api_validar_qr(request):
             if boleto.estado != 'vendido':
                 return JsonResponse({'ok': False, 'error': f'El boleto está en estado: {boleto.get_estado_display()}. No se puede abordar.'})
             
-            # ¡Todo bien! Marcamos como usado (Abordado)
             boleto.estado = 'usado'
             boleto.fecha_chequeo = timezone.now()
             boleto.chequeado_por = request.user
             boleto.save()
             
-            # ⭐ NUEVO: Actualizar el estado del asiento también
             asiento = boleto.asiento
             asiento.estado = 'usado'
             asiento.save()
             
-            # Auditoría
             MovimientoAsiento.objects.create(
                 asiento=boleto.asiento, tipo='chequeo',
                 estado_anterior='vendido', estado_nuevo='usado',
@@ -2555,7 +2532,6 @@ def taquilla_consultar_boleto(request):
                 boleto_relacionado=boleto
             ).order_by('-fecha_hora')
 
-    # ⭐ ACTIVAR (Solo si está USADO y con clave del usuario actual)
     if request.method == 'POST' and request.POST.get('accion') == 'activar':
         boleto_id = request.POST.get('boleto_id')
         password = request.POST.get('password')
@@ -2595,7 +2571,6 @@ def taquilla_consultar_boleto(request):
         messages.success(request, f"Boleto {boleto.numero_boleto} reactivado exitosamente.")
         return redirect('core:taquilla_consultar_boleto')
 
-    # ⭐ ANULAR (Solo si está VENDIDO, es de HOY y clave del vendedor original)
     if request.method == 'POST' and request.POST.get('accion') == 'anular':
         boleto_id = request.POST.get('boleto_id')
         password = request.POST.get('password')
@@ -2610,7 +2585,6 @@ def taquilla_consultar_boleto(request):
             )
             return redirect('core:taquilla_consultar_boleto')
 
-        # Validación contable: Solo se anulan boletos vendidos HOY
         hoy = timezone.localtime(timezone.now()).date()
         fecha_venta_boleto = timezone.localtime(boleto.fecha_venta).date()
         if fecha_venta_boleto < hoy:
@@ -2622,7 +2596,6 @@ def taquilla_consultar_boleto(request):
             )
             return redirect('core:taquilla_consultar_boleto')
 
-        # Validar clave del vendedor original
         if not boleto.vendido_por:
             messages.error(request, "Este boleto no tiene un vendedor registrado.")
             return redirect('core:taquilla_consultar_boleto')
@@ -2632,7 +2605,7 @@ def taquilla_consultar_boleto(request):
             return redirect('core:taquilla_consultar_boleto')
 
         with transaction.atomic():
-            boleto.estado = 'anulado' # ⭐ CAMBIADO DE 'cancelado' a 'anulado'
+            boleto.estado = 'anulado'
             boleto.save()
 
             asiento = boleto.asiento
@@ -2668,11 +2641,10 @@ def taquilla_api_boletos_vendidos(request):
     if not viaje_id:
         return JsonResponse({'ok': False, 'error': 'Falta viaje_id'}, status=400)
         
-    # ⭐ FILTRO MEJORADO: Solo boletos 'vendidos' CUYO ASIENTO siga 'vendido'
     boletos = Boleto.objects.filter(
         viaje_id=viaje_id, 
         estado='vendido',
-        asiento__estado='vendido'  # <--- ESTA ES LA CLAVE
+        asiento__estado='vendido'
     ).select_related('asiento').order_by('asiento__numero')
     
     data = [{
@@ -2700,23 +2672,18 @@ def taquilla_api_liberar_puestos_vendidos(request):
         
     try:
         with transaction.atomic():
-            # Buscamos los boletos estrictamente en estado 'vendido'
             boletos = Boleto.objects.select_for_update().filter(
                 asiento_id__in=asientos_ids, estado='vendido'
             )
             
             liberados = 0
             for boleto in boletos:
-                # ⭐ EL BOLETO SE QUEDA EN 'VENDIDO', NO LO TOCAMOS ⭐
-                
-                # Liberar el asiento (vuelve a estar disponible)
                 asiento = boleto.asiento
                 asiento.estado = 'disponible'
                 asiento.reservado_por = None
                 asiento.reservado_hasta = None
                 asiento.save()
                 
-                # Auditoría
                 MovimientoAsiento.objects.create(
                     asiento=asiento, tipo='liberacion_manual',
                     estado_anterior='vendido', estado_nuevo='disponible',
@@ -2729,3 +2696,84 @@ def taquilla_api_liberar_puestos_vendidos(request):
         return JsonResponse({'ok': True, 'mensaje': f'{liberados} puesto(s) liberado(s) exitosamente.'})
     except Exception as e:
         return JsonResponse({'ok': False, 'error': str(e)}, status=500)
+
+def confirmar_desbloqueo_por_email(request, token, accion):
+    """Procesa los clics del correo: 'si' o 'no'."""
+    from .models import SesionActiva
+    
+    sesion = SesionActiva.objects.filter(token_desbloqueo=token).first()
+    
+    if not sesion:
+        messages.error(request, "El enlace de desbloqueo no es válido o ya expiró.")
+        return redirect('core:login')
+    
+    user = sesion.user
+    
+    # ⭐ SIEMPRE CERRAMOS LA SESIÓN VIEJA (por seguridad y agilidad)
+    sesion.delete()
+    
+    if accion == 'si':
+        messages.success(request, "Sesión liberada. Ya puedes ingresar con tu contraseña.")
+    else:
+        messages.warning(request, "Hemos cerrado la sesión anterior por seguridad. Si no fuiste tú, te recomendamos cambiar tu contraseña.")
+    
+    # ⭐ REDIRIGIR CON UN PARÁMETRO PARA FORZAR RECARGA
+    return redirect('/login/?refrescar=1')
+    
+def reenviar_codigo_verificacion(request):
+    """Reenvía el código de verificación al usuario pendiente."""
+    from .utils import obtener_parametro
+    import random
+    from datetime import timedelta
+    import resend
+    from django.conf import settings
+    from django.template.loader import render_to_string
+    
+    user_id = request.session.get('verificacion_user_id')
+    if not user_id:
+        messages.error(request, "No hay ningún proceso de verificación pendiente.")
+        return redirect('core:login')
+    
+    user = get_object_or_404(User, id=user_id)
+    cliente = getattr(user, 'cliente', None)
+    
+    if not cliente:
+        messages.error(request, "Usuario no encontrado.")
+        return redirect('core:login')
+    
+    if cliente.email_verificado:
+        messages.info(request, "Tu email ya fue verificado. Puedes iniciar sesión.")
+        return redirect('core:login')
+    
+    # Generar nuevo código
+    minutos_expiracion = int(obtener_parametro('188', default=15))
+    codigo = str(random.randint(100000, 999999))
+    
+    cliente.codigo_verificacion = codigo
+    cliente.fecha_expiracion_codigo = timezone.now() + timedelta(minutes=minutos_expiracion)
+    cliente.save()
+    
+    try:
+        html_content = render_to_string('email_verificacion.html', {
+            'user': user,
+            'codigo': codigo,
+            'first_name': user.first_name,
+        })
+        
+        resend.api_key = settings.EMAIL_HOST_PASSWORD
+        
+        params = {
+            "from": settings.DEFAULT_FROM_EMAIL,
+            "to": [user.email],
+            "subject": "Nuevo código de verificación - Viba-Web",
+            "html": html_content,
+        }
+        
+        resend.Emails.send(params)
+        
+        messages.success(request, f"Te hemos enviado un nuevo código a {user.email}. Revisa tu bandeja de entrada y la carpeta de spam.")
+        
+    except Exception as e:
+        messages.error(request, f"No pudimos reenviar el correo. Intenta de nuevo en unos minutos.")
+    
+    return redirect('core:verificar_email')

@@ -161,7 +161,15 @@
                     {{ boleto.numero_boleto }}
                 </div>
                 <div class="qr-box">
-                    <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={{ boleto.codigo_qr }}" alt="QR" class="qr-img">
+                    <!-- ⭐ IMAGEN QR GENERADA DESDE EL SERVIDOR -->
+                    {% if boleto.imagen_qr %}
+                        <img src="{{ boleto.imagen_qr }}" alt="QR {{ boleto.codigo_qr }}" class="qr-img">
+                    {% else %}
+                        <!-- Fallback: si por alguna razón no se generó la imagen, mostramos el texto -->
+                        <div style="width: 130px; height: 130px; display: flex; align-items: center; justify-content: center; font-size: 8px; word-break: break-all; padding: 5px;">
+                            {{ boleto.codigo_qr }}
+                        </div>
+                    {% endif %}
                 </div>
                 <div class="text-small fw-bold mt-1">Escanee para abordar</div>
             </div>

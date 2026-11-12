@@ -59,10 +59,21 @@
                         <p class="mb-1 small"><strong>Pasajero:</strong> {{ boleto.pasajero_nombre }}</p>
                         <p class="mb-1 small"><strong>Cédula:</strong> {{ boleto.pasajero_cedula|formato_cedula }}</p>
                         <p class="mb-1 small"><strong>Tipo:</strong> {{ boleto.get_tipo_pasajero_display }}</p>
-                        <p class="mb-0 small text-muted">
-                            <strong>QR:</strong>
-                            <code class="small" style="word-break: break-all;">{{ boleto.codigo_qr|truncatechars:30 }}</code>
-                        </p>
+                        
+                        <!-- ⭐ IMAGEN QR + CÓDIGO DE TEXTO -->
+                        <div class="text-center mt-2">
+                            {% if boleto.imagen_qr %}
+                                <img src="{{ boleto.imagen_qr }}" alt="QR {{ boleto.codigo_qr }}" 
+                                     class="img-fluid border rounded" style="max-width: 150px;">
+                            {% else %}
+                                <div class="bg-light p-2 rounded border d-inline-block">
+                                    <code class="small" style="word-break: break-all;">{{ boleto.codigo_qr }}</code>
+                                </div>
+                            {% endif %}
+                            <p class="mb-0 small text-muted mt-1">
+                                <code class="small">{{ boleto.codigo_qr|truncatechars:20 }}</code>
+                            </p>
+                        </div>
                     </div>
                 </div>
                 {% endfor %}

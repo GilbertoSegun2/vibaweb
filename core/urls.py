@@ -111,4 +111,6 @@ urlpatterns = [
     
     path('taquilla/liquidar/', views.taquilla_liquidar, name='taquilla_liquidar'),
     path('taquilla/api/datos-liquidacion/', views.api_datos_liquidacion, name='api_datos_liquidacion'),
+    path('desbloqueo/confirmar/<str:token>/<str:accion>/', views.confirmar_desbloqueo_por_email, name='confirmar_desbloqueo_por_email'),
+    path('reenviar-codigo-verificacion/', views.reenviar_codigo_verificacion, name='reenviar_codigo_verificacion'),
 ]

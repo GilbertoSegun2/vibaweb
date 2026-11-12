@@ -1,0 +1,17 @@
+<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+    <h2 style="color: #003366; text-align: center;">Viba-Web - Alerta de Seguridad</h2>
+    <p>Hola <strong>{{ user.first_name }}</strong>,</p>
+    <p>Hemos detectado un intento de inicio de sesión en tu cuenta mientras otra sesión ya estaba activa.</p>
+    <p>Por favor, confirma si eres tú:</p>
+    
+    <div style="text-align: center; margin: 30px 0;">
+        <a href="{{ link_si }}" style="background-color: #198754; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold; margin-right: 10px; display: inline-block;">
+            ✅ Sí soy yo
+        </a>
+        <a href="{{ link_no }}" style="background-color: #dc3545; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+            ❌ No soy yo
+        </a>
+    </div>
+    
+    <p style="color: #666; font-size: 12px; text-align: center;">Si no solicitaste este inicio de sesión, ignora este mensaje o cambia tu contraseña.</p>
+</div>

@@ -17,7 +17,8 @@
                     </div>
                 {% endif %}
                 
-                <form method="post">
+                <!-- ⭐ OVERLAY AL ENVIAR EL FORMULARIO -->
+                <form method="post" onsubmit="mostrarCarga('Procesando su registro...', 'Estamos validando su información. Por favor, espere.');">
                     {% csrf_token %}
                     
                     <input type="hidden" name="next" value="{{ request.GET.next|default:'' }}">
@@ -171,7 +172,7 @@ function togglePassword(button) {
     }
 }
 
-// Script para habilitar/deshabilitar el botón de registro
+// Script para habilitar/deshabilitar el botón de registro según el check de términos
 document.addEventListener("DOMContentLoaded", function() {
     const checkTerminos = document.getElementById('id_acepto_terminos');
     const btnRegistrar = document.getElementById('btn-registrar');

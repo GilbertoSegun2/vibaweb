@@ -10,58 +10,76 @@
                 <h3 class="mb-4 text-center" style="color: #003366;">
                     <i class="bi bi-box-arrow-in-right"></i> Iniciar Sesión
                 </h3>
-
-                {% if request.GET.next %}
-                    <div class="alert alert-info">
-                        <i class="bi bi-info-circle"></i>
-                        Debes iniciar sesión para continuar. Después volverás automáticamente.
-                    </div>
-                {% endif %}
-
-                {% if form.non_field_errors %}
-                    <div class="alert alert-danger">{{ form.non_field_errors }}</div>
-                {% endif %}
-
-                <form method="post">
-                    {% csrf_token %}
-                    <input type="hidden" name="next" value="{{ request.GET.next|default:'' }}">
-
-                    <div class="mb-3">
-                        <label class="form-label">{{ form.username.label }}</label>
-                        {{ form.username }}
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label class="form-label">{{ form.password.label }}</label>
-                        <div class="input-group">
-                            {{ form.password }}
-                            <button type="button" class="btn btn-outline-secondary" onclick="togglePassword(this)" tabindex="-1">
-                                <i class="bi bi-eye"></i>
-                            </button>
-                        </div>
-                    </div>
-
-                    <div class="text-center mt-4">
-                        <button type="submit" class="btn btn-primary px-5 w-100" style="background-color: #003366; border-color: #003366;">
-                            <i class="bi bi-box-arrow-in-right"></i> Ingresar
-                        </button>
-                    </div>
-                </form>
                 
-                <!-- ⭐ CORREGIDO: Agregado el namespace 'core:' -->
-                <div class="text-center mt-3">
-                    <a href="{% url 'core:password_reset' %}" class="text-muted small text-decoration-none">
-                        <i class="bi bi-key"></i> ¿Olvidaste tu contraseña?
+                {% if mostrar_confirmacion_email %}
+                <div class="alert alert-info text-center">
+                    <i class="bi bi-envelope-check-fill fs-3 d-block mb-2"></i>
+                    <h5>Revise su correo electrónico</h5>
+                    <p class="mb-0">Hemos enviado un enlace de confirmación a su correo. Por favor, revise su bandeja de entrada y haga clic en <strong>"Sí soy yo"</strong> para liberar la sesión y poder ingresar.</p>
+                    <p class="small text-muted mt-2">Si no ve el correo, revise la carpeta de spam. Si no tiene acceso a su correo, espere <strong>{{ minutos_login }} minutos</strong> y podrá ingresar automáticamente.</p>
+                </div>
+                
+                <div class="text-center mt-4">
+                    <a href="{% url 'core:inicio' %}" class="btn btn-secondary px-4">
+                        <i class="bi bi-house-door"></i> Volver al Inicio
                     </a>
                 </div>
+                
+                {% else %}
 
-                <hr class="my-4">
-                <p class="text-center mb-0">
-                    ¿No tienes cuenta? 
-                    <a href="{% url 'core:registro' %}{% if request.GET.next %}?next={{ request.GET.next }}{% endif %}">
-                        Regístrate aquí
-                    </a>
-                </p>
+                    {% if request.GET.next %}
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i>
+                            Debes iniciar sesión para continuar. Después volverás automáticamente.
+                        </div>
+                    {% endif %}
+
+                    {% if form.non_field_errors %}
+                        <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+                    {% endif %}
+
+                    <!-- ⭐ OVERLAY AL INICIAR SESIÓN -->
+                    <form method="post" onsubmit="mostrarCarga('Iniciando sesión...', 'Verificando sus credenciales. Por favor, espere.');">
+                        {% csrf_token %}
+                        <input type="hidden" name="next" value="{{ request.GET.next|default:'' }}">
+
+                        <div class="mb-3">
+                            <label class="form-label">{{ form.username.label }}</label>
+                            {{ form.username }}
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">{{ form.password.label }}</label>
+                            <div class="input-group">
+                                {{ form.password }}
+                                <button type="button" class="btn btn-outline-secondary" onclick="togglePassword(this)" tabindex="-1">
+                                    <i class="bi bi-eye"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="text-center mt-4">
+                            <button type="submit" class="btn btn-primary px-5 w-100" style="background-color: #003366; border-color: #003366;">
+                                <i class="bi bi-box-arrow-in-right"></i> Ingresar
+                            </button>
+                        </div>
+                    </form>
+                    
+                    <div class="text-center mt-3">
+                        <a href="{% url 'core:password_reset' %}" class="text-muted small text-decoration-none">
+                            <i class="bi bi-key"></i> ¿Olvidaste tu contraseña?
+                        </a>
+                    </div>
+
+                    <hr class="my-4">
+                    <p class="text-center mb-0">
+                        ¿No tienes cuenta? 
+                        <a href="{% url 'core:registro' %}{% if request.GET.next %}?next={{ request.GET.next }}{% endif %}">
+                            Regístrate aquí
+                        </a>
+                    </p>
+                
+                {% endif %}
             </div>
         </div>
     </div>
@@ -71,7 +89,6 @@
 {% block extra_js %}
 <script>
 document.addEventListener("DOMContentLoaded", function() {
-    // ⭐ Leer el parámetro 185 desde Django (minutos de inactividad)
     const MINUTOS_INACTIVIDAD = {{ minutos_login|default:2 }};
     const TIEMPO_INACTIVIDAD = MINUTOS_INACTIVIDAD * 60 * 1000;
     let temporizadorInactividad;
@@ -90,6 +107,15 @@ document.addEventListener("DOMContentLoaded", function() {
     window.addEventListener('mousemove', reiniciarTemporizador);
     window.addEventListener('keydown', reiniciarTemporizador);
     window.addEventListener('touchstart', reiniciarTemporizador);
+});
+</script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('refrescar') === '1') {
+        window.history.replaceState({}, document.title, window.location.pathname);
+        window.location.reload();
+    }
 });
 </script>
 {% endblock %}

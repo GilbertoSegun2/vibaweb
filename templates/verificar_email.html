@@ -16,22 +16,34 @@
                 {% endfor %}
             {% endif %}
             
-            <form method="post">
+            <form method="post" onsubmit="mostrarCarga('Verificando su código...', 'Estamos validando el código. Por favor, espere.');">
                 {% csrf_token %}
                 <div class="mb-3">
                     <label class="form-label">Código de verificación</label>
                     <input type="text" name="codigo" class="form-control form-control-lg text-center" 
-                           maxlength="6" placeholder="000000" required autofocus>
+                           maxlength="6" placeholder="000000" required autofocus 
+                           style="letter-spacing: 8px; font-size: 1.5rem;">
                 </div>
                 <button type="submit" class="btn btn-primary w-100" style="background-color: #003366;">
-                    Verificar
+                    <i class="bi bi-check-circle"></i> Verificar
                 </button>
-                <div class="text-center mt-3">
-                    <a href="{% url 'core:cancelar_registro' %}" class="text-muted text-decoration-none" style="font-size: 14px;">
-                        ← Cancelar y volver al inicio
-                    </a>
-                </div>
             </form>
+            
+            <hr class="my-3">
+            
+            <!-- ⭐ BOTÓN PARA REENVIAR EL CÓDIGO -->
+            <form method="post" action="{% url 'core:reenviar_codigo_verificacion' %}" onsubmit="mostrarCarga('Reenviando código...', 'Estamos enviando un nuevo código a su correo. Por favor, espere.');" class="text-center">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-outline-secondary btn-sm w-100">
+                    <i class="bi bi-arrow-clockwise"></i> Reenviar código
+                </button>
+            </form>
+            
+            <div class="text-center mt-3">
+                <a href="{% url 'core:cancelar_registro' %}" class="text-muted text-decoration-none" style="font-size: 14px;">
+                    ← Cancelar y volver al inicio
+                </a>
+            </div>
         </div>
     </div>
 </div>

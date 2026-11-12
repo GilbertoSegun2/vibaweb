@@ -54,9 +54,7 @@ MIDDLEWARE = [
     'core.middleware.SesionUnicaMiddleware',      # Controla sesión única
     'core.middleware.SessionTimeoutMiddleware',   # Controla inactividad
     'core.middleware.NoCacheMiddleware',          # Evita caché en páginas protegidas
-    'core.middleware.LimpiarMensajesMiddleware',  # ⭐ NUEVO: Limpia mensajes viejos
     'core.middleware.LimpiarMensajesMiddleware',
-    
     'core.middleware.DynamicTemplateMiddleware',
 ]
 

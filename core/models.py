@@ -701,12 +701,7 @@ class PlantillaAsiento(models.Model):
 # ============================================================
 # SESIÓN ÚNICA (seguridad usuario-web)
 # ============================================================
-
 class SesionActiva(models.Model):
-    """
-    Registra la sesión activa de cada usuario-web.
-    Solo puede haber UNA por usuario a la vez.
-    """
     user = models.OneToOneField(
         User,
         on_delete=models.CASCADE,
@@ -718,6 +713,12 @@ class SesionActiva(models.Model):
     user_agent = models.CharField(max_length=250, blank=True, verbose_name="Dispositivo")
     creado_en = models.DateTimeField(auto_now_add=True, verbose_name="Creado en")
     ultima_actividad = models.DateTimeField(default=timezone.now, verbose_name="Última actividad")
+    
+    # ⭐ NUEVO: Token para el correo de desbloqueo
+    token_desbloqueo = models.CharField(
+        max_length=64, blank=True, null=True,
+        verbose_name="Token de desbloqueo"
+    )
 
     class Meta:
         verbose_name = "Sesión Activa"

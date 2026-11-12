@@ -292,3 +292,66 @@ def generar_numero_boleto(oficina, es_continuo=False):
     # Formatear con 6 dígitos
     return f"{codigo_oficina}-{secuencia:06d}"
     
+    
+def generar_imagen_qr_base64(codigo_qr_texto):
+    """
+    Genera una imagen QR en formato base64 con el tamaño definido
+    en el parámetro 204 (en píxeles).
+    """
+    import qrcode
+    from io import BytesIO
+    import base64
+    from .models import Parametro
+    
+    # Leer el tamaño del parámetro 204 (default: 300 píxeles)
+    try:
+        p = Parametro.objects.get(codigo='204', activo=True)
+        tamaño = int(p.valor_numerico or 300)
+    except Parametro.DoesNotExist:
+        tamaño = 300
+    
+    # Calcular box_size (tamaño de cada módulo del QR)
+    # Un QR de versión 1 tiene 21 módulos + 8 de borde = 29
+    # Para 300px, box_size ≈ 300 / 29 ≈ 10
+    box_size = max(1, tamaño // 29)
+    
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=box_size,
+        border=4,
+    )
+    qr.add_data(codigo_qr_texto)
+    qr.make(fit=True)
+    
+    img = qr.make_image(fill_color="black", back_color="white")
+    
+    # Convertir a base64
+    buffer = BytesIO()
+    img.save(buffer, format="PNG")
+    img_str = base64.b64encode(buffer.getvalue()).decode()
+    
+    return f"data:image/png;base64,{img_str}"
+    
+def enmascarar_email(email):
+    """
+    Transforma 'semuyvaliente@gmail.com' en 'se***te@gmail.com'
+    para proteger la privacidad y seguridad del usuario.
+    """
+    if not email or '@' not in email:
+        return email
+    
+    nombre_usuario, dominio = email.split('@', 1)
+    
+    if len(nombre_usuario) <= 2:
+        usuario_oculto = nombre_usuario[0] + "*"
+    else:
+        inicio = nombre_usuario[:2]
+        fin = nombre_usuario[-2:] if len(nombre_usuario) > 4 else ""
+        asteriscos = "*" * (len(nombre_usuario) - len(inicio) - len(fin))
+        if not asteriscos:
+            asteriscos = "***"
+        usuario_oculto = f"{inicio}{asteriscos}{fin}"
+        
+    return f"{usuario_oculto}@{dominio}"
+
