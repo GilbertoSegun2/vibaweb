@@ -213,6 +213,14 @@
     }
     </script>
     
+    <!-- ⭐ BLINDAJE: Ocultar overlay si el navegador restaura la página (botón atrás) -->
+    <script>
+    window.addEventListener('pageshow', function(event) {
+        const overlay = document.getElementById('overlay-carga');
+        if (overlay) overlay.style.display = 'none';
+    });
+    </script>
+    
     <!-- ⭐ AUTO-CERRAR MENSAJES FLOTANTES SUAVEMENTE -->
     <script>
     document.addEventListener("DOMContentLoaded", function() {

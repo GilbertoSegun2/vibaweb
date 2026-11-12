@@ -66,4 +66,27 @@
         {% endif %}
     </div>
 </div>
+
+<!-- ⭐ OVERLAY DE CARGA PARA BUSCADOR Y BOTÓN "VER ASIENTOS" -->
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    // 1. Overlay al enviar el formulario de búsqueda (buscador compacto)
+    const formBuscador = document.querySelector('form');
+    if (formBuscador) {
+        formBuscador.addEventListener('submit', function() {
+            mostrarCarga('Buscando viajes...', 'Consultando las salidas disponibles. Por favor, espere.');
+        });
+    }
+
+    // 2. Overlay al hacer clic en "Ver Asientos"
+    const botonesAsientos = document.querySelectorAll('a.btn-primary');
+    botonesAsientos.forEach(function(boton) {
+        if (boton.innerText.includes('Ver Asientos')) {
+            boton.addEventListener('click', function() {
+                mostrarCarga('Cargando asientos...', 'Preparando el mapa de asientos. Por favor, espere.');
+            });
+        }
+    });
+});
+</script>
 {% endblock %}

@@ -28,7 +28,7 @@
     <div class="card shadow-sm mb-4">
         <div class="card-body">
             <h5 class="card-title mb-3">Buscar Viajes</h5>
-            <form method="get" class="row g-3 align-items-end">
+            <form method="get" class="row g-3 align-items-end" onsubmit="mostrarCarga('Buscando viajes...', 'Consultando las salidas disponibles. Por favor, espere.');">
                 <div class="col-md-3">
                     <label class="form-label">
                         Origen 
@@ -119,7 +119,9 @@
 
                         <!-- Botón de Vender -->
                         {% if item.tarifa %}
-                            <a href="{% url 'core:taquilla_mapa' item.viaje.id %}?origen={{ origen_seleccionado }}&destino={{ destino_seleccionado }}" class="btn btn-success w-100">
+                            <a href="{% url 'core:taquilla_mapa' item.viaje.id %}?origen={{ origen_seleccionado }}&destino={{ destino_seleccionado }}" 
+                               class="btn btn-success w-100"
+                               onclick="mostrarCarga('Cargando mapa de asientos...', 'Preparando los puestos disponibles. Por favor, espere.');">
                                 <i class="bi bi-ticket-perforated"></i> Vender Boletos
                             </a>
                         {% else %}
