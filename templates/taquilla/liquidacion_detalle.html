@@ -1,65 +1,227 @@
 {% extends 'base.html' %}
 {% load humanize %}
-{% block title %}Liquidación {{ liquidacion.numero_liquidacion }}{% endblock %}
+
+{% block title %}Acta de Liquidación {{ liquidacion.numero_liquidacion }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    @media print {
+        .no-print { display: none !important; }
+        body { background: white !important; }
+        .card { border: 1px solid #ddd !important; box-shadow: none !important; }
+        .marca-agua {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-45deg);
+            font-size: 120px;
+            color: rgba(220, 53, 69, 0.15);
+            font-weight: 900;
+            z-index: 9999;
+        }
+    }
+</style>
+{% endblock %}
 
 {% block content %}
+{% if liquidacion.estado == 'anulada' %}
+<div class="marca-agua">ANULADA</div>
+{% endif %}
+
 <div class="container mt-4">
-    <div class="d-flex justify-content-between mb-4 d-print-none">
-        <h2><i class="bi bi-receipt"></i> Liquidación: {{ liquidacion.numero_liquidacion }}</h2>
-        <div>
-            <button onclick="window.print()" class="btn btn-primary"><i class="bi bi-printer"></i> Imprimir</button>
-            <a href="{% url 'core:taquilla_liquidar' %}" class="btn btn-secondary"><i class="bi bi-arrow-left"></i> Volver</a>
+    <!-- Botones de Acción -->
+    <div class="d-flex justify-content-between mb-4 no-print">
+        <a href="{% url 'core:taquilla_liquidar' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Volver a Liquidar
+        </a>
+        <div class="d-flex gap-2">
+            {% if liquidacion.estado == 'activa' %}
+                <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#modalAnular">
+                    <i class="bi bi-x-circle"></i> Anular Liquidación
+                </button>
+            {% endif %}
+            <button onclick="window.print()" class="btn btn-primary">
+                <i class="bi bi-printer"></i> Imprimir Acta
+            </button>
         </div>
     </div>
 
-    <div class="card shadow-sm p-4" style="max-width: 800px; margin: 0 auto;">
-        <div class="text-center mb-3">
-            <h3 class="fw-bold">EXPRESOS MÉRIDA C.A.</h3>
-            <p>RIF: J-12345678-9</p>
-            <p>Oficina: {{ liquidacion.oficina_liquidacion.nombre }}</p>
-            <h4 class="fw-bold text-danger">LIQUIDACIÓN N° {{ liquidacion.numero_liquidacion }}</h4>
-        </div>
-
-        <div class="row mb-3">
-            <div class="col-6">
-                <p><strong>Bus:</strong> {{ liquidacion.bus.numero_bus|default:liquidacion.bus.placa }}</p>
-                <p><strong>Dueño:</strong> {{ liquidacion.dueno.nombre }}</p>
-                <p><strong>Conductores:</strong> {{ liquidacion.conductores_nombres }}</p>
+    <!-- Acta de Liquidación -->
+    <div class="card shadow-sm">
+        <div class="card-body p-4">
+            <!-- Encabezado -->
+            <div class="row mb-4">
+                <div class="col-md-6">
+                    {% if navbar_icono and navbar_icono|slice:":3" != "bi-" %}
+                        <img src="/static/img/iconos/{{ navbar_icono }}" height="60" class="mb-2">
+                    {% endif %}
+                    <h4 class="fw-bold" style="color: #003366;">ACTA DE LIQUIDACIÓN</h4>
+                    <p class="mb-0"><strong>N°:</strong> {{ liquidacion.numero_liquidacion }}</p>
+                    <p class="mb-0"><strong>Fecha:</strong> {{ liquidacion.fecha_liquidacion|date:"d/m/Y H:i A" }}</p>
+                </div>
+                <div class="col-md-6 text-end">
+                    {% if liquidacion.estado == 'anulada' %}
+                        <span class="badge bg-danger fs-6">ANULADA</span>
+                    {% else %}
+                        <span class="badge bg-success fs-6">ACTIVA</span>
+                    {% endif %}
+                </div>
             </div>
-            <div class="col-6 text-end">
-                <p><strong>Fecha Viaje:</strong> {{ liquidacion.viaje.fecha|date:"d/m/Y" }} - {{ liquidacion.viaje.hora|time:"h:i A" }}</p>
-                <p><strong>Ruta:</strong> {{ liquidacion.viaje.ruta.nombre }}</p>
-                <p><strong>Liquidado por:</strong> {{ liquidacion.liquidado_por.get_full_name|default:liquidacion.liquidado_por.username }}</p>
-            </div>
-        </div>
 
-        <hr>
-
-        <div class="row">
-            <div class="col-6">
-                <p><strong>Total Bruto:</strong> $ {{ liquidacion.total_bruto_usd|floatformat:2 }}</p>
-                <p><strong>Gastos Antes:</strong> - $ {{ liquidacion.total_gastos_antes_usd|floatformat:2 }}</p>
-                <p><strong>Porcentaje Empresa ({{ liquidacion.porcentaje_empresa }}%):</strong> - $ {{ liquidacion.monto_porcentaje_empresa_usd|floatformat:2 }}</p>
-                <p><strong>Gastos Después:</strong> - $ {{ liquidacion.total_gastos_despues_usd|floatformat:2 }}</p>
-                <hr>
-                <h5 class="fw-bold text-success">Neto a Pagar: $ {{ liquidacion.neto_a_pagar_usd|floatformat:2 }}</h5>
-                <h6>Bs. {{ liquidacion.neto_a_pagar_bs|floatformat:2 }}</h6>
+            <!-- Datos del Viaje -->
+            <div class="row mb-4">
+                <div class="col-md-6">
+                    <table class="table table-sm">
+                        <tr><th>Bus:</th><td>{{ liquidacion.bus.placa }} ({{ liquidacion.bus.modelo }})</td></tr>
+                        <tr><th>N° Interno:</th><td>{{ liquidacion.bus.numero_bus|default:"—" }}</td></tr>
+                        <tr><th>Dueño:</th><td>{{ liquidacion.dueno.nombre }}</td></tr>
+                        <tr><th>RIF:</th><td>{{ liquidacion.dueno.rif }}</td></tr>
+                        <tr><th>Conductores:</th><td>{{ liquidacion.conductores_nombres }}</td></tr>
+                    </table>
+                </div>
+                <div class="col-md-6">
+                    <table class="table table-sm">
+                        <tr><th>Oficina Liquidadora:</th><td>{{ liquidacion.oficina_liquidacion.nombre }} ({{ liquidacion.oficina_liquidacion.codigo }})</td></tr>
+                        <tr><th>Ruta:</th><td>{{ liquidacion.viaje.ruta.nombre }}</td></tr>
+                        <tr><th>Fecha del Viaje:</th><td>{{ liquidacion.viaje.fecha|date:"d/m/Y" }} - {{ liquidacion.viaje.hora|time:"h:i A" }}</td></tr>
+                        <tr><th>Liquidado por:</th><td>{{ liquidacion.liquidado_por.get_full_name|default:liquidacion.liquidado_por.username }}</td></tr>
+                    </table>
+                </div>
             </div>
-            <div class="col-6">
-                <h6>Detalle de Gastos:</h6>
-                <ul class="list-unstyled small">
-                    {% for g in liquidacion.gastos.all %}
-                        <li>- {{ g.concepto }}: ${{ g.monto_usd|floatformat:2 }}</li>
-                    {% endfor %}
-                </ul>
-            </div>
-        </div>
 
-        <div class="text-center mt-4">
-            <p>Firma del Liquidador: __________________________</p>
-            <p>Firma del Conductor: __________________________</p>
+            <hr>
+
+            <!-- Totales -->
+            <div class="row mb-4">
+                <div class="col-md-3 text-center">
+                    <p class="text-muted mb-1 small">Total Bruto USD</p>
+                    <h4 class="fw-bold text-primary">${{ liquidacion.total_bruto_usd|floatformat:2 }}</h4>
+                </div>
+                <div class="col-md-3 text-center">
+                    <p class="text-muted mb-1 small">Total Bruto Bs.</p>
+                    <h4 class="fw-bold">Bs. {{ liquidacion.total_bruto_bs|floatformat:2 }}</h4>
+                </div>
+                <div class="col-md-3 text-center">
+                    <p class="text-muted mb-1 small">% Empresa ({{ liquidacion.porcentaje_empresa }}%)</p>
+                    <h4 class="fw-bold">${{ liquidacion.monto_porcentaje_empresa_usd|floatformat:2 }}</h4>
+                </div>
+                <div class="col-md-3 text-center">
+                    <p class="text-muted mb-1 small">Neto a Pagar</p>
+                    <h4 class="fw-bold text-success">${{ liquidacion.neto_a_pagar_usd|floatformat:2 }}</h4>
+                    <small class="text-muted">Bs. {{ liquidacion.neto_a_pagar_bs|floatformat:2 }}</small>
+                </div>
+            </div>
+
+            <hr>
+
+            <!-- Tabla de Gastos -->
+            <div class="row">
+                <div class="col-md-6">
+                    <h6 class="fw-bold text-primary">Gastos Administrativos (Antes del %)</h6>
+                    <table class="table table-sm table-bordered">
+                        <thead class="table-light">
+                            <tr><th>Concepto</th><th class="text-end">Monto USD</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for g in gastos %}
+                                {% if g.tipo == 'antes' %}
+                                    <tr>
+                                        <td>{{ g.concepto }}</td>
+                                        <td class="text-end">${{ g.monto_usd|floatformat:2 }}</td>
+                                    </tr>
+                                {% endif %}
+                            {% empty %}
+                                <tr><td colspan="2" class="text-center text-muted">Sin gastos</td></tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot>
+                            <tr class="table-light fw-bold">
+                                <td>Total Antes</td>
+                                <td class="text-end">${{ liquidacion.total_gastos_antes_usd|floatformat:2 }}</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+                <div class="col-md-6">
+                    <h6 class="fw-bold text-danger">Descuentos de Salida (Después del %)</h6>
+                    <table class="table table-sm table-bordered">
+                        <thead class="table-light">
+                            <tr><th>Concepto</th><th class="text-end">Monto USD</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for g in gastos %}
+                                {% if g.tipo == 'despues' %}
+                                    <tr>
+                                        <td>{{ g.concepto }}</td>
+                                        <td class="text-end">${{ g.monto_usd|floatformat:2 }}</td>
+                                    </tr>
+                                {% endif %}
+                            {% empty %}
+                                <tr><td colspan="2" class="text-center text-muted">Sin gastos</td></tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot>
+                            <tr class="table-light fw-bold">
+                                <td>Total Después</td>
+                                <td class="text-end">${{ liquidacion.total_gastos_despues_usd|floatformat:2 }}</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Observaciones -->
+            {% if liquidacion.observacion %}
+                <div class="mt-4">
+                    <h6 class="fw-bold">Observaciones:</h6>
+                    <p class="text-muted">{{ liquidacion.observacion|linebreaks }}</p>
+                </div>
+            {% endif %}
+
+            <!-- Firmas -->
+            <div class="row mt-5">
+                <div class="col-md-6 text-center">
+                    <div style="border-top: 1px solid #333; padding-top: 5px;">
+                        <small><strong>Firma del Taquillero</strong></small>
+                    </div>
+                </div>
+                <div class="col-md-6 text-center">
+                    <div style="border-top: 1px solid #333; padding-top: 5px;">
+                        <small><strong>Firma del Dueño / Conductor</strong></small>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 </div>
-<style>@media print { .d-print-none { display: none !important; } .card { border: none !important; box-shadow: none !important; } }</style>
+
+<!-- Modal de Anulación -->
+{% if liquidacion.estado == 'activa' %}
+<div class="modal fade" id="modalAnular" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="bi bi-exclamation-triangle"></i> Anular Liquidación</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" action="{% url 'core:taquilla_anular_liquidacion' liquidacion.id %}">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <p>¿Está seguro que desea anular la liquidación <strong>{{ liquidacion.numero_liquidacion }}</strong>?</p>
+                    <p class="text-muted small">Los boletos volverán a estar disponibles para liquidar.</p>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Confirme con su clave:</label>
+                        <input type="password" name="password" class="form-control" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-danger">Anular Liquidación</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 {% endblock %}

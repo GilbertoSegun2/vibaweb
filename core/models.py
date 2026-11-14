@@ -23,25 +23,34 @@ class Oficina(models.Model):
     def __str__(self):
         return f"{self.codigo} - {self.nombre}"
 
-
 class Empresa(models.Model):
-    """Empresas dueñas de los buses (accionistas)"""
-    nombre = models.CharField(max_length=100, verbose_name="Nombre")
-    rif = models.CharField(max_length=20, unique=True, verbose_name="RIF")
+    """Accionista (dueño de buses) - Alineado con PAEX"""
+    codigo = models.CharField(
+        max_length=3,
+        blank=True,
+        verbose_name="Código de Accionista",
+        help_text="3 dígitos, ej: 001, 002. Igual que en PAEX."
+    )
+    nombre = models.CharField(max_length=60, verbose_name="Nombre")
+    cedula = models.CharField(max_length=10, blank=True, verbose_name="Cédula / RIF")
     telefono = models.CharField(max_length=20, blank=True, verbose_name="Teléfono")
+    telefono2 = models.CharField(max_length=20, blank=True, verbose_name="Teléfono 2")
+    fax = models.CharField(max_length=20, blank=True, verbose_name="Fax")
+    email = models.EmailField(max_length=150, blank=True, verbose_name="Email")
+    direccion1 = models.CharField(max_length=50, blank=True, verbose_name="Dirección 1")
+    direccion2 = models.CharField(max_length=50, blank=True, verbose_name="Dirección 2")
     banco = models.CharField(max_length=50, blank=True, verbose_name="Banco")
     telefono_pago = models.CharField(max_length=20, blank=True, verbose_name="Teléfono Pago Móvil")
     cedula_pago = models.CharField(max_length=20, blank=True, verbose_name="Cédula Pago Móvil")
-    activa = models.BooleanField(default=True, verbose_name="Activa")
+    activa = models.BooleanField(default=True, verbose_name="Activo")
 
     class Meta:
-        verbose_name = "Empresa"
-        verbose_name_plural = "Empresas"
-        ordering = ['nombre']
+        verbose_name = "Accionista"
+        verbose_name_plural = "Accionistas"
+        ordering = ['codigo']
 
     def __str__(self):
-        return f"{self.nombre} ({self.rif})"
-
+        return f"{self.codigo or '???'} - {self.nombre}"
 
 class Parametro(models.Model):
     """Parámetros configurables del sistema (seguro, tiempos, colores, etc.)"""
@@ -67,11 +76,9 @@ class Parametro(models.Model):
 
     def __str__(self):
         return f"{self.codigo} - {self.descripcion}"
-   
-   
-        
+
 class Bus(models.Model):
-    """Buses de la flota, con su configuración de asientos en JSON"""
+    """Bus de la flota (alineado con PAEX)"""
     TIPOS = [
         ('doble_piso', 'Doble Piso'),
         ('yutong', 'Yutong'),
@@ -79,31 +86,38 @@ class Bus(models.Model):
         ('ejecutivo', 'Ejecutivo'),
         ('otro', 'Otro'),
     ]
-
-    empresa = models.ForeignKey(Empresa, on_delete=models.PROTECT, verbose_name="Empresa")
-    placa = models.CharField(max_length=15, unique=True, verbose_name="Placa")
-    modelo = models.CharField(max_length=50, verbose_name="Modelo")
-    tipo = models.CharField(max_length=20, choices=TIPOS, default='otro', verbose_name="Tipo")
-    capacidad = models.PositiveIntegerField(verbose_name="Capacidad total")
-    numero_bus = models.CharField(max_length=20, unique=True, null=True, blank=True, verbose_name="Número de Bus")
-    conductores = models.ManyToManyField('Conductor', blank=True, related_name='buses', verbose_name="Conductores asignados")
-    puestos_descuento_max = models.PositiveIntegerField(
+    
+    numero_bus = models.CharField(
+        max_length=4,
+        unique=True,
         null=True,
         blank=True,
+        verbose_name="Número de Bus",
+        help_text="Número interno, ej: 0061. Igual que en PAEX."
+    )
+    empresa = models.ForeignKey(
+        Empresa, on_delete=models.PROTECT,
+        verbose_name="Accionista (Dueño)"
+    )
+    placa = models.CharField(max_length=15, unique=True, verbose_name="Placa")
+    modelo = models.CharField(max_length=50, blank=True, verbose_name="Modelo")
+    tipo = models.CharField(max_length=20, choices=TIPOS, default='otro', verbose_name="Tipo")
+    capacidad = models.PositiveIntegerField(default=0, verbose_name="Capacidad total")
+    
+    conductor = models.CharField(max_length=70, blank=True, verbose_name="Conductor")
+    telefono_conductor = models.CharField(max_length=30, blank=True, verbose_name="Teléfono Conductor")
+    asistente = models.CharField(max_length=70, blank=True, verbose_name="Asistente")
+    telefono_asistente = models.CharField(max_length=30, blank=True, verbose_name="Teléfono Asistente")
+    
+    puestos_descuento_max = models.PositiveIntegerField(
+        null=True, blank=True,
         verbose_name="Máximo de puestos con descuento",
         help_text="Si se deja vacío, se usa el valor del parámetro 110"
-    )
-    configuracion_asientos = models.JSONField(
-        default=dict,
-        blank=True,
-        verbose_name="Configuración de asientos (obsoleto)",
-        help_text="Campo obsoleto. Se mantiene por compatibilidad. Usar 'plantilla'."
     )
     plantilla = models.ForeignKey(
         'PlantillaBus',
         on_delete=models.PROTECT,
-        null=True,
-        blank=True,
+        null=True, blank=True,
         related_name='buses',
         verbose_name="Plantilla de asientos"
     )
@@ -113,11 +127,10 @@ class Bus(models.Model):
     class Meta:
         verbose_name = "Bus"
         verbose_name_plural = "Buses"
-        ordering = ['placa']
+        ordering = ['numero_bus']
 
     def __str__(self):
-        return f"{self.placa} - {self.modelo} ({self.capacidad} puestos)"
-
+        return f"{self.numero_bus} - {self.placa} ({self.empresa.nombre})"
 
 class Tarifa(models.Model):
     """Tarifas entre oficinas origen y destino (en USD)"""
@@ -870,11 +883,19 @@ class Conductor(models.Model):
     def __str__(self):
         return f"{self.nombre} ({self.cedula})"
 
-
 class Liquidacion(models.Model):
     """Acta de liquidación de un viaje (bus + fecha + oficina)"""
+    
+    ESTADOS = [
+        ('activa', 'Activa'),
+        ('anulada', 'Anulada'),
+    ]
+    
     # Numeración Correlativa (por oficina)
     numero_liquidacion = models.CharField(max_length=20, unique=True, verbose_name="N° Liquidación")
+    
+    # ⭐ NUEVO CAMPO: Estado de la liquidación
+    estado = models.CharField(max_length=10, choices=ESTADOS, default='activa', verbose_name="Estado")
     
     # Relaciones
     viaje = models.ForeignKey(Viaje, on_delete=models.PROTECT, verbose_name="Viaje")
@@ -914,7 +935,6 @@ class Liquidacion(models.Model):
     def __str__(self):
         return f"Liq. {self.numero_liquidacion} - {self.bus.placa} - {self.fecha_liquidacion.strftime('%d/%m/%Y')}"
 
-
 class GastoLiquidacion(models.Model):
     """Detalle de los gastos aplicados a una liquidación"""
     TIPOS = [
@@ -932,3 +952,22 @@ class GastoLiquidacion(models.Model):
 
     def __str__(self):
         return f"{self.concepto} - ${self.monto_usd}"
+        
+class TipoGasto(models.Model):
+    """Catálogo de gastos reutilizables para las liquidaciones."""
+    TIPOS = [
+        ('antes', 'Antes del %'),
+        ('despues', 'Después del %'),
+    ]
+    nombre = models.CharField(max_length=100, unique=True, verbose_name="Nombre del Gasto")
+    tipo = models.CharField(max_length=10, choices=TIPOS, verbose_name="Tipo")
+    activo = models.BooleanField(default=True, verbose_name="Activo")
+
+    class Meta:
+        verbose_name = "Tipo de Gasto"
+        verbose_name_plural = "Tipos de Gastos"
+        ordering = ['tipo', 'nombre']
+
+    def __str__(self):
+        return f"{self.nombre} ({self.get_tipo_display()})"
+        

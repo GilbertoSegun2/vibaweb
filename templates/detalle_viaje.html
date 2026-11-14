@@ -5,7 +5,7 @@
 
 {% block extra_css %}
 <style>
-    /* ⭐ CONTENEDOR PRINCIPAL DEL BUS */
+    /* ⭐ CONTENEDOR PRINCIPAL DEL BUS (VISTA VERTICAL CLÁSICA PARA CLIENTES) */
     .mapa-bus { 
         max-width: 300px; 
         margin: 0 auto; 
@@ -68,7 +68,7 @@
     .asiento.pendiente_verificacion { background: #e2d9f3; color: #432874; border-color: #6f42c1; cursor: not-allowed; }
     .asiento.bloqueado { background: #e2e3e5; color: #41464b; border-color: #6c757d; cursor: not-allowed; }
     
-    /* ⭐ NUEVO: Asiento Abordado (Chequeado) - Azul Oscuro con letras blancas */
+    /* ⭐ Asiento Abordado (Chequeado) - Azul Oscuro con letras blancas */
     .asiento.usado { 
         background: #003366; 
         color: #ffffff; 
@@ -104,6 +104,109 @@
         .mapa-bus { padding: 8px; } 
         .pasillo { width: 15px; min-width: 15px; }
     }
+
+    {% if user.usuarioempresa %}
+    /* ============================================================ */
+    /* ⭐ MODO HORIZONTAL COMPACTO EXCLUSIVO PARA PC DE TAQUILLA      */
+    /* ============================================================ */
+    @media (min-width: 992px) {
+        .mapa-bus.modo-taquilla {
+            max-width: 100% !important;
+            display: flex;
+            flex-direction: row;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 15px;
+            overflow-x: hidden;
+        }
+
+        .mapa-bus.modo-taquilla .bus-frente {
+            flex-direction: column;
+            min-width: 70px;
+            padding: 8px 4px;
+            border-radius: 8px 0 0 8px;
+            border-bottom: 2px solid #003366;
+            border-right: none;
+            justify-content: center;
+            flex-shrink: 1;
+        }
+
+        .mapa-bus.modo-taquilla .bus-frente__label {
+            writing-mode: vertical-lr;
+            transform: rotate(180deg);
+            margin-top: 6px;
+            font-size: 0.65rem;
+            letter-spacing: 0.5px;
+        }
+
+        .mapa-bus.modo-taquilla .piso-titulo {
+            writing-mode: vertical-lr;
+            transform: rotate(180deg);
+            padding: 10px 3px;
+            margin: 0 2px;
+            border-radius: 4px;
+            font-size: 0.65rem;
+            text-align: center;
+            flex-shrink: 1;
+        }
+
+        .mapa-bus.modo-taquilla .fila-asientos {
+            display: flex;
+            flex-direction: column-reverse;
+            gap: 3px;
+            justify-content: center;
+            align-items: center;
+            margin-bottom: 0;
+            margin-right: 2px;
+            background: rgba(0, 51, 102, 0.02);
+            padding: 4px 2px;
+            border-radius: 6px;
+            border: 1px dashed rgba(0, 51, 102, 0.15);
+            flex-shrink: 1;
+        }
+
+        .mapa-bus.modo-taquilla .asiento {
+            width: 34px;
+            height: 34px;
+            font-size: 0.75rem;
+            border-radius: 6px;
+        }
+
+        .mapa-bus.modo-taquilla .pasillo {
+            width: 100% !important;
+            min-width: unset !important;
+            height: 10px;
+            min-height: 10px;
+        }
+
+        .mapa-bus.modo-taquilla .bus-trasero {
+            flex-direction: column;
+            min-width: 70px;
+            padding: 8px 4px;
+            border-radius: 0 8px 8px 0;
+            border-top: 2px solid #003366;
+            border-left: none;
+            justify-content: center;
+            flex-shrink: 1;
+        }
+
+        .mapa-bus.modo-taquilla .bus-trasero__label {
+            writing-mode: vertical-lr;
+            transform: rotate(180deg);
+            margin-top: 6px;
+            font-size: 0.65rem;
+            letter-spacing: 0.5px;
+        }
+
+        .mapa-bus.modo-taquilla .bus-trasero__luz {
+            width: 12px;
+            height: 12px;
+            margin: 3px 0;
+        }
+    }
+    {% endif %}
 </style>
 {% endblock %}
 
@@ -147,100 +250,11 @@
 </div>
 
 <div class="row">
-    <div class="col-lg-3 mb-3">
-        <div class="card shadow-sm">
-            <div class="card-body">
-                <h5 class="card-title" style="color: #003366;">Información</h5>
-                <hr>
-                <p class="mb-1"><strong>Fecha:</strong> {{ viaje.fecha|date:'d/m/Y' }}</p>
-                <p class="mb-1"><strong>Hora:</strong> {{ viaje.hora|hora_am_pm }}</p>
-                <p class="mb-1"><strong>Origen:</strong> {{ viaje.ruta.origen.nombre }}</p>
-                <p class="mb-1"><strong>Bus:</strong> {{ viaje.bus.modelo }}</p>
-                <p class="mb-1"><strong>Placa:</strong> {{ viaje.bus.placa }}</p>
-                <hr>
-                
-                {% if tarifa %}
-                    <p class="mb-1"><strong>Precio:</strong> <span class="badge bg-success fs-6">${{ tarifa.monto_usd }}</span></p>
-                    <p class="mb-1 text-muted small">Bs. {{ tarifa.monto_usd|convertir_bs }}</p>
-                    <p class="mb-1"><strong>Seguro:</strong> ${{ seguro }}</p>
-                    <p class="mb-1 text-muted small">Bs. ${{ seguro|convertir_bs }}</p>
-                {% else %}
-                    <p class="mb-1"><strong>Precio:</strong> <span class="badge bg-danger fs-6">Sin tarifa</span></p>
-                    <p class="mb-1 text-muted small">Por favor, selecciona un viaje desde la búsqueda</p>
-                {% endif %}
-                
-                {% if tasa_bcv %}
-                <p class="mb-0 text-muted small"><i class="bi bi-currency-exchange"></i> Tasa BCV: {{ tasa_bcv|floatformat:2 }} Bs/USD</p>
-                {% else %}
-                <p class="mb-0 text-danger small"><i class="bi bi-exclamation-triangle"></i> Tasa BCV no configurada</p>
-                {% endif %}
-            </div>
-        </div>
-
-        {% if user.usuarioempresa %}
-        <div class="card shadow-sm mt-3 border-primary">
-            <div class="card-header bg-primary text-white py-2">
-                <h6 class="mb-0 fw-bold"><i class="bi bi-sliders"></i> Panel de Control</h6>
-            </div>
-            <div class="card-body py-3">
-                <!-- Grupo 1: Gestión de Asientos -->
-                <p class="text-muted small fw-bold mb-1 text-uppercase" style="font-size: 0.7rem; letter-spacing: 1px;">Gestión de Asientos</p>
-                <div class="d-grid gap-2 mb-3">
-                    <div class="btn-group w-100" role="group">
-                        <!-- ⭐ BOTÓN BLOQUEAR AHORA LLAMA A LA NUEVA FUNCIÓN -->
-                        <button class="btn btn-outline-primary btn-sm" onclick="bloquearAsientosSeleccionados()"><i class="bi bi-lock"></i> Bloquear</button>
-                        
-                        <!-- ⭐ BOTÓN LIBERAR: MENÚ DESPLEGABLE -->
-                        <div class="btn-group" role="group">
-                            <button type="button" class="btn btn-outline-danger btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
-                                <i class="bi bi-unlock"></i> Liberar
-                            </button>
-                            <ul class="dropdown-menu">
-                                <li><a class="dropdown-item" href="#" onclick="abrirModalLiberarPuestos()"><i class="bi bi-person-x"></i> Lista de Espera</a></li>
-                                <li><a class="dropdown-item" href="#" onclick="abrirModalDesbloquear()"><i class="bi bi-check-circle"></i> Desbloquear Asientos</a></li>
-                            </ul>
-                        </div>
-                        
-                        <button class="btn btn-outline-info btn-sm" disabled><i class="bi bi-info-circle"></i> Pista</button>
-                    </div>
-                </div>
-
-                <!-- Grupo 2: Operaciones Especiales -->
-                <p class="text-muted small fw-bold mb-1 text-uppercase" style="font-size: 0.7rem; letter-spacing: 1px;">Operaciones Especiales</p>
-                <div class="d-grid gap-2 mb-3">
-                    <button class="btn btn-warning fw-bold text-dark shadow-sm" id="btn-modo-transferencia" onclick="activarModoTransferencia()">
-                        <i class="bi bi-arrow-left-right fs-5"></i> Transferir Asiento
-                    </button>
-                    <button class="btn btn-info fw-bold text-dark shadow-sm" onclick="activarModoReprogramar()">
-                        <i class="bi bi-arrow-repeat fs-5"></i> Reprogramar Viaje
-                    </button>
-                    
-                    <!-- ⭐ NUEVO: Escanear / Abordar -->
-                    <a href="{% url 'core:taquilla_escaner' %}?viaje_id={{ viaje.id }}" class="btn btn-danger fw-bold text-white shadow-sm mt-2">
-                        <i class="bi bi-qr-code-scan fs-5"></i> Escanear / Abordar
-                    </a>
-                    
-                    <!-- ⭐ NUEVO: Cerrar Venta -->
-                    {% if viaje.estado == 'programado' and not viaje.cerrado_venta %}
-                    <button class="btn btn-dark fw-bold text-white shadow-sm mt-2" onclick="cerrarVentaViaje()">
-                        <i class="bi bi-lock-fill fs-5"></i> Cerrar Venta
-                    </button>
-                    {% endif %}
-                </div>
-
-                <!-- Grupo 3: Información -->
-                <p class="text-muted small fw-bold mb-1 text-uppercase" style="font-size: 0.7rem; letter-spacing: 1px;">Información</p>
-                <div class="d-grid gap-2">
-                    <button class="btn btn-outline-dark btn-sm" disabled><i class="bi bi-people"></i> Lista Pasajeros</button>
-                    <button class="btn btn-outline-secondary btn-sm" disabled><i class="bi bi-grid-3x3"></i> Distribución</button>
-                </div>
-            </div>
-        </div>
-        {% endif %}
-    </div>
-    
-    <div class="col-lg-6 mb-3">
-        <div class="mapa-bus">
+    <!-- ============================================================ -->
+    <!-- 1. MAPA DEL BUS (ANCHO COMPLETO EN TAQUILLA, CENTRAL EN WEB) -->
+    <!-- ============================================================ -->
+    <div class="{% if user.usuarioempresa %}col-12 mb-4{% else %}col-lg-6 order-lg-2 mb-3{% endif %}">
+        <div class="mapa-bus {% if user.usuarioempresa %}modo-taquilla{% endif %}">
             <div class="bus-frente">
                 <span class="bus-frente__cabina" title="Conductor">
                     <svg viewBox="0 0 120 90" width="75" height="56" xmlns="http://www.w3.org/2000/svg" aria-label="Conductor">
@@ -312,52 +326,182 @@
             </div>
         </div>
         
-        <div class="card shadow-sm mt-3 leyenda-card">
+        <div class="card shadow-sm mt-3 leyenda-card" {% if user.usuarioempresa %}style="max-width: 100%;"{% endif %}>
             <div class="card-body py-2 px-3">
-                <p class="mb-2 text-center small fw-bold" style="color: #003366;"><i class="bi bi-info-circle"></i> Estados de los asientos</p>
                 <div class="leyenda">
+                    <span class="fw-bold me-2" style="color: #003366;"><i class="bi bi-info-circle"></i> Estados:</span>
                     <div class="leyenda-item"><div class="leyenda-cuadro" style="background: #d1e7dd; border-color: #198754;"></div><span>Disponible</span></div>
                     <div class="leyenda-item"><div class="leyenda-cuadro" style="background: #ffc107; border-color: #ffca2c;"></div><span>Tu selección</span></div>
                     <div class="leyenda-item"><div class="leyenda-cuadro" style="background: #ffe5d0; border-color: #fd7e14;"></div><span>Apartado temporal</span></div>
                     <div class="leyenda-item"><div class="leyenda-cuadro" style="background: #e2d9f3; border-color: #6f42c1;"></div><span>En verificación</span></div>
-                    <div class="leyenda-item"><div class="leyenda-cuadro" style="background: #cff4fc; border-color: #0dcaf0;"></div><span>Abordado</span></div>
+                    <div class="leyenda-item"><div class="leyenda-cuadro" style="background: #003366; border-color: #001a33;"></div><span>Abordado</span></div>
                     <div class="leyenda-item"><div class="leyenda-cuadro" style="background: #f8d7da; border-color: #dc3545;"></div><span>Vendido</span></div>
+                    <div class="leyenda-item"><div class="leyenda-cuadro" style="background: #e2e3e5; border-color: #6c757d;"></div><span>Bloqueado</span></div>
                 </div>
             </div>
         </div>
     </div>
-    
-    <div class="col-lg-3 mb-3">
-        <div class="card shadow-sm panel-resumen">
+
+    <!-- ============================================================ -->
+    <!-- 2. TARJETA DE INFORMACIÓN                                    -->
+    <!-- ============================================================ -->
+    <div class="{% if user.usuarioempresa %}col-lg-4 order-1 order-lg-1{% else %}col-lg-3 order-lg-1{% endif %} mb-3">
+        <div class="card shadow-sm h-100">
             <div class="card-body">
-                <h5 class="card-title" style="color: #003366;"><i class="bi bi-cart"></i> Tu Selección</h5>
+                <h5 class="card-title" style="color: #003366;"><i class="bi bi-info-circle"></i> Información</h5>
                 <hr>
-                <div id="sin-seleccion"><p class="text-muted small">Haz clic en los asientos para seleccionarlos.</p></div>
-                
-                <div id="con-seleccion" style="display: none;">
-                    <p class="mb-1"><strong>Asientos:</strong></p>
-                    <div id="lista-asientos" class="mb-3"></div>
-                    <p class="mb-1"><strong>Cantidad:</strong> <span id="cantidad">0</span></p>
-                    <p class="mb-1"><strong>Total estimado:</strong> <span class="badge bg-success fs-6">$<span id="total">0.00</span></span></p>
-                    <p class="mb-3 text-muted small">Bs. <span id="total_bs">0,00</span>{% if tasa_bcv %}<br><i class="bi bi-currency-exchange"></i> Tasa BCV: {{ tasa_bcv|floatformat:2 }}{% else %}<br><span class="text-danger"><i class="bi bi-exclamation-triangle"></i> Tasa BCV no configurada</span>{% endif %}</p>
+                {% if user.usuarioempresa %}
+                <div class="row">
+                    <div class="col-6">
+                        <p class="mb-1"><strong>Fecha:</strong> {{ viaje.fecha|date:'d/m/Y' }}</p>
+                        <p class="mb-1"><strong>Hora:</strong> {{ viaje.hora|hora_am_pm }}</p>
+                        <p class="mb-1"><strong>Origen:</strong> {{ viaje.ruta.origen.nombre }}</p>
+                        <p class="mb-1"><strong>Bus:</strong> {{ viaje.bus.modelo }} ({{ viaje.bus.placa }})</p>
+                    </div>
+                    <div class="col-6">
+                        {% if tarifa %}
+                            <p class="mb-1"><strong>Precio:</strong> <span class="badge bg-success fs-6">${{ tarifa.monto_usd }}</span></p>
+                            <p class="mb-1 text-muted small">Bs. {{ tarifa.monto_usd|convertir_bs }}</p>
+                            <p class="mb-1"><strong>Seguro:</strong> ${{ seguro }} <span class="text-muted small">(Bs. {{ seguro|convertir_bs }})</span></p>
+                        {% else %}
+                            <p class="mb-1"><strong>Precio:</strong> <span class="badge bg-danger">Sin tarifa</span></p>
+                        {% endif %}
+                        
+                        {% if tasa_bcv %}
+                        <p class="mb-0 text-muted small mt-2"><i class="bi bi-currency-exchange"></i> Tasa BCV: {{ tasa_bcv|floatformat:2 }} Bs/USD</p>
+                        {% endif %}
+                    </div>
+                </div>
+                {% else %}
+                <p class="mb-1"><strong>Fecha:</strong> {{ viaje.fecha|date:'d/m/Y' }}</p>
+                <p class="mb-1"><strong>Hora:</strong> {{ viaje.hora|hora_am_pm }}</p>
+                <p class="mb-1"><strong>Origen:</strong> {{ viaje.ruta.origen.nombre }}</p>
+                <p class="mb-1"><strong>Bus:</strong> {{ viaje.bus.modelo }}</p>
+                <p class="mb-1"><strong>Placa:</strong> {{ viaje.bus.placa }}</p>
+                <hr>
+                {% if tarifa %}
+                    <p class="mb-1"><strong>Precio:</strong> <span class="badge bg-success fs-6">${{ tarifa.monto_usd }}</span></p>
+                    <p class="mb-1 text-muted small">Bs. {{ tarifa.monto_usd|convertir_bs }}</p>
+                    <p class="mb-1"><strong>Seguro:</strong> ${{ seguro }}</p>
+                    <p class="mb-1 text-muted small">Bs. {{ seguro|convertir_bs }}</p>
+                {% else %}
+                    <p class="mb-1"><strong>Precio:</strong> <span class="badge bg-danger fs-6">Sin tarifa</span></p>
+                    <p class="mb-1 text-muted small">Por favor, selecciona un viaje desde la búsqueda</p>
+                {% endif %}
+                {% if tasa_bcv %}
+                <p class="mb-0 text-muted small"><i class="bi bi-currency-exchange"></i> Tasa BCV: {{ tasa_bcv|floatformat:2 }} Bs/USD</p>
+                {% else %}
+                <p class="mb-0 text-danger small"><i class="bi bi-exclamation-triangle"></i> Tasa BCV no configurada</p>
+                {% endif %}
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- 3. TU SELECCIÓN / COBRAR (ORDEN 2 EN MÓVIL TAQUILLA)          -->
+    <!-- ============================================================ -->
+    <div class="{% if user.usuarioempresa %}col-lg-4 order-2 order-lg-3{% else %}col-lg-3 order-lg-3{% endif %} mb-3">
+        <div class="card shadow-sm {% if user.usuarioempresa %}h-100{% else %}panel-resumen{% endif %}">
+            <div class="card-body d-flex flex-column justify-content-between">
+                <div>
+                    <h5 class="card-title" style="color: #003366;"><i class="bi bi-cart"></i> Tu Selección</h5>
+                    <hr>
+                    <div id="sin-seleccion"><p class="text-muted small">Haz clic en los asientos para seleccionarlos.</p></div>
                     
+                    <div id="con-seleccion" style="display: none;">
+                        <p class="mb-1"><strong>Asientos:</strong> <span id="lista-asientos"></span></p>
+                        {% if user.usuarioempresa %}
+                        <p class="mb-1"><strong>Cantidad:</strong> <span id="cantidad">0</span> | <strong>Total:</strong> <span class="badge bg-success fs-6">$<span id="total">0.00</span></span> <span class="text-muted small">(Bs. <span id="total_bs">0,00</span>)</span></p>
+                        {% else %}
+                        <p class="mb-1"><strong>Cantidad:</strong> <span id="cantidad">0</span></p>
+                        <p class="mb-1"><strong>Total estimado:</strong> <span class="badge bg-success fs-6">$<span id="total">0.00</span></span></p>
+                        <p class="mb-3 text-muted small">Bs. <span id="total_bs">0,00</span>{% if tasa_bcv %}<br><i class="bi bi-currency-exchange"></i> Tasa BCV: {{ tasa_bcv|floatformat:2 }}{% else %}<br><span class="text-danger"><i class="bi bi-exclamation-triangle"></i> Tasa BCV no configurada</span>{% endif %}</p>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <div>
                     {% if user.usuarioempresa %}
-                        <button class="btn btn-success w-100 fw-bold mt-3" id="btn-cobrar-taquilla" disabled onclick="abrirCobroTaquilla()">
-                            <i class="bi bi-cash-coin"></i> Cobrar
+                        <button class="btn btn-success w-100 fw-bold btn-lg mt-2" id="btn-cobrar-taquilla" disabled onclick="abrirCobroTaquilla()">
+                            <i class="bi bi-cash-coin"></i> Cobrar Boletos
                         </button>
                     {% else %}
                         <button id="btn-continuar" class="btn btn-primary w-100 mt-3" style="background-color: #003366; border-color: #003366;" disabled>
                             <i class="bi bi-arrow-right-circle"></i> Continuar con la compra
                         </button>
                     {% endif %}
-                </div>
-                
-                <div id="mensaje-info" class="alert alert-info small mt-3" style="display: none;">
-                    <i class="bi bi-info-circle"></i> <span id="mensaje-texto"></span>
+                    
+                    <div id="mensaje-info" class="alert alert-info small mt-2 mb-0" style="display: none;">
+                        <i class="bi bi-info-circle"></i> <span id="mensaje-texto"></span>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
+
+    <!-- ============================================================ -->
+    <!-- 4. PANEL DE CONTROL TAQUILLA (ORDEN 3 EN MÓVIL, CENTRO EN PC) -->
+    <!-- ============================================================ -->
+    {% if user.usuarioempresa %}
+    <div class="col-lg-4 mb-3 order-3 order-lg-2">
+        <div class="card shadow-sm border-primary h-100">
+            <div class="card-header bg-primary text-white py-2">
+                <h6 class="mb-0 fw-bold"><i class="bi bi-sliders"></i> Panel de Control</h6>
+            </div>
+            <div class="card-body py-2">
+                <!-- Grupo 1: Gestión de Asientos -->
+                <p class="text-muted small fw-bold mb-1 text-uppercase" style="font-size: 0.7rem; letter-spacing: 1px;">Gestión de Asientos</p>
+                <div class="btn-group w-100 mb-2" role="group">
+                    <button class="btn btn-outline-primary btn-sm" onclick="bloquearAsientosSeleccionados()"><i class="bi bi-lock"></i> Bloquear</button>
+                    <div class="btn-group" role="group">
+                        <button type="button" class="btn btn-outline-danger btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="bi bi-unlock"></i> Liberar
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="#" onclick="abrirModalLiberarPuestos()"><i class="bi bi-person-x"></i> Lista de Espera</a></li>
+                            <li><a class="dropdown-item" href="#" onclick="abrirModalDesbloquear()"><i class="bi bi-check-circle"></i> Desbloquear Asientos</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Grupo 2: Operaciones Especiales -->
+                <p class="text-muted small fw-bold mb-1 text-uppercase" style="font-size: 0.7rem; letter-spacing: 1px;">Operaciones Especiales</p>
+                <div class="row g-1 mb-2">
+                    <div class="col-6">
+                        <button class="btn btn-warning btn-sm w-100 fw-bold text-dark" id="btn-modo-transferencia" onclick="activarModoTransferencia()">
+                            <i class="bi bi-arrow-left-right"></i> Transferir
+                        </button>
+                    </div>
+                    <div class="col-6">
+                        <button class="btn btn-info btn-sm w-100 fw-bold text-dark" onclick="activarModoReprogramar()">
+                            <i class="bi bi-arrow-repeat"></i> Reprogramar
+                        </button>
+                    </div>
+                    <div class="col-6">
+                        <a href="{% url 'core:taquilla_escaner' %}?viaje_id={{ viaje.id }}" class="btn btn-danger btn-sm w-100 fw-bold text-white">
+                            <i class="bi bi-qr-code-scan"></i> Escanear QR
+                        </a>
+                    </div>
+                    <div class="col-6">
+                        <a href="{% url 'core:taquilla_liquidar' %}?viaje_id={{ viaje.id }}" 
+                           class="btn btn-sm w-100 fw-bold text-white" 
+                           style="background-color: #6f42c1;"
+                           onclick="mostrarCarga('Abriendo liquidación...', 'Preparando los datos del viaje. Por favor, espere.');">
+                            <i class="bi bi-cash-coin"></i> Liquidar
+                        </a>
+                    </div>
+                </div>
+
+                {% if viaje.estado == 'programado' and not viaje.cerrado_venta %}
+                <button class="btn btn-dark btn-sm w-100 fw-bold text-white" onclick="cerrarVentaViaje()">
+                    <i class="bi bi-lock-fill"></i> Cerrar Venta del Viaje
+                </button>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
 </div>
 
 <div id="scrollHintFlotante" class="scroll-hint-flotante" aria-hidden="true">
@@ -628,6 +772,8 @@ document.addEventListener("DOMContentLoaded", function() {
         if (cantidad === 0) {
             sinSeleccion.style.display = 'block';
             conSeleccion.style.display = 'none';
+            if (btnCobrarTaquilla) btnCobrarTaquilla.disabled = true;
+            if (btnContinuar) btnContinuar.disabled = true;
             return;
         }
         
@@ -925,7 +1071,6 @@ document.addEventListener("DOMContentLoaded", function() {
             return;
         }
 
-        // Obtener los números de asiento para el mensaje
         const numeros = [];
         document.querySelectorAll('.asiento.seleccionado').forEach(a => { numeros.push(a.dataset.asientoNumero); });
         numeros.sort();
@@ -941,7 +1086,6 @@ document.addEventListener("DOMContentLoaded", function() {
         });
         formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
 
-        // Deshabilitar botón para evitar doble clic
         const btn = document.querySelector('button[onclick="bloquearAsientosSeleccionados()"]');
         if (btn) { btn.disabled = true; btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Bloqueando...'; }
 
@@ -953,7 +1097,7 @@ document.addEventListener("DOMContentLoaded", function() {
         .then(data => {
             if (data.ok) {
                 alert('✅ ' + data.mensaje);
-                location.reload(); // Recargar para ver el mapa actualizado en gris
+                location.reload();
             } else {
                 alert('❌ Error: ' + data.error);
                 if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-lock"></i> Bloquear'; }

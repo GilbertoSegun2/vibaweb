@@ -23,7 +23,8 @@ from .models import (
     Oficina, Viaje, Asiento, Transaccion, Pago, Boleto, Tarifa, 
     MovimientoAsiento, UsuarioEmpresa, Cliente, Credito, 
     PlantillaBus, PlantillaAsiento, Ruta, RutaParada, Suscripcion,
-    Pistero, SesionActiva, Conductor, Liquidacion, GastoLiquidacion
+    Pistero, SesionActiva, Conductor, Liquidacion, GastoLiquidacion,
+    TipoGasto,
 )
 from .forms import RegistroForm, LoginForm, PagoWebForm, PasajeroForm, PasarelaVirtualForm
 
@@ -2272,6 +2273,7 @@ def taquilla_liquidar(request):
         return redirect('core:inicio')
 
     porcentaje_empresa = Decimal(str(obtener_parametro('201', default=20)))
+    tasa_bcv = Decimal(str(obtener_parametro('107', default=0)))
     
     if request.method == 'POST':
         bus_id = request.POST.get('bus_id')
@@ -2288,54 +2290,63 @@ def taquilla_liquidar(request):
                 bus = Bus.objects.get(id=bus_id)
                 viaje = Viaje.objects.get(id=viaje_id)
                 
-                boletos = Boleto.objects.filter(
-                    viaje=viaje, estado='usado',
-                    transaccion__oficina_venta=empleado.oficina
-                )
+                # 1. Traer TODOS los boletos usados del viaje
+                todos_los_boletos = Boleto.objects.filter(
+                    viaje=viaje, estado='usado'
+                ).select_related('transaccion', 'transaccion__oficina_venta')
                 
-                if not boletos.exists():
+                if not todos_los_boletos.exists():
                     messages.warning(request, "No hay boletos escaneados para liquidar.")
                     return redirect('core:taquilla_liquidar')
                 
-                total_bruto_usd = sum(b.monto_total_usd for b in boletos)
-                tasa_bcv = Decimal(str(obtener_parametro('107', default=0)))
+                # 2. Cálculos Base
+                total_bruto_usd = sum(b.monto_total_usd for b in todos_los_boletos)
                 total_bruto_bs = total_bruto_usd * tasa_bcv
                 monto_empresa_usd = total_bruto_usd * (porcentaje_empresa / 100)
                 
-                gastos_antes = request.POST.getlist('gasto_antes_monto[]')
-                gastos_despues = request.POST.getlist('gasto_despues_monto[]')
-                conceptos_antes = request.POST.getlist('gasto_antes_concepto[]')
-                conceptos_despues = request.POST.getlist('gasto_despues_concepto[]')
+                # 3. Gastos Administrativos (Antes del %)
+                gastos_admin = request.POST.getlist('gasto_admin_monto[]')
+                conceptos_admin = request.POST.getlist('gasto_admin_concepto[]')
+                total_gastos_admin = sum(Decimal(m) for m in gastos_admin if m)
                 
-                total_gastos_antes = sum(Decimal(m) for m in gastos_antes if m)
-                total_gastos_despues = sum(Decimal(m) for m in gastos_despues if m)
+                # 4. Descuentos de Salida (Después del %)
+                gastos_salida = request.POST.getlist('gasto_salida_monto[]')
+                conceptos_salida = request.POST.getlist('gasto_salida_concepto[]')
+                total_gastos_salida = sum(Decimal(m) for m in gastos_salida if m)
                 
-                neto_usd = total_bruto_usd - total_gastos_antes - monto_empresa_usd - total_gastos_despues
+                # 5. Cálculo Neto (como en VFP)
+                # Neto = Bruto - GastosAdmin - %Empresa - GastosSalida
+                neto_usd = total_bruto_usd - total_gastos_admin - monto_empresa_usd - total_gastos_salida
                 neto_bs = neto_usd * tasa_bcv
                 
+                # 6. Generar número correlativo
                 ultima_liq = Liquidacion.objects.filter(oficina_liquidacion=empleado.oficina).order_by('-id').first()
                 nuevo_num = int(ultima_liq.numero_liquidacion.split('-')[1]) + 1 if ultima_liq else 1
                 numero_liq = f"{empleado.oficina.codigo}-{nuevo_num:06d}"
                 
+                # 7. Crear la Liquidación
                 liquidacion = Liquidacion.objects.create(
                     numero_liquidacion=numero_liq, viaje=viaje, bus=bus,
                     oficina_liquidacion=empleado.oficina, dueno=bus.empresa,
                     conductores_nombres=conductores_nombres,
                     total_bruto_usd=total_bruto_usd, total_bruto_bs=total_bruto_bs,
                     porcentaje_empresa=porcentaje_empresa, monto_porcentaje_empresa_usd=monto_empresa_usd,
-                    total_gastos_antes_usd=total_gastos_antes, total_gastos_despues_usd=total_gastos_despues,
+                    total_gastos_antes_usd=total_gastos_admin, total_gastos_despues_usd=total_gastos_salida,
                     neto_a_pagar_usd=neto_usd, neto_a_pagar_bs=neto_bs,
                     liquidado_por=request.user, observacion=observacion
                 )
                 
-                for i, c in enumerate(conceptos_antes):
-                    m = gastos_antes[i] if i < len(gastos_antes) else 0
+                # 8. Guardar el detalle de los gastos
+                for i, c in enumerate(conceptos_admin):
+                    m = gastos_admin[i] if i < len(gastos_admin) else 0
                     if m: GastoLiquidacion.objects.create(liquidacion=liquidacion, concepto=c, monto_usd=Decimal(m), tipo='antes')
-                for i, c in enumerate(conceptos_despues):
-                    m = gastos_despues[i] if i < len(gastos_despues) else 0
+                    
+                for i, c in enumerate(conceptos_salida):
+                    m = gastos_salida[i] if i < len(gastos_salida) else 0
                     if m: GastoLiquidacion.objects.create(liquidacion=liquidacion, concepto=c, monto_usd=Decimal(m), tipo='despues')
                 
-                boletos.update(estado='liquidado')
+                # 9. Marcar los boletos como liquidados
+                todos_los_boletos.update(estado='liquidado')
                 
                 messages.success(request, f"Liquidación {numero_liq} generada exitosamente.")
                 return redirect('core:taquilla_liquidacion_detalle', liquidacion.id)
@@ -2343,6 +2354,7 @@ def taquilla_liquidar(request):
             messages.error(request, f"Error al liquidar: {str(e)}")
             return redirect('core:taquilla_liquidar')
     
+    # GET: Cargar los datos
     hoy = timezone.localtime(timezone.now()).date()
     viajes = Viaje.objects.filter(fecha=hoy, estado='programado').order_by('hora')
     viaje_id_preseleccionado = request.GET.get('viaje_id')
@@ -2351,6 +2363,10 @@ def taquilla_liquidar(request):
         'viajes': viajes,
         'porcentaje_empresa': porcentaje_empresa,
         'viaje_id_preseleccionado': viaje_id_preseleccionado,
+        'empleado': empleado,
+        'tasa_bcv': tasa_bcv,
+        'gastos_antes': TipoGasto.objects.filter(tipo='antes', activo=True),
+        'gastos_despues': TipoGasto.objects.filter(tipo='despues', activo=True),
     })
     
 @login_required
@@ -2367,21 +2383,25 @@ def api_datos_liquidacion(request):
         viaje = Viaje.objects.get(id=viaje_id)
         
         numero_bus = viaje.bus.numero_bus or 'Sin número'
-        dueno = viaje.bus.empresa.nombre if viaje.bus.empresa else 'Sin dueño'
+        dueno_codigo = viaje.bus.empresa.codigo if viaje.bus.empresa else ''
+        dueno_nombre = viaje.bus.empresa.nombre if viaje.bus.empresa else 'Sin dueño'
+        dueno = f"{dueno_codigo} - {dueno_nombre}" if dueno_codigo else dueno_nombre
         
         conductores = ', '.join([c.nombre for c in viaje.bus.conductores.all()])
         
+        # ⭐ AQUÍ EL CAMBIO: Traemos TODOS los boletos usados del viaje, no solo los locales
         boletos = Boleto.objects.filter(
             viaje=viaje, 
-            estado='usado',
-            transaccion__oficina_venta=empleado.oficina
-        ).select_related('asiento')
+            estado='usado'
+        ).select_related('asiento', 'transaccion', 'transaccion__oficina_venta')
         
         boletos_data = [{
             'asiento': b.asiento.numero,
             'nombre': b.pasajero_nombre,
             'cedula': b.pasajero_cedula,
             'monto_total_usd': float(b.monto_total_usd),
+            'es_propio': b.transaccion.oficina_venta == empleado.oficina,
+            'oficina_venta': b.transaccion.oficina_venta.nombre if b.transaccion.oficina_venta else 'Sin Oficina'
         } for b in boletos]
         
         return JsonResponse({
@@ -2763,3 +2783,88 @@ def reenviar_codigo_verificacion(request):
         messages.error(request, f"No pudimos reenviar el correo. Intenta de nuevo en unos minutos.")
     
     return redirect('core:verificar_email')
+    
+@require_POST
+@login_required
+def api_crear_tipo_gasto(request):
+    if not hasattr(request.user, 'usuarioempresa'):
+        return JsonResponse({'ok': False, 'error': 'No autorizado'}, status=403)
+    
+    nombre = request.POST.get('nombre', '').strip().upper()
+    tipo = request.POST.get('tipo') # 'antes' o 'despues'
+    
+    if not nombre or tipo not in ['antes', 'despues']:
+        return JsonResponse({'ok': False, 'error': 'Datos inválidos'}, status=400)
+    
+    tipo_gasto, created = TipoGasto.objects.get_or_create(
+        nombre=nombre,
+        defaults={'tipo': tipo, 'activo': True}
+    )
+    
+    if not created and tipo_gasto.tipo != tipo:
+        return JsonResponse({'ok': False, 'error': 'Este gasto ya existe en otra categoría.'}, status=400)
+    
+    return JsonResponse({'ok': True, 'id': tipo_gasto.id, 'nombre': tipo_gasto.nombre})
+    
+@require_POST
+@login_required
+def taquilla_anular_liquidacion(request, liquidacion_id):
+    try:
+        empleado = request.user.usuarioempresa
+    except UsuarioEmpresa.DoesNotExist:
+        messages.error(request, "No tiene permisos.")
+        return redirect('core:inicio')
+
+    liquidacion = get_object_or_404(Liquidacion, id=liquidacion_id, oficina_liquidacion=empleado.oficina)
+    
+    if liquidacion.estado == 'anulada':
+        messages.warning(request, "Esta liquidación ya está anulada.")
+        return redirect('core:taquilla_liquidacion_detalle', liquidacion.id)
+    
+    password = request.POST.get('password')
+    if not request.user.check_password(password):
+        messages.error(request, "Clave incorrecta. No puede anular la liquidación.")
+        return redirect('core:taquilla_liquidacion_detalle', liquidacion.id)
+    
+    try:
+        with transaction.atomic():
+            # 1. Devolver los boletos a estado 'usado' para que se puedan re-liquidar
+            Boleto.objects.filter(
+                viaje=liquidacion.viaje,
+                transaccion__oficina_venta=empleado.oficina,
+                estado='liquidado'
+            ).update(estado='usado')
+            
+            # 2. Marcar la liquidación como anulada
+            liquidacion.estado = 'anulada'
+            liquidacion.observacion = f"{liquidacion.observacion}\n\nANULADA por {request.user.username} el {timezone.now().strftime('%d/%m/%Y %H:%M')}"
+            liquidacion.save()
+            
+        messages.success(request, f"Liquidación {liquidacion.numero_liquidacion} anulada. Los boletos vuelven a estar disponibles para liquidar.")
+    except Exception as e:
+        messages.error(request, f"Error al anular: {str(e)}")
+    
+    return redirect('core:taquilla_liquidacion_detalle', liquidacion.id)
+    
+@login_required
+def api_buscar_bus(request):
+    if not hasattr(request.user, 'usuarioempresa'):
+        return JsonResponse({'ok': False, 'error': 'No autorizado'}, status=403)
+    
+    numero = request.GET.get('numero', '').strip()
+    if not numero:
+        return JsonResponse({'ok': False, 'error': 'Falta el número'}, status=400)
+    
+    bus = Bus.objects.filter(numero_bus__iexact=numero, activo=True).select_related('empresa').first()
+    if not bus:
+        return JsonResponse({'ok': False, 'error': 'Bus no encontrado'}, status=404)
+    
+    return JsonResponse({
+        'ok': True,
+        'accionista_codigo': bus.empresa.codigo if bus.empresa else '',
+        'accionista_nombre': bus.empresa.nombre if bus.empresa else 'Sin dueño',
+        'conductor': bus.conductor or '',
+        'asistente': bus.asistente or '',
+        'placa': bus.placa,
+        'capacidad': bus.capacidad,
+    })

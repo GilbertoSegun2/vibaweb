@@ -17,7 +17,8 @@ from .models import (
     Oficina, Empresa, Parametro, Bus, Tarifa, Ruta, Cliente, 
     Viaje, Asiento, Boleto, Credito, MovimientoAsiento, 
     PlantillaBus, PlantillaAsiento, RutaParada, Suscripcion, 
-    Transaccion, Pago, UsuarioEmpresa, Banco, Pistero
+    Transaccion, Pago, UsuarioEmpresa, Banco, Pistero,
+    TipoGasto,  # ⭐ AGREGAR ESTA LÍNEA
 )
 
 # ============================================================
@@ -42,11 +43,10 @@ class OficinaAdmin(BaseImportExportAdmin):
 
 @admin.register(Empresa)
 class EmpresaAdmin(BaseImportExportAdmin):
-    list_display = ('nombre', 'rif', 'telefono', 'activa')
+    list_display = ('codigo', 'nombre', 'cedula', 'telefono', 'email', 'activa')
     list_filter = ('activa',)
-    search_fields = ('nombre', 'rif')
-    ordering = ('nombre',)
-
+    search_fields = ('codigo', 'nombre', 'cedula', 'email')
+    ordering = ('codigo',)
 
 # ============================================================
 # ADMIN DE PARÁMETROS CON URLS PERSONALIZADAS
@@ -68,30 +68,33 @@ class ParametroAdmin(ImportExportModelAdmin):
 
 admin.site.register(Parametro, ParametroAdmin)
 
-
 @admin.register(Bus)
 class BusAdmin(BaseImportExportAdmin):
-    list_display = ('placa', 'modelo', 'tipo', 'empresa', 'capacidad', 'puestos_descuento_max', 'activo')
+    list_display = ('numero_bus', 'placa', 'empresa', 'conductor', 'capacidad', 'activo')
     list_filter = ('tipo', 'activo', 'empresa')
-    search_fields = ('placa', 'modelo')
-    ordering = ('placa',)
+    search_fields = ('numero_bus', 'placa', 'empresa__nombre')
+    ordering = ('numero_bus',)
     fieldsets = (
-        ('Información básica', {
-            'fields': ('empresa', 'placa', 'modelo', 'tipo', 'capacidad', 'activo')
+        ('Identificación', {
+            'fields': ('numero_bus', 'placa', 'modelo', 'tipo', 'capacidad', 'activo')
+        }),
+        ('Accionista (Dueño)', {
+            'fields': ('empresa',),
+        }),
+        ('Conductores y Asistentes', {
+            'fields': ('conductor', 'telefono_conductor', 'asistente', 'telefono_asistente'),
+            'description': 'Nombres completos del conductor y asistente habituales.'
         }),
         ('Configuración de asientos', {
             'fields': ('plantilla',),
-            'description': 'Selecciona la plantilla que define la distribución de asientos del bus.'
         }),
         ('Descuentos', {
             'fields': ('puestos_descuento_max',),
-            'description': 'Si se deja vacío, se usa el parámetro 110 (general).'
         }),
         ('Otros', {
             'fields': ('observacion',)
         }),
     )
-
 
 @admin.register(Tarifa)
 class TarifaAdmin(BaseImportExportAdmin):
@@ -592,3 +595,9 @@ class SesionActivaAdmin(admin.ModelAdmin):
     def has_add_permission(self, request):
         # No permitir crear sesiones manualmente (solo ver y borrar)
         return False
+        
+@admin.register(TipoGasto)
+class TipoGastoAdmin(BaseImportExportAdmin):
+    list_display = ('nombre', 'tipo', 'activo')
+    list_filter = ('tipo', 'activo')
+    search_fields = ('nombre',)
