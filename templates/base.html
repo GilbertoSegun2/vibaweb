@@ -339,30 +339,43 @@
     }
     </script>
     
-    <!-- ⭐ PWA: REGISTRO Y LÓGICA DE INSTALACIÓN GLOBAL -->
+        <!-- ============================================================ -->
+    <!-- PWA: REGISTRO Y LÓGICA DE INSTALACIÓN GLOBAL (BLINDADO)      -->
+    <!-- ============================================================ -->
     <script>
-    (function() {
+    document.addEventListener("DOMContentLoaded", function() {
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/serviceworker.js')
-                .then(function(reg) { reg.update(); })
-                .catch(function(err) { console.log('SW registration failed:', err); });
+                .then(function(reg) {
+                    reg.update();
+                })
+                .catch(function(err) {
+                    console.log('SW registration failed:', err);
+                });
         }
 
         let promptDiferido = null;
         const botonLi = document.getElementById('btn-instalar-pwa-li');
         const boton = document.getElementById('btn-instalar-pwa');
+        
         const esIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-        const yaInstalada = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+        
+        // ⭐ 1. VERIFICAR SI YA ESTÁ INSTALADA O FUE MARCADA ANTES EN ESTE DISPOSITIVO
+        const yaInstaladaStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+        const yaInstaladaLocalStorage = localStorage.getItem('viba_app_instalada') === 'true';
 
-        if (yaInstalada) {
+        if (yaInstaladaStandalone || yaInstaladaLocalStorage) {
+            // Ocultar de inmediato el botón del menú si ya está instalada
             if (botonLi) botonLi.classList.add('d-none');
-            return;
+            return; // Salir para no mostrar nada de instalación
         }
 
+        // Si es iOS y no está oculta, mostrar opciones de instalación manual
         if (esIOS) {
             if (botonLi) botonLi.classList.remove('d-none');
         }
 
+        // Capturar evento de instalación de Chrome / Android / Escritorio
         window.addEventListener('beforeinstallprompt', function(e) {
             e.preventDefault();
             promptDiferido = e;
@@ -370,18 +383,20 @@
         });
 
         function instalarApp(e) {
-            if (e) e.preventDefault();
+            e.preventDefault();
             if (esIOS) {
-                alert('📱 Para instalar Viba-Web en tu iPhone:\n\n1. Toca el botón "Compartir" (el cuadro con la flecha hacia arriba).\n\n2. Desliza hacia abajo y selecciona "Añadir a pantalla de inicio".\n\n3. Toca "Añadir" en la superior derecha.\n\n¡Listo! La app aparecerá en tu pantalla de inicio.');
+                alert('📱 Para instalar Viba-Web en tu iPhone:\n\n1. Toca el botón "Compartir" (el cuadro con la flecha hacia arriba).\n\n2. Desliza hacia abajo y selecciona "Añadir a pantalla de inicio".\n\n3. Toca "Añadir" en la superior derecha.');
                 return;
             }
             if (!promptDiferido) {
-                alert('Para instalar la app, abre el menú del navegador y selecciona "Instalar aplicación".');
+                alert('Para instalar la app, abre el menú de opciones de tu navegador (los tres puntos arriba a la derecha) y selecciona "Instalar aplicación" o "Añadir a la pantalla principal".');
                 return;
             }
             promptDiferido.prompt();
             promptDiferido.userChoice.then(function(choiceResult) {
                 if (choiceResult.outcome === 'accepted') {
+                    // ⭐ Guardar en memoria del dispositivo que ya se instaló
+                    localStorage.setItem('viba_app_instalada', 'true');
                     if (botonLi) botonLi.classList.add('d-none');
                 }
                 promptDiferido = null;
@@ -390,10 +405,12 @@
 
         if (boton) boton.addEventListener('click', instalarApp);
 
+        // Si el navegador dispara el evento de app instalada con éxito
         window.addEventListener('appinstalled', function() {
+            localStorage.setItem('viba_app_instalada', 'true');
             if (botonLi) botonLi.classList.add('d-none');
         });
-    })();
+    });
     </script>
     
     <!-- ⭐ VERIFICADOR DE CONEXIÓN A INTERNET -->
@@ -460,12 +477,12 @@
     })();
     </script>
     
-    <!-- ⭐ TIMEOUT DE INACTIVIDAD (SOLO CLIENTES WEB) -->
+        <!-- ⭐ TIMEOUT DE INACTIVIDAD (Clientes y Taquilleros) -->
     <script>
     (function() {
-        {% if user.is_authenticated and not user.usuarioempresa %}
-        const MINUTOS_INACTIVIDAD = 1; 
-        const TIEMPO_INACTIVIDAD = MINUTOS_INACTIVIDAD * 60 * 1000;
+        {% if user.is_authenticated %}
+        // Usamos el tiempo dinámico que viene del servidor (Parámetros 186 / 173)
+        const TIEMPO_INACTIVIDAD = {{ timeout_inactividad_ms }};
         let temporizadorInactividad;
 
         function getCookie(name) {
