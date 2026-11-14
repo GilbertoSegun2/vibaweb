@@ -575,3 +575,20 @@ class GastoLiquidacionAdmin(admin.ModelAdmin):
     list_display = ('liquidacion', 'concepto', 'monto_usd', 'tipo')
     list_filter = ('tipo',)
     search_fields = ('concepto', 'liquidacion__numero_liquidacion')
+    
+# ============================================================
+# SESIONES ACTIVAS (Desbloqueo manual de usuarios)
+# ============================================================
+from .models import SesionActiva
+
+@admin.register(SesionActiva)
+class SesionActivaAdmin(admin.ModelAdmin):
+    list_display = ('user', 'ip_address', 'ultima_actividad', 'creado_en')
+    list_filter = ('ultima_actividad',)
+    search_fields = ('user__username', 'user__first_name', 'ip_address')
+    ordering = ('-ultima_actividad',)
+    readonly_fields = ('user', 'session_key', 'ip_address', 'user_agent', 'creado_en', 'ultima_actividad', 'token_desbloqueo')
+
+    def has_add_permission(self, request):
+        # No permitir crear sesiones manualmente (solo ver y borrar)
+        return False

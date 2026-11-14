@@ -94,22 +94,13 @@
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="menuPrincipal">
-                <ul class="navbar-nav ms-auto">
+                                <ul class="navbar-nav ms-auto align-items-center">
+                    <!-- ================= ENLACES DE NAVEGACIÓN ================= -->
                     <li class="nav-item">
                         <a class="nav-link" href="{% if user.usuarioempresa %}/taquilla/{% else %}/{% endif %}">Inicio</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{% if user.usuarioempresa %}/taquilla/{% else %}/viajes/{% endif %}">Comprar Boletos</a>
-                    </li>
-                    <li class="nav-item">
                         <a class="nav-link" href="/ayuda/"><i class="bi bi-question-circle"></i> Ayuda</a>
-                    </li>
-                    
-                    <!-- Botón PWA -->
-                    <li class="nav-item d-none" id="btn-instalar-pwa-li">
-                        <a class="nav-link" href="#" id="btn-instalar-pwa" style="color: #d6e6cf;">
-                            <i class="bi bi-download"></i> Descargar app
-                        </a>
                     </li>
 
                     {% if user.is_authenticated %}
@@ -130,9 +121,32 @@
                             </a>
                         </li>
                         {% endif %}
+                    
                     {% else %}
-                        <li class="nav-item"><a class="nav-link" href="/login/">Ingresar</a></li>
-                        <li class="nav-item"><a class="nav-link" href="/registro/">Registrarse</a></li>
+                        <!-- ================= SEPARADOR VISUAL ================= -->
+                        <li class="nav-item d-none d-lg-block mx-2">
+                            <div class="vr text-white opacity-50" style="height: 20px;"></div>
+                        </li>
+
+                        <!-- ================= BOTONES DE ACCIÓN ================= -->
+                        
+                        <!-- 1. Botón Iniciar Sesión - Texto limpio -->
+                        <li class="nav-item d-flex align-items-center me-3">
+                            <a class="nav-link text-white fw-bold" href="/login/">
+                                Iniciar Sesión
+                            </a>
+                        </li>
+
+                        <!-- 2. Botón Descargar - Única Píldora Blanca -->
+                        <li class="nav-item d-none d-flex align-items-center" id="btn-instalar-pwa-li">
+                            <a class="nav-link rounded-pill px-3 py-1 fw-bold d-flex align-items-center gap-2" 
+                               href="#" id="btn-instalar-pwa" 
+                               style="font-size: 0.85rem; color: #333333; background-color: #ffffff; border: none; transition: all 0.3s ease;"
+                               onmouseover="this.style.backgroundColor='#f8f9fa';"
+                               onmouseout="this.style.backgroundColor='#ffffff';">
+                                <i class="bi bi-download"></i> Descargar app
+                            </a>
+                        </li>
                     {% endif %}
                 </ul>
             </div>
@@ -325,49 +339,38 @@
     }
     </script>
     
-    <!-- ⭐ PWA: REGISTRO Y LÓGICA DE INSTALACIÓN GLOBAL (BLINDADO) -->
+    <!-- ⭐ PWA: REGISTRO Y LÓGICA DE INSTALACIÓN GLOBAL -->
     <script>
     (function() {
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/serviceworker.js')
-                .then(function(reg) {
-                    reg.update();
-                })
-                .catch(function(err) {
-                    console.log('SW registration failed:', err);
-                });
+                .then(function(reg) { reg.update(); })
+                .catch(function(err) { console.log('SW registration failed:', err); });
         }
 
         let promptDiferido = null;
         const botonLi = document.getElementById('btn-instalar-pwa-li');
         const boton = document.getElementById('btn-instalar-pwa');
-        const banner = document.getElementById('pwa-banner');
-        const botonBanner = document.getElementById('btn-pwa-banner');
         const esIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-        const yaInstalada = window.matchMedia('(display-mode: standalone)').matches;
+        const yaInstalada = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
 
-        if (yaInstalada) return;
+        if (yaInstalada) {
+            if (botonLi) botonLi.classList.add('d-none');
+            return;
+        }
 
         if (esIOS) {
             if (botonLi) botonLi.classList.remove('d-none');
-            if (banner) banner.classList.remove('d-none');
-            if (banner) {
-                const bannerText = banner.querySelector('strong');
-                if (bannerText) bannerText.innerText = 'Instala Viba-Web en tu iPhone';
-                const bannerBtn = banner.querySelector('button');
-                if (bannerBtn) bannerBtn.innerText = 'Ver cómo';
-            }
         }
 
         window.addEventListener('beforeinstallprompt', function(e) {
             e.preventDefault();
             promptDiferido = e;
             if (botonLi) botonLi.classList.remove('d-none');
-            if (banner) banner.classList.remove('d-none');
         });
 
         function instalarApp(e) {
-            e.preventDefault();
+            if (e) e.preventDefault();
             if (esIOS) {
                 alert('📱 Para instalar Viba-Web en tu iPhone:\n\n1. Toca el botón "Compartir" (el cuadro con la flecha hacia arriba).\n\n2. Desliza hacia abajo y selecciona "Añadir a pantalla de inicio".\n\n3. Toca "Añadir" en la superior derecha.\n\n¡Listo! La app aparecerá en tu pantalla de inicio.');
                 return;
@@ -380,18 +383,15 @@
             promptDiferido.userChoice.then(function(choiceResult) {
                 if (choiceResult.outcome === 'accepted') {
                     if (botonLi) botonLi.classList.add('d-none');
-                    if (banner) banner.classList.add('d-none');
                 }
                 promptDiferido = null;
             });
         }
 
         if (boton) boton.addEventListener('click', instalarApp);
-        if (botonBanner) botonBanner.addEventListener('click', instalarApp);
 
         window.addEventListener('appinstalled', function() {
             if (botonLi) botonLi.classList.add('d-none');
-            if (banner) banner.classList.add('d-none');
         });
     })();
     </script>

@@ -1,4 +1,9 @@
+from django.utils import timezone
+from django.shortcuts import render, redirect
+from django.contrib.auth import logout as auth_logout
+from django.contrib import messages
 from .utils import obtener_parametro
+
 
 class SessionTimeoutMiddleware:
     """
@@ -30,14 +35,12 @@ class SessionTimeoutMiddleware:
                     if segundos_sin_latido > 60:
                         # El usuario no ha dado señales de vida en 60 segundos
                         # Cerramos sesión y liberamos asientos
-                        from django.contrib.auth import logout as auth_logout
                         from .models import Asiento
                         Asiento.objects.filter(
                             estado='reservado',
                             reservado_por=request.user
                         ).update(estado='disponible', reservado_por=None, reservado_hasta=None)
                         auth_logout(request)
-                        from django.shortcuts import redirect
                         return redirect('core:login')
                 except (ValueError, TypeError):
                     pass
@@ -63,6 +66,7 @@ class SessionTimeoutMiddleware:
         
         return self.get_response(request)
 
+
 class SesionUnicaMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
@@ -80,10 +84,6 @@ class SesionUnicaMiddleware:
             
             try:
                 from .models import SesionActiva
-                from django.utils import timezone
-                from django.shortcuts import redirect
-                from django.contrib.auth import logout as auth_logout
-                from django.contrib import messages
                 
                 sesion = SesionActiva.objects.filter(user=user).first()
                 current_key = request.session.session_key
@@ -105,6 +105,7 @@ class SesionUnicaMiddleware:
                 pass
         
         return self.get_response(request)
+
 
 class NoCacheMiddleware:
     """
@@ -129,9 +130,7 @@ class NoCacheMiddleware:
             response['Expires'] = '0'
         
         return response
-        
-from django.shortcuts import render
-from django.utils import timezone
+
 
 class SuscripcionMiddleware:
     """
@@ -176,7 +175,8 @@ class SuscripcionMiddleware:
             pass # Si falla algo, no bloqueamos para no romper el sitio
 
         return self.get_response(request)
-        
+
+
 class LimpiarMensajesMiddleware:
     """
     Limpia los mensajes viejos de la sesión para evitar que se acumulen.
@@ -191,10 +191,7 @@ class LimpiarMensajesMiddleware:
             from django.contrib.messages import get_messages
             list(get_messages(request))  # Consumir y borrar
         return self.get_response(request)
-        
-import os
-from django.conf import settings
-from .utils import obtener_parametro
+
 
 class DynamicTemplateMiddleware:
     def __init__(self, get_response):

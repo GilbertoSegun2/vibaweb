@@ -12,12 +12,18 @@ from django.db.models import Q
 from django.utils import timezone
 from datetime import timedelta
 from decimal import Decimal
+import json
+import uuid
+import random
+import resend
+from django.conf import settings
+from django.template.loader import render_to_string
 
 from .models import (
     Oficina, Viaje, Asiento, Transaccion, Pago, Boleto, Tarifa, 
     MovimientoAsiento, UsuarioEmpresa, Cliente, Credito, 
     PlantillaBus, PlantillaAsiento, Ruta, RutaParada, Suscripcion,
-    Pistero, SesionActiva
+    Pistero, SesionActiva, Conductor, Liquidacion, GastoLiquidacion
 )
 from .forms import RegistroForm, LoginForm, PagoWebForm, PasajeroForm, PasarelaVirtualForm
 
@@ -31,7 +37,6 @@ from .utils import (
 # SEGURIDAD: SESIÓN ÚNICA POR USUARIO-WEB
 # ============================================================
 def procesar_login_con_espera(request, user):
-    from .models import SesionActiva
     if user.is_staff or user.is_superuser:
         return True, "OK"
     cliente = getattr(user, 'cliente', None)
@@ -120,11 +125,17 @@ def inicio(request):
         'bienvenida_subtitulo': bienvenida_subtitulo,
         'hoy': hoy,
         'prefijo_empresa': empresa_slug,
+        'es_inicio': True,
     })
 
 @login_required
 def detalle_viaje(request, viaje_id):
     viaje = get_object_or_404(Viaje, id=viaje_id)
+    
+    Asiento.objects.filter(
+        estado='reservado',
+        reservado_por=request.user
+    ).update(estado='disponible', reservado_por=None, reservado_hasta=None)
     
     minutos_bloqueo = int(obtener_parametro('184', default=60))
     ahora = timezone.localtime(timezone.now())
@@ -245,6 +256,23 @@ def detalle_viaje(request, viaje_id):
         'expiracion_iso': expiracion_iso,
     })
 
+# ============================================================
+# VISTAS DE AUTENTICACIÓN
+# ============================================================
+def registro(request):
+    if request.user.is_authenticated:
+        return redirect('core:perfil')
+    if request.method == 'POST':
+        form = RegistroForm(request.POST)
+        if form.is_valid():
+            user = form.save()
+            auth_login(request, user)
+            messages.success(request, f"¡Bienvenido, {user.first_name}! Tu cuenta fue creada exitosamente.")
+            return redirect('core:perfil')
+    else:
+        form = RegistroForm()
+    return render(request, 'registro.html', {'form': form})
+
 def login_view(request):
     if request.user.is_authenticated:
         next_url = request.GET.get('next') or ''
@@ -261,16 +289,7 @@ def login_view(request):
                 if user_obj: username = user_obj.username
             user = authenticate(request, username=username, password=password)
             if user is not None:
-                # ~ exito, mensaje = procesar_login_con_espera(request, user)
-                # ~ if not exito:
-                    # ~ messages.warning(request, mensaje)
-                    # ~ return render(request, 'login.html', {'form': form, 'mostrar_desbloqueo': True, 'username_bloqueado': username})
-                
                 # ⭐ VERIFICAR SI YA HAY UNA SESIÓN ACTIVA ANTES DE LOGUEAR
-                from .models import SesionActiva
-                from django.utils import timezone
-                from datetime import timedelta
-                
                 if not (user.is_staff or user.is_superuser):
                     sesion_existente = SesionActiva.objects.filter(user=user).first()
                     
@@ -279,23 +298,17 @@ def login_view(request):
                         inactividad = timezone.now() - sesion_existente.ultima_actividad
                         
                         if inactividad < timedelta(minutes=minutos_espera):
-                            # ⭐ HAY SESIÓN ACTIVA RECIENTE:
-                            # 1. Generar token para el correo
-                            import uuid
+                            # HAY SESIÓN ACTIVA RECIENTE: Generar token y enviar correo
                             token = uuid.uuid4().hex
                             sesion_existente.token_desbloqueo = token
                             sesion_existente.save()
                             
-                            # 2. Construir enlaces
                             base_url = request.build_absolute_uri('/')[:-1]
                             link_si = f"{base_url}/desbloqueo/confirmar/{token}/si/"
                             link_no = f"{base_url}/desbloqueo/confirmar/{token}/no/"
                             
-                            # 3. Enviar correo
                             try:
                                 from django.core.mail import send_mail
-                                from django.conf import settings
-                                from django.template.loader import render_to_string
                                 
                                 html_content = render_to_string('email_desbloqueo.html', {
                                     'user': user,
@@ -338,7 +351,7 @@ def login_view(request):
                 request.session.pop('asientos_seleccionados', None)
                 request.session.pop('pasajeros_data', None)
                 
-                # ⭐ REGISTRAMOS LA SESIÓN (Ahora sí, para todos los roles)
+                # REGISTRAMOS LA SESIÓN
                 if not (user.is_staff or user.is_superuser):
                     SesionActiva.objects.filter(user=user).delete()
                     SesionActiva.objects.create(
@@ -349,8 +362,21 @@ def login_view(request):
                         ultima_actividad=timezone.now()
                     )
                 
+                # ⭐ PRIORIDAD 2: MENSAJES PERSONALIZADOS SEGÚN EL ROL
                 nombre = user.first_name or user.username
-                messages.success(request, f"Estimado usuario {nombre}: bienvenido nuevamente. Es un gusto tenerlo de vuelta.")
+                
+                if getattr(user, 'usuarioempresa', None):
+                    oficina = user.usuarioempresa.oficina.nombre
+                    rol = user.usuarioempresa.get_rol_display()
+                    messages.success(
+                        request, 
+                        f"Acceso autorizado. Taquilla activa: {oficina} - Operador: {nombre} ({rol})."
+                    )
+                else:
+                    messages.success(
+                        request, 
+                        f"¡Bienvenido nuevamente, {nombre}! Es un gusto tenerlo de vuelta en Viba-Web."
+                    )
                 
                 next_url = request.POST.get('next') or request.GET.get('next') or ''
                 
@@ -380,36 +406,43 @@ def login_view(request):
         'minutos_login': minutos_login,
     })
 
+# ⭐ PRIORIDAD 1: LIBERACIÓN DE ASIENTOS (CORREGIDO PARA TODOS LOS ROLES)
 def procesar_liberacion_asientos(user):
-    cliente = getattr(user, 'cliente', None)
-    if cliente:
-        with transaction.atomic():
-            asientos_reservados = Asiento.objects.select_for_update().filter(
-                estado='reservado', 
-                reservado_por=user
+    # Quitamos la validación "if cliente:" para que libere tanto a clientes como a taquilleros
+    with transaction.atomic():
+        asientos_reservados = Asiento.objects.select_for_update().filter(
+            estado='reservado', 
+            reservado_por=user
+        )
+        for asiento in asientos_reservados:
+            MovimientoAsiento.objects.create(
+                asiento=asiento, 
+                tipo='liberacion_manual', 
+                estado_anterior='reservado', 
+                estado_nuevo='disponible', 
+                usuario=user, 
+                motivo='El usuario cerró sesión o expiró la sesión por inactividad.'
             )
-            for asiento in asientos_reservados:
-                MovimientoAsiento.objects.create(
-                    asiento=asiento, 
-                    tipo='liberacion_manual', 
-                    estado_anterior='reservado', 
-                    estado_nuevo='disponible', 
-                    usuario=user, 
-                    motivo='El cliente cerró sesión o expiró la sesión por inactividad.'
-                )
-            asientos_reservados.update(estado='disponible', reservado_por=None, reservado_hasta=None)
+        asientos_reservados.update(estado='disponible', reservado_por=None, reservado_hasta=None)
 
 def logout_view(request):
+    # ⭐ PRIORIDAD 2: MENSAJE DE SALIDA SEGÚN EL ROL
     if request.user.is_authenticated:
         procesar_liberacion_asientos(request.user)
         SesionActiva.objects.filter(user=request.user).delete()
+        
+        if getattr(request.user, 'usuarioempresa', None):
+            messages.info(request, "Sesión de taquilla cerrada correctamente. Puestos liberados. ¡Hasta pronto!")
+        else:
+            messages.info(request, "Estimado cliente: su sesión ha finalizado correctamente. Gracias por preferirnos.")
+    else:
+        messages.info(request, "Su sesión ha finalizado correctamente. Gracias por preferirnos.")
     
     request.session.pop('asientos_seleccionados', None)
     request.session.pop('reserva_inicio', None)
     request.session.pop('login_inicio', None)
     
     logout(request)
-    messages.info(request, "Estimado cliente: su sesión ha finalizado correctamente. Gracias por preferirnos.")
     request.session['logout_reciente'] = True
     response = redirect('core:inicio')
     response.status_code = 303
@@ -454,7 +487,11 @@ def reservar_asientos(request):
             asientos = Asiento.objects.select_for_update().filter(id__in=asientos_ids, viaje_id=viaje_id, tipo='asiento')
             if asientos.count() != len(asientos_ids): return JsonResponse({'ok': False, 'error': 'Asientos no existen.'}, status=400)
             no_disponibles = [a.numero for a in asientos if a.estado != 'disponible']
-            if no_disponibles: return JsonResponse({'ok': False, 'error': f'Los asientos {", ".join(no_disponibles)} ya no están disponibles.'}, status=400)
+            
+            # ⭐ PRIORIDAD 3: TONO BANCO EN ERRORES
+            if no_disponibles: 
+                return JsonResponse({'ok': False, 'error': 'Estimado cliente: los asientos solicitados ya no se encuentran disponibles. Es posible que otra persona los haya reservado. Por favor, elija otros.'}, status=400)
+            
             minutos = int(obtener_parametro('101', default=10))
             vence = timezone.now() + timedelta(minutes=minutos)
             Asiento.objects.filter(id__in=asientos_ids).update(estado='reservado', reservado_hasta=vence, reservado_por=request.user)
@@ -464,14 +501,9 @@ def reservar_asientos(request):
 @require_POST
 @login_required
 def liberar_reservas_usuario_api(request):
-    """API para liberar asientos expirados del usuario actual (llamada desde JS)."""
     if not hasattr(request.user, 'usuarioempresa') and not hasattr(request.user, 'cliente'):
         return JsonResponse({'ok': False, 'error': 'No autorizado'}, status=403)
     
-    from .utils import liberar_reservas_vencidas
-    
-    # ⭐ Forzamos la liberación de los asientos del usuario actual
-    # (porque este endpoint lo llama SOLO cuando el usuario ya sabe que expiró)
     ahora = timezone.now()
     liberados = Asiento.objects.filter(
         estado='reservado',
@@ -479,7 +511,6 @@ def liberar_reservas_usuario_api(request):
         reservado_hasta__lt=ahora
     ).update(estado='disponible', reservado_hasta=None, reservado_por=None)
     
-    # Limpiamos la sesión
     request.session.pop('reserva_inicio', None)
     request.session.pop('asientos_seleccionados', None)
     
@@ -524,7 +555,7 @@ def pasajeros(request, viaje_id):
     viaje = get_object_or_404(Viaje, id=viaje_id)
     cliente = getattr(request.user, 'cliente', None)
     if not cliente:
-        messages.error(request, "Debes completar tu perfil antes de comprar.")
+        messages.error(request, "Estimado cliente: para continuar con la compra, primero debe completar los datos de su perfil.")
         return redirect('core:perfil')
     liberar_reservas_vencidas(viaje=viaje)
     minutos = int(obtener_parametro('101', default=10))
@@ -585,7 +616,6 @@ def pasajeros(request, viaje_id):
         pasajeros_dict = {p['asiento_id']: p for p in pasajeros_previos}
         formularios = []
 
-        # ⭐ Datos del cliente logueado para pre-llenar el primer pasajero
         datos_cliente = {}
         if cliente and not pasajeros_previos:
             datos_cliente = {
@@ -601,7 +631,6 @@ def pasajeros(request, viaje_id):
                 p = pasajeros_dict[asiento.id]
                 inicial = {'nombre': p.get('nombre', ''), 'cedula': p.get('cedula', ''), 'telefono': p.get('telefono', ''), 'tipo_pasajero': p.get('tipo_pasajero', 'normal')}
             elif i == 0 and datos_cliente:
-                # ⭐ El primer asiento se pre-llena con los datos del cliente
                 inicial = datos_cliente
             form = PasajeroForm(prefix=prefix, initial=inicial)
             formularios.append((asiento, form))
@@ -639,7 +668,7 @@ def pago(request, viaje_id):
         return redirect('core:inicio')
     valor_seguro = obtener_parametro('100', default=0)
     if not cliente:
-        messages.error(request, "Debes completar tu perfil antes de comprar.")
+        messages.error(request, "Estimado cliente: para continuar con la compra, primero debe completar los datos de su perfil.")
         return redirect('core:perfil')
     pasajeros_data = request.session.get('pasajeros_data', [])
     if not pasajeros_data:
@@ -744,7 +773,6 @@ def confirmacion(request, transaccion_id):
     boletos = transaccion.boletos.all().order_by('asiento__numero')
     pagos = transaccion.pagos.all()
     
-    # ⭐ Generar imagen QR para cada boleto
     for boleto in boletos:
         boleto.imagen_qr = generar_imagen_qr_base64(boleto.codigo_qr)
     
@@ -763,7 +791,7 @@ def seleccionar_metodo_pago(request, viaje_id):
     viaje = get_object_or_404(Viaje, id=viaje_id)
     cliente = getattr(request.user, 'cliente', None)
     if not cliente:
-        messages.error(request, "Debes completar tu perfil antes de comprar.")
+        messages.error(request, "Estimado cliente: para continuar con la compra, primero debe completar los datos de su perfil.")
         return redirect('core:perfil')
     pasajeros_data = request.session.get('pasajeros_data', [])
     if not pasajeros_data:
@@ -811,7 +839,7 @@ def pasarela_virtual_view(request, viaje_id):
         messages.error(request, "La pasarela digital no está habilitada. Elige otro método de pago.")
         return redirect('core:seleccionar_metodo_pago', viaje_id=viaje.id)
     if not cliente:
-        messages.error(request, "Debes completar tu perfil antes de comprar.")
+        messages.error(request, "Estimado cliente: para continuar con la compra, primero debe completar los datos de su perfil.")
         return redirect('core:perfil')
     pasajeros_data = request.session.get('pasajeros_data', [])
     if not pasajeros_data:
@@ -889,7 +917,6 @@ def pasarela_virtual_view(request, viaje_id):
 # VISTAS DE UTILIDAD
 # ============================================================
 def mi_vista_error_csrf(request, reason=""):
-    from django.http import JsonResponse
     if (request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.headers.get('Accept', '').startswith('application/json')):
         return JsonResponse({'ok': False, 'error': 'Sesión expirada. Recarga la página e intenta de nuevo.', 'csrf_failed': True}, status=403)
     messages.warning(request, "Tu sesión de seguridad expiró. Por favor, intenta de nuevo.")
@@ -907,14 +934,12 @@ def mis_boletos(request):
     transacciones_con_boletos = []
     for t in transacciones:
         boletos = t.boletos.all().order_by('asiento__numero')
-        # ⭐ Generar imagen QR para cada boleto
         for boleto in boletos:
             boleto.imagen_qr = generar_imagen_qr_base64(boleto.codigo_qr)
         transacciones_con_boletos.append({'transaccion': t, 'boletos': boletos, 'cantidad': boletos.count()})
     return render(request, 'mis_boletos.html', {'cliente': cliente, 'transacciones_con_boletos': transacciones_con_boletos})
 
 def session_check(request):
-    from django.http import JsonResponse
     return JsonResponse({'authenticated': request.user.is_authenticated}, status=200 if request.user.is_authenticated else 401)
 
 def ayuda(request):
@@ -932,7 +957,6 @@ def ayuda(request):
 # VISTAS DE TAQUILLA (EMPLEADOS)
 # ============================================================
 def taquilla_inicio(request):
-    from .utils import liberar_reservas_vencidas
     viajes_con_reservas = Viaje.objects.filter(
         asientos__estado='reservado',
         asientos__reservado_hasta__lt=timezone.now()
@@ -966,9 +990,6 @@ def taquilla_inicio(request):
             oficina_origen = Oficina.objects.get(id=origen_id)
             oficina_destino = Oficina.objects.get(id=destino_id)
             
-            hoy = timezone.localtime(timezone.now()).date()
-            ahora = timezone.localtime(timezone.now()).time()
-
             viajes_del_dia = Viaje.objects.filter(
                 fecha=fecha, estado='programado', cerrado_venta=False
             ).select_related('ruta', 'bus')
@@ -1010,6 +1031,11 @@ def taquilla_mapa(request, viaje_id):
 
     viaje = get_object_or_404(Viaje, id=viaje_id)
     
+    Asiento.objects.filter(
+        estado='reservado',
+        reservado_por=request.user
+    ).update(estado='disponible', reservado_por=None, reservado_hasta=None)
+    
     minutos_reserva = int(obtener_parametro('171', default=5))
     reserva_inicio_str = request.session.get('reserva_inicio')
     
@@ -1031,7 +1057,8 @@ def taquilla_mapa(request, viaje_id):
             estado='disponible', reservado_por=None, reservado_hasta=None
         )
         request.session.pop('reserva_inicio', None)
-        messages.warning(request, "Tu tiempo de reserva ha expirado. Selecciona de nuevo.")
+        # ⭐ PRIORIDAD 3: TONO BANCO EN TAQUILLA
+        messages.warning(request, "Tiempo de espera agotado. Los puestos seleccionados han sido liberados. Por favor, seleccione los asientos nuevamente.")
         return redirect('core:taquilla_inicio')
 
     Asiento.objects.filter(
@@ -1119,6 +1146,12 @@ def taquilla_cobrar(request, viaje_id):
         return redirect('core:inicio')
 
     viaje = get_object_or_404(Viaje, id=viaje_id)
+    
+    Asiento.objects.filter(
+        estado='reservado',
+        reservado_por=request.user
+    ).update(estado='disponible', reservado_por=None, reservado_hasta=None)
+    
     destino_id = request.GET.get('destino') or request.POST.get('destino')
     origen_id = request.GET.get('origen') or request.POST.get('origen') or empleado.oficina.id
     
@@ -1162,7 +1195,8 @@ def taquilla_cobrar(request, viaje_id):
             estado='disponible', reservado_por=None, reservado_hasta=None
         )
         request.session.pop('reserva_inicio', None)
-        messages.warning(request, "Tu tiempo de reserva ha expirado. Selecciona de nuevo.")
+        # ⭐ PRIORIDAD 3: TONO BANCO EN TAQUILLA
+        messages.warning(request, "Tiempo de espera agotado. Los puestos seleccionados han sido liberados. Por favor, seleccione los asientos nuevamente.")
         return redirect('core:taquilla_inicio')
 
     expiracion_iso = expira_en.isoformat()
@@ -1191,7 +1225,6 @@ def taquilla_cobrar(request, viaje_id):
     pisteros = Pistero.objects.filter(oficina=empleado.oficina, activo=True).order_by('nombre')
 
     if request.method == 'POST':
-        import json
         asientos_ids = request.POST.getlist('asientos[]')
         pagos_json = request.POST.get('pagos_json', '[]')
 
@@ -1347,7 +1380,6 @@ def taquilla_confirmacion(request, transaccion_id):
     boletos = transaccion.boletos.all().order_by('asiento__numero')
     pagos = transaccion.pagos.all()
     
-    # ⭐ Generar imagen QR para cada boleto
     for boleto in boletos:
         boleto.imagen_qr = generar_imagen_qr_base64(boleto.codigo_qr)
     
@@ -1366,12 +1398,10 @@ def taquilla_buscar_pasajero(request):
     if not cedula_raw:
         return JsonResponse({'encontrado': False})
     
-    # Limpiamos la cédula de letras y guiones para buscar solo los números
     cedula_numeros = ''.join(filter(str.isdigit, cedula_raw))
-    if len(cedula_numeros) < 5: # Si es muy corto, no buscar
+    if len(cedula_numeros) < 5:
         return JsonResponse({'encontrado': False})
 
-    # 1. Buscamos primero en los Clientes registrados
     cliente = Cliente.objects.filter(cedula__icontains=cedula_numeros).first()
     if cliente:
         return JsonResponse({
@@ -1380,7 +1410,6 @@ def taquilla_buscar_pasajero(request):
             'telefono': cliente.telefono
         })
 
-    # 2. Si no está registrado, buscamos en el historial de boletos (por si viajó como invitado)
     boleto_historico = Boleto.objects.filter(pasajero_cedula__icontains=cedula_numeros).order_by('-fecha_venta').first()
     if boleto_historico:
         return JsonResponse({
@@ -1391,18 +1420,6 @@ def taquilla_buscar_pasajero(request):
 
     return JsonResponse({'encontrado': False})
     
-import random
-from datetime import timedelta
-from django.utils import timezone
-from django.conf import settings
-from django.template.loader import render_to_string
-from django.contrib import messages
-from django.shortcuts import render, redirect
-from django.contrib.auth.models import User
-from .forms import RegistroForm 
-from .models import Cliente     
-import resend                    
-
 def registro_usuario(request):
     if request.user.is_authenticated:
         return redirect('core:inicio')
@@ -1451,10 +1468,10 @@ def registro_usuario(request):
                     "html": html_content,
                 }
                 
-                email_response = resend.Emails.send(params)
+                resend.Emails.send(params)
                 
                 request.session['verificacion_user_id'] = user.id
-                messages.success(request, f"¡Registro exitoso, {user.first_name}! Te hemos enviado un código de verificación a tu correo: {user.email}. Revisa tu bandeja de entrada y/o la carpeta de spam.")
+                messages.success(request, f"¡Registro exitoso, {user.first_name}! Te hemos enviado un código de verificación a tu correo: {user.email}. Revisa tu bandeja de entrada y la carpeta de spam.")
                 return redirect('core:verificar_email')
                 
             except Exception as e:
@@ -1482,12 +1499,11 @@ def reservar_temporal(request):
     if not cliente and not empleado:
         return JsonResponse({'ok': False, 'error': 'Usuario no autorizado.'}, status=400)
     
-    # ⭐ VALIDACIÓN DE LÍMITE DIFERENCIADO
     if empleado:
-        max_puestos = int(obtener_parametro('203', default=60)) # Límite para taquilla
+        max_puestos = int(obtener_parametro('203', default=60))
         minutos = float(obtener_parametro('171', default=5))
     else:
-        max_puestos = int(obtener_parametro('103', default=5))  # Límite para web
+        max_puestos = int(obtener_parametro('103', default=5))
         minutos = float(obtener_parametro('101', default=10))
     
     vence = timezone.now() + timedelta(minutes=minutos)
@@ -1504,7 +1520,6 @@ def reservar_temporal(request):
                 asiento.save()
                 return JsonResponse({'ok': True, 'vence': vence.isoformat()})
                 
-            # ⭐ Usamos el max_puestos calculado arriba
             asientos_actuales = Asiento.objects.filter(
                 viaje_id=viaje_id, estado='reservado', reservado_por=request.user, reservado_hasta__gt=timezone.now()
             ).count()
@@ -1513,7 +1528,8 @@ def reservar_temporal(request):
                 return JsonResponse({'ok': False, 'error': f'Ya tienes {asientos_actuales} asientos reservados. El máximo es {max_puestos}.'}, status=400)
             
             if asiento.estado != 'disponible':
-                return JsonResponse({'ok': False, 'error': f'El puesto {asiento.numero} ya no está disponible.'}, status=400)
+                # ⭐ PRIORIDAD 3: TONO BANCO
+                return JsonResponse({'ok': False, 'error': f'El puesto {asiento.numero} ya no está disponible. Es posible que alguien más lo haya tomado.'}, status=400)
             
             asiento.estado = 'reservado'
             asiento.reservado_hasta = vence
@@ -1568,7 +1584,6 @@ def renovar_reserva(request):
 @require_POST
 def heartbeat(request):
     if request.user.is_authenticated:
-        from .models import SesionActiva
         SesionActiva.objects.filter(user=request.user).update(
             ultima_actividad=timezone.now()
         )
@@ -1708,6 +1723,7 @@ def solicitar_desbloqueo_login(request):
     """
 
     try:
+        from django.core.mail import send_mail
         send_mail(
             subject='Código de desbloqueo de sesión - Viba-Web',
             message=f'Hola {user.first_name},\n\nHas solicitado desbloquear tu sesión activa en Viba-Web.\nTu código de verificación es: {codigo}\n\nEste código expirará en 15 minutos.',
@@ -1860,12 +1876,10 @@ def api_buscar_oficinas(request):
     
 @login_required
 def taquilla_buscar_boleto(request):
-    """Busca un boleto para TRANSFERIR (en cualquier viaje)."""
     if not hasattr(request.user, 'usuarioempresa'):
         return JsonResponse({'ok': False, 'error': 'No autorizado'}, status=403)
         
     query = request.GET.get('q', '').strip()
-    
     if not query:
         return JsonResponse({'ok': False, 'error': 'Ingrese un dato de búsqueda'}, status=400)
         
@@ -1888,7 +1902,6 @@ def taquilla_buscar_boleto(request):
 @require_POST
 @login_required
 def taquilla_ejecutar_transferencia(request):
-    """Mueve el asiento de un pasajero a otro asiento (mismo bus o distinto bus)."""
     if not hasattr(request.user, 'usuarioempresa'):
         return JsonResponse({'ok': False, 'error': 'No autorizado'}, status=403)
         
@@ -1938,7 +1951,6 @@ def taquilla_ejecutar_transferencia(request):
 
 @login_required
 def taquilla_buscar_boleto_reprogramar(request):
-    """Busca un boleto en CUALQUIER viaje para REPROGRAMAR (cambiar de bus)."""
     if not hasattr(request.user, 'usuarioempresa'):
         return JsonResponse({'ok': False, 'error': 'No autorizado'}, status=403)
         
@@ -1959,7 +1971,6 @@ def taquilla_buscar_boleto_reprogramar(request):
 
 @login_required
 def taquilla_reprogramar_cobro(request, viaje_id, boleto_id):
-    """Cobra la diferencia y hace el cambio de boleto."""
     if not hasattr(request.user, 'usuarioempresa'):
         return redirect('core:inicio')
 
@@ -1997,7 +2008,6 @@ def taquilla_reprogramar_cobro(request, viaje_id, boleto_id):
         return redirect('core:taquilla_mapa', viaje_id=viaje_id)
 
     if request.method == 'POST':
-        import json
         asiento_nuevo_id = request.POST.get('asiento_id')
         pagos_json = request.POST.get('pagos_json', '[]')
         
@@ -2081,7 +2091,6 @@ def taquilla_reprogramar_cobro(request, viaje_id, boleto_id):
 @require_POST
 @login_required
 def taquilla_bloquear_asiento_reprogramar(request):
-    """Bloquea temporalmente un asiento mientras el taquillero confirma la reprogramación."""
     if not hasattr(request.user, 'usuarioempresa'):
         return JsonResponse({'ok': False, 'error': 'No autorizado'}, status=403)
         
@@ -2114,7 +2123,6 @@ def taquilla_bloquear_asiento_reprogramar(request):
 @require_POST
 @login_required
 def taquilla_liberar_asiento_reprogramar(request):
-    """Libera el asiento si el taquillero cancela la operación."""
     if not hasattr(request.user, 'usuarioempresa'):
         return JsonResponse({'ok': False, 'error': 'No autorizado'}, status=403)
         
@@ -2140,7 +2148,6 @@ def taquilla_liberar_asiento_reprogramar(request):
 
 @login_required
 def taquilla_api_asientos_disponibles_bloquear(request):
-    """Devuelve los asientos disponibles para bloquear."""
     if not hasattr(request.user, 'usuarioempresa'):
         return JsonResponse({'ok': False, 'error': 'No autorizado'}, status=403)
         
@@ -2162,7 +2169,6 @@ def taquilla_api_asientos_disponibles_bloquear(request):
 @require_POST
 @login_required
 def taquilla_api_bloquear_asientos(request):
-    """Bloquea los asientos seleccionados."""
     if not hasattr(request.user, 'usuarioempresa'):
         return JsonResponse({'ok': False, 'error': 'No autorizado'}, status=403)
         
@@ -2205,7 +2211,6 @@ def taquilla_api_bloquear_asientos(request):
 
 @login_required
 def taquilla_api_asientos_bloqueados(request):
-    """Devuelve los asientos bloqueados para poder desbloquearlos."""
     if not hasattr(request.user, 'usuarioempresa'):
         return JsonResponse({'ok': False, 'error': 'No autorizado'}, status=403)
         
@@ -2228,7 +2233,6 @@ def taquilla_api_asientos_bloqueados(request):
 @require_POST
 @login_required
 def taquilla_api_desbloquear_asientos(request):
-    """Desbloquea los asientos seleccionados."""
     if not hasattr(request.user, 'usuarioempresa'):
         return JsonResponse({'ok': False, 'error': 'No autorizado'}, status=403)
         
@@ -2423,7 +2427,6 @@ def taquilla_escaner(request):
 @require_POST
 @login_required
 def api_validar_qr(request):
-    """Valida un boleto (QR o número manual) para abordaje."""
     if not hasattr(request.user, 'usuarioempresa'):
         return JsonResponse({'ok': False, 'error': 'No autorizado'}, status=403)
     
@@ -2633,7 +2636,6 @@ def taquilla_consultar_boleto(request):
     
 @login_required
 def taquilla_api_boletos_vendidos(request):
-    """Devuelve la lista de boletos en estado 'vendido' para el modal de liberación."""
     if not hasattr(request.user, 'usuarioempresa'):
         return JsonResponse({'ok': False, 'error': 'No autorizado'}, status=403)
         
@@ -2662,7 +2664,6 @@ def taquilla_api_boletos_vendidos(request):
 @require_POST
 @login_required
 def taquilla_api_liberar_puestos_vendidos(request):
-    """Libera los asientos de boletos que están en estado 'vendido' (Lista de Espera)."""
     if not hasattr(request.user, 'usuarioempresa'):
         return JsonResponse({'ok': False, 'error': 'No autorizado'}, status=403)
         
@@ -2698,9 +2699,6 @@ def taquilla_api_liberar_puestos_vendidos(request):
         return JsonResponse({'ok': False, 'error': str(e)}, status=500)
 
 def confirmar_desbloqueo_por_email(request, token, accion):
-    """Procesa los clics del correo: 'si' o 'no'."""
-    from .models import SesionActiva
-    
     sesion = SesionActiva.objects.filter(token_desbloqueo=token).first()
     
     if not sesion:
@@ -2708,8 +2706,6 @@ def confirmar_desbloqueo_por_email(request, token, accion):
         return redirect('core:login')
     
     user = sesion.user
-    
-    # ⭐ SIEMPRE CERRAMOS LA SESIÓN VIEJA (por seguridad y agilidad)
     sesion.delete()
     
     if accion == 'si':
@@ -2717,18 +2713,9 @@ def confirmar_desbloqueo_por_email(request, token, accion):
     else:
         messages.warning(request, "Hemos cerrado la sesión anterior por seguridad. Si no fuiste tú, te recomendamos cambiar tu contraseña.")
     
-    # ⭐ REDIRIGIR CON UN PARÁMETRO PARA FORZAR RECARGA
     return redirect('/login/?refrescar=1')
-    
+
 def reenviar_codigo_verificacion(request):
-    """Reenvía el código de verificación al usuario pendiente."""
-    from .utils import obtener_parametro
-    import random
-    from datetime import timedelta
-    import resend
-    from django.conf import settings
-    from django.template.loader import render_to_string
-    
     user_id = request.session.get('verificacion_user_id')
     if not user_id:
         messages.error(request, "No hay ningún proceso de verificación pendiente.")
@@ -2745,7 +2732,6 @@ def reenviar_codigo_verificacion(request):
         messages.info(request, "Tu email ya fue verificado. Puedes iniciar sesión.")
         return redirect('core:login')
     
-    # Generar nuevo código
     minutos_expiracion = int(obtener_parametro('188', default=15))
     codigo = str(random.randint(100000, 999999))
     

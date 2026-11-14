@@ -223,3 +223,34 @@ input[type="number"] {
         font-size: 1.4rem;
     }
 }
+
+/* ⭐ BOTÓN PREMIUM MULTI-EMPRESA (Estilo Banesco) */
+.btn-login-premium {
+    background-color: #ffffff;
+    color: #333333;
+    border: none;
+    border-radius: 50px;
+    padding: 15px 30px;
+    font-weight: 700;
+    font-size: 1.1rem;
+    letter-spacing: 0.5px;
+    max-width: 400px;
+    margin: 0 auto;
+    display: inline-block;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+}
+
+.btn-login-premium:hover, .btn-login-premium:active {
+    background-color: #f8f9fa;
+    color: #0F75BB;
+    transform: translateY(-3px);
+    box-shadow: 0 10px 25px rgba(0,0,0,0.25);
+}
+
+@media (max-width: 767px) {
+    .btn-login-premium {
+        width: 100%;
+    }
+}
+
