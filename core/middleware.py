@@ -68,7 +68,7 @@ class SesionUnicaMiddleware:
             user = request.user
 
             # ⭐ EXIMIR A STAFF, SUPERUSUARIOS Y TAQUILLEROS
-            if user.is_staff or user.is_superuser or getattr(user, 'usuarioempresa', None):
+            if user.is_staff or user.is_superuser:
                 return self.get_response(request)
 
             try:

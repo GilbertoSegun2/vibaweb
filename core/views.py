@@ -1624,31 +1624,32 @@ def registro_usuario(request):
             )
             
             try:
+                from django.core.mail import send_mail
+                from django.conf import settings
+                from django.template.loader import render_to_string
+
                 html_content = render_to_string('email_verificacion.html', {
                     'user': user,
                     'codigo': codigo,
                     'first_name': user.first_name,
                 })
-                
-                resend.api_key = settings.EMAIL_HOST_PASSWORD
-                
-                params = {
-                    "from": settings.DEFAULT_FROM_EMAIL,
-                    "to": [user.email],
-                    "subject": "Verifica tu cuenta - Viba-Web",
-                    "html": html_content,
-                }
-                
-                resend.Emails.send(params)
-                
+
+                send_mail(
+                    subject="Verifica tu cuenta - Viba-Web",
+                    message=f"Tu código de verificación es: {codigo}",
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    recipient_list=[user.email],
+                    html_message=html_content,
+                    fail_silently=False,
+                )
+
                 request.session['verificacion_user_id'] = user.id
                 messages.success(request, f"¡Registro exitoso, {user.first_name}! Te hemos enviado un código de verificación a tu correo: {user.email}. Revisa tu bandeja de entrada y la carpeta de spam.")
                 return redirect('core:verificar_email')
-                
+
             except Exception as e:
-                if user.pk:
-                    user.delete()
-                messages.error(request, f"No pudimos enviar el correo de verificación debido a un problema de red: {str(e)}")
+                # ⭐ NO borrar el usuario si el correo falla (cambio preventivo)
+                messages.warning(request, f"Tu cuenta fue creada, pero no pudimos enviar el correo de verificación. Por favor, contacta a soporte. Error: {str(e)}")
                 return render(request, 'registro.html', {'form': form})
     else:
         form = RegistroForm()
@@ -2951,27 +2952,29 @@ def reenviar_codigo_verificacion(request):
     cliente.save()
     
     try:
+        from django.core.mail import send_mail
+        from django.conf import settings
+        from django.template.loader import render_to_string
+
         html_content = render_to_string('email_verificacion.html', {
             'user': user,
             'codigo': codigo,
             'first_name': user.first_name,
         })
-        
-        resend.api_key = settings.EMAIL_HOST_PASSWORD
-        
-        params = {
-            "from": settings.DEFAULT_FROM_EMAIL,
-            "to": [user.email],
-            "subject": "Nuevo código de verificación - Viba-Web",
-            "html": html_content,
-        }
-        
-        resend.Emails.send(params)
-        
+
+        send_mail(
+            subject="Nuevo código de verificación - Viba-Web",
+            message=f"Tu nuevo código de verificación es: {codigo}",
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user.email],
+            html_message=html_content,
+            fail_silently=False,
+        )
+
         messages.success(request, f"Te hemos enviado un nuevo código a {user.email}. Revisa tu bandeja de entrada y la carpeta de spam.")
-        
+
     except Exception as e:
-        messages.error(request, f"No pudimos reenviar el correo. Intenta de nuevo en unos minutos.")
+        messages.error(request, f"No pudimos reenviar el correo. Intenta de nuevo en unos minutos. Error: {str(e)}")
     
     return redirect('core:verificar_email')
     

@@ -35,6 +35,7 @@ INSTALLED_APPS = [
     # Terceros
     'pwa',
     'import_export',
+    'anymail',  # ⭐ NUEVO: Integración con Resend
     
     # Local
     'core',
@@ -248,20 +249,16 @@ LOGGING = {
 }
 
 # ============================================================
-# CONFIGURACIÓN DE CORREO (Resend / SMTP)
+# CONFIGURACIÓN DE CORREO (Anymail + Resend)
 # ============================================================
-# Usamos UnsafeEmailBackend para evitar bloqueos de certificados en producción
-EMAIL_BACKEND = 'core.email_backend.UnsafeEmailBackend'
+# Usamos Anymail para integración limpia y profesional con Resend
+EMAIL_BACKEND = "anymail.backends.resend.EmailBackend"
 
-EMAIL_HOST = 'smtp.resend.com'
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
-EMAIL_HOST_USER = 'resend'
-EMAIL_HOST_PASSWORD = config('RESEND_API_KEY', default='')
+ANYMAIL = {
+    "RESEND_API_KEY": config('RESEND_API_KEY', default=''),
+}
+
 DEFAULT_FROM_EMAIL = 'Viba-Web <info@boletoexpreso.com>'
-
-# Tiempo máximo de espera (en segundos)
-EMAIL_TIMEOUT = 20
 
 # ============================================================
 # REDIRECCIÓN DE LOGIN
