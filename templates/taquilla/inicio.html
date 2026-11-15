@@ -94,6 +94,9 @@
                         <p class="mb-2">
                             <i class="bi bi-geo-alt-fill text-danger"></i> 
                             Desde <strong>{{ empleado.oficina.nombre }}</strong>
+                            {% if destino_seleccionado_nombre %}
+                                → <strong>{{ destino_seleccionado_nombre }}</strong>
+                            {% endif %}
                         </p>
 
                         <!-- Hora, Fecha y Bus -->

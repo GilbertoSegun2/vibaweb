@@ -106,6 +106,7 @@
                                     <span class="badge bg-primary fs-5 me-2">Asiento: {{ boleto.asiento.numero }}</span>
                                 </div>
                                 <p class="mb-1"><strong>Pasajero:</strong> {{ boleto.pasajero_nombre }}</p>
+                                <p class="mb-1"><strong>Ruta:</strong> {{ boleto.origen_nombre|upper }} → {{ boleto.destino_nombre|upper }}</p>
                                 <p class="mb-1"><strong>Cédula:</strong> {{ boleto.pasajero_cedula|formato_cedula }}</p>
                                 <p class="mb-1 text-muted small"><strong>Tipo:</strong> {{ boleto.get_tipo_pasajero_display }}</p>
                                 

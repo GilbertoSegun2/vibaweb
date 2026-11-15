@@ -44,8 +44,16 @@ def personalizacion(request):
     }
 
 def timeout_inactividad(request):
-    """Agrega los minutos de inactividad para clientes web al contexto global."""
     from .utils import obtener_parametro
+    minutos = 10  # valor por defecto
+
+    if request.user.is_authenticated:
+        if hasattr(request.user, 'usuarioempresa'):
+            minutos = float(obtener_parametro('173', default=5))
+        elif hasattr(request.user, 'cliente'):
+            minutos = float(obtener_parametro('186', default=10))
+
     return {
-        'minutos_inactividad': int(obtener_parametro('186', default=10)),
+        'timeout_inactividad_minutos': minutos,
+        'timeout_inactividad_ms': int(minutos * 60 * 1000),
     }

@@ -282,16 +282,27 @@
 
             if (distance < 0) {
                 clearInterval(timerInterval);
-                alert("Tu tiempo de reserva ha expirado. Los asientos han sido liberados.");
                 
+                // ⭐ Detectar si es cliente web o taquillero
+                const esClienteWeb = {% if user.is_authenticated and not user.usuarioempresa %}true{% else %}false{% endif %};
+                
+                // 1. Liberar los asientos en el servidor primero (sin bloquear la UI con alert)
                 fetch('/taquilla/api/liberar-reservas-usuario/', {
                     method: 'POST',
                     headers: {
                         'X-CSRFToken': getCookie('csrftoken'),
                         'Content-Type': 'application/json'
                     },
-                }).catch(() => {}).finally(() => {
-                    window.location.href = "/";
+                }).finally(() => {
+                    if (esClienteWeb) {
+                        // ⭐ CLIENTE WEB: Mensaje rápido, destruye sesión y va al login/inicio
+                        alert("Tu tiempo de reserva ha expirado. Los asientos han sido liberados y tu sesión se cerrará por seguridad.");
+                        window.location.href = '/logout/';
+                    } else {
+                        // ⭐ TAQUILLERO: Mensaje rápido, LIBERA puestos pero QUEDA LOGUEADO y va al inicio de taquilla
+                        alert("Tu tiempo de reserva ha expirado. Los asientos han sido liberados.");
+                        window.location.href = '/taquilla/';
+                    }
                 });
                 return;
             }
@@ -477,12 +488,12 @@
     })();
     </script>
     
-        <!-- ⭐ TIMEOUT DE INACTIVIDAD (Clientes y Taquilleros) -->
+    <!-- ⭐ TIMEOUT DE INACTIVIDAD (CLIENTES WEB Y TAQUILLEROS) -->
     <script>
     (function() {
         {% if user.is_authenticated %}
-        // Usamos el tiempo dinámico que viene del servidor (Parámetros 186 / 173)
         const TIEMPO_INACTIVIDAD = {{ timeout_inactividad_ms }};
+        const esTaquillero = {% if user.usuarioempresa %}true{% else %}false{% endif %};
         let temporizadorInactividad;
 
         function getCookie(name) {
@@ -501,14 +512,23 @@
         }
 
         function redirigirALogout() {
-            fetch('/timeout-logout/', {
-                method: 'POST',
-                headers: { 'X-CSRFToken': getCookie('csrftoken') },
-            }).then(function() {
-                window.location.replace('/');
-            }).catch(function() {
-                window.location.replace('/');
-            });
+            if (esTaquillero) {
+                // ⭐ TAQUILLERO: Libera puestos, NO cierra sesión, va al inicio de taquilla
+                fetch('/taquilla/api/liberar-reservas-usuario/', {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': getCookie('csrftoken') },
+                }).finally(function() {
+                    window.location.replace('/taquilla/');
+                });
+            } else {
+                // ⭐ CLIENTE WEB: Cierra sesión completa y va al inicio público
+                fetch('/timeout-logout/', {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': getCookie('csrftoken') },
+                }).finally(function() {
+                    window.location.replace('/');
+                });
+            }
         }
 
         function reiniciarTemporizador() {
@@ -523,6 +543,7 @@
         {% endif %}
     })();
     </script>
+    
 
     <!-- ⭐ EXTRA_JS (BLINDADO) -->
     {% block extra_js %}{% endblock %}

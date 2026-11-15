@@ -93,7 +93,11 @@
             <!-- DATOS DEL VIAJE -->
             <div>
                 <div class="section-title">Ruta</div>
-                <div class="fw-bold text-large">{{ transaccion.viaje.hora|time:"h:i A" }} | {{ transaccion.viaje.ruta.origen.nombre|upper }} → {{ transaccion.viaje.ruta.destinos.first.nombre|upper }}</div>
+                <!-- ⭐ CORREGIDO: Ahora usa el origen y destino real del boleto -->
+                <div class="fw-bold text-large">
+                    {{ transaccion.viaje.hora|time:"h:i A" }} | 
+                    {{ boleto.origen_nombre|upper }} → {{ boleto.destino_nombre|upper }}
+                </div>
                 <div class="text-small mt-1">FECHA VIAJE: <strong>{{ transaccion.viaje.fecha|date:'d/m/Y' }}</strong></div>
                 <div class="text-small">ASIENTO: <strong class="text-large">{{ boleto.asiento.numero }}</strong> | BUS: {{ transaccion.viaje.bus.placa }}</div>
             </div>
@@ -147,7 +151,8 @@
             <div class="bg-liquidacion text-center">
                 <div class="fw-bold text-uppercase text-large mb-1" style="color: #003366;">Liquidación</div>
                 <div class="text-small">Factura: {{ transaccion.codigo }}</div>
-                <div class="text-small">Ruta: {{ transaccion.viaje.ruta.origen.nombre|upper }} → {{ transaccion.viaje.ruta.destinos.first.nombre|upper }}</div>
+                <!-- ⭐ CORREGIDO: Ahora usa el origen y destino real del boleto -->
+                <div class="text-small">Ruta: {{ boleto.origen_nombre|upper }} → {{ boleto.destino_nombre|upper }}</div>
                 <div class="text-small">Asiento: {{ boleto.asiento.numero }} | Fecha: {{ transaccion.viaje.fecha|date:'d/m/Y' }}</div>
                 
                 <div class="mt-2" style="font-size: 12px; border-top: 1px dashed #000; padding-top: 5px;">

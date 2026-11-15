@@ -4,18 +4,7 @@ from django.contrib.auth import logout as auth_logout
 from django.contrib import messages
 from .utils import obtener_parametro
 
-
 class SessionTimeoutMiddleware:
-    """
-    Ajusta dinámicamente el timeout de la sesión según el rol:
-    - Cliente web: parámetro 140 (120 min)
-    - Taquillero: parámetro 173 (15 min)
-    - Si es 0: la sesión muere al cerrar el navegador.
-    
-    ⭐ NUEVO: Verifica el "latido" (heartbeat) del navegador.
-    Si no hay latido en 60 segundos, la sesión se cierra y se liberan los asientos.
-    """
-    
     def __init__(self, get_response):
         self.get_response = get_response
     
@@ -25,39 +14,39 @@ class SessionTimeoutMiddleware:
             return self.get_response(request)
         
         if request.user.is_authenticated:
-            # ⭐ VERIFICAR EL LATIDO (HEARTBEAT)
-            ultima_actividad = request.session.get('ultima_actividad_heartbeat')
-            if ultima_actividad:
-                from datetime import datetime
-                try:
-                    ultima_dt = datetime.fromisoformat(ultima_actividad)
-                    segundos_sin_latido = (timezone.now() - ultima_dt).total_seconds()
-                    if segundos_sin_latido > 60:
-                        # El usuario no ha dado señales de vida en 60 segundos
-                        # Cerramos sesión y liberamos asientos
-                        from .models import Asiento
-                        Asiento.objects.filter(
-                            estado='reservado',
-                            reservado_por=request.user
-                        ).update(estado='disponible', reservado_por=None, reservado_hasta=None)
-                        auth_logout(request)
-                        return redirect('core:login')
-                except (ValueError, TypeError):
-                    pass
-            
-            # ⭐ AJUSTAR EL TIMEOUT SEGÚN EL ROL
             es_empleado = getattr(request.user, 'usuarioempresa', None) is not None
             
+            # ⭐ VERIFICAR EL LATIDO (HEARTBEAT) - SOLO PARA CLIENTES WEB
+            # Los taquilleros NUNCA se desloguean por falta de latido.
+            if not es_empleado:
+                ultima_actividad = request.session.get('ultima_actividad_heartbeat')
+                if ultima_actividad:
+                    from datetime import datetime
+                    try:
+                        ultima_dt = datetime.fromisoformat(ultima_actividad)
+                        segundos_sin_latido = (timezone.now() - ultima_dt).total_seconds()
+                        if segundos_sin_latido > 60:
+                            from .models import Asiento
+                            Asiento.objects.filter(
+                                estado='reservado',
+                                reservado_por=request.user
+                            ).update(estado='disponible', reservado_por=None, reservado_hasta=None)
+                            auth_logout(request)
+                            return redirect('core:login')
+                    except (ValueError, TypeError):
+                        pass
+            
+            # ⭐ AJUSTAR EL TIMEOUT SEGÚN EL ROL (Solo cookie, no logout automático)
             if es_empleado:
                 try:
-                    minutos = int(obtener_parametro('173', default=15))
+                    minutos = float(obtener_parametro('173', default=15))
                 except (ValueError, TypeError):
                     minutos = 15
             else:
                 try:
-                    minutos = int(obtener_parametro('140', default=120))
+                    minutos = float(obtener_parametro('140', default=10))
                 except (ValueError, TypeError):
-                    minutos = 120
+                    minutos = 10
             
             if minutos <= 0:
                 request.session.set_expiry(0)
@@ -66,28 +55,27 @@ class SessionTimeoutMiddleware:
         
         return self.get_response(request)
 
-
 class SesionUnicaMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
-    
+
     def __call__(self, request):
         rutas_excluidas = ['/login/', '/logout/', '/registro/', '/admin/']
         if any(request.path.startswith(ruta) for ruta in rutas_excluidas):
             return self.get_response(request)
-        
+
         if request.user.is_authenticated:
             user = request.user
-            
-            if user.is_staff or user.is_superuser:
+
+            # ⭐ EXIMIR A STAFF, SUPERUSUARIOS Y TAQUILLEROS
+            if user.is_staff or user.is_superuser or getattr(user, 'usuarioempresa', None):
                 return self.get_response(request)
-            
+
             try:
                 from .models import SesionActiva
-                
                 sesion = SesionActiva.objects.filter(user=user).first()
                 current_key = request.session.session_key
-                
+
                 if sesion and sesion.session_key != current_key:
                     auth_logout(request)
                     messages.warning(
@@ -96,16 +84,15 @@ class SesionUnicaMiddleware:
                         "Por seguridad, esta sesión ha sido cerrada automáticamente."
                     )
                     return redirect('core:login')
-                
+
                 if sesion:
                     SesionActiva.objects.filter(pk=sesion.pk).update(
                         ultima_actividad=timezone.now()
                     )
             except Exception:
                 pass
-        
-        return self.get_response(request)
 
+        return self.get_response(request)
 
 class NoCacheMiddleware:
     """

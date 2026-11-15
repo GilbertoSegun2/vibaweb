@@ -244,6 +244,16 @@ def detalle_viaje(request, viaje_id):
     else:
         expiracion_iso = (timezone.now() + timedelta(minutes=minutos_reserva)).isoformat()
     
+    # ⭐ Calcular nombres de origen y destino
+    origen_nombre = None
+    destino_nombre = None
+    if origen_id:
+        origen_obj = Oficina.objects.filter(id=origen_id).first()
+        origen_nombre = origen_obj.nombre if origen_obj else None
+    if destino_id:
+        destino_obj = Oficina.objects.filter(id=destino_id).first()
+        destino_nombre = destino_obj.nombre if destino_obj else None
+
     return render(request, 'detalle_viaje.html', {
         'viaje': viaje, 
         'asientos_por_piso': asientos_por_piso, 
@@ -255,6 +265,8 @@ def detalle_viaje(request, viaje_id):
         'segundos_restantes': segundos_restantes, 
         'transaccion_reciente': transaccion_reciente,
         'expiracion_iso': expiracion_iso,
+        'origen_nombre': origen_nombre,
+        'destino_nombre': destino_nombre,
     })
 
 # ============================================================
@@ -304,7 +316,10 @@ def login_view(request):
                             sesion_existente.token_desbloqueo = token
                             sesion_existente.save()
                             
-                            base_url = request.build_absolute_uri('/')[:-1]
+                            host_actual = request.get_host() # Esto toma automáticamente la IP de la red o el 127.0.0.1 según corresponda
+                            scheme = 'https' if request.is_secure() else 'http'
+                            base_url = f"{scheme}://{host_actual}"
+
                             link_si = f"{base_url}/desbloqueo/confirmar/{token}/si/"
                             link_no = f"{base_url}/desbloqueo/confirmar/{token}/no/"
                             
@@ -502,15 +517,31 @@ def reservar_asientos(request):
 @require_POST
 @login_required
 def liberar_reservas_usuario_api(request):
-    if not hasattr(request.user, 'usuarioempresa') and not hasattr(request.user, 'cliente'):
+    """API para liberar asientos del usuario actual.
+    - Taquillero: libera TODOS sus asientos reservados de inmediato.
+    - Cliente Web: libera solo los asientos cuya reserva ya expiró.
+    """
+    es_taquillero = hasattr(request.user, 'usuarioempresa')
+    es_cliente = hasattr(request.user, 'cliente')
+    
+    if not es_taquillero and not es_cliente:
         return JsonResponse({'ok': False, 'error': 'No autorizado'}, status=403)
     
     ahora = timezone.now()
-    liberados = Asiento.objects.filter(
-        estado='reservado',
-        reservado_por=request.user,
-        reservado_hasta__lt=ahora
-    ).update(estado='disponible', reservado_hasta=None, reservado_por=None)
+    
+    if es_taquillero:
+        # ⭐ TAQUILLERO: Libera TODOS sus asientos reservados (sin importar si expiraron)
+        liberados = Asiento.objects.filter(
+            estado='reservado',
+            reservado_por=request.user
+        ).update(estado='disponible', reservado_hasta=None, reservado_por=None)
+    else:
+        # ⭐ CLIENTE WEB: Libera solo los que ya expiraron
+        liberados = Asiento.objects.filter(
+            estado='reservado',
+            reservado_por=request.user,
+            reservado_hasta__lt=ahora
+        ).update(estado='disponible', reservado_hasta=None, reservado_por=None)
     
     request.session.pop('reserva_inicio', None)
     request.session.pop('asientos_seleccionados', None)
@@ -639,7 +670,30 @@ def pasajeros(request, viaje_id):
     precio_unitario = (tarifa.monto_usd + valor_seguro) if tarifa else 0
     total_usd = precio_unitario * cantidad
     expiracion_iso = (timezone.now() + timedelta(seconds=segundos_restantes)).isoformat()
-    return render(request, 'pasajeros.html', {'viaje': viaje, 'formularios': formularios, 'cantidad': cantidad, 'total_usd': total_usd, 'tarifa': tarifa, 'seguro': valor_seguro, 'segundos_restantes': segundos_restantes, 'expiracion_iso': expiracion_iso, 'minutos_reserva': minutos, 'cliente': cliente})
+    # ⭐ Calcular nombres de origen y destino
+    origen_nombre = None
+    destino_nombre = None
+    if origen_id:
+        origen_obj = Oficina.objects.filter(id=origen_id).first()
+        origen_nombre = origen_obj.nombre if origen_obj else None
+    if destino_id:
+        destino_obj = Oficina.objects.filter(id=destino_id).first()
+        destino_nombre = destino_obj.nombre if destino_obj else None
+
+    return render(request, 'pasajeros.html', {
+        'viaje': viaje, 
+        'formularios': formularios, 
+        'cantidad': cantidad, 
+        'total_usd': total_usd, 
+        'tarifa': tarifa, 
+        'seguro': valor_seguro, 
+        'segundos_restantes': segundos_restantes, 
+        'expiracion_iso': expiracion_iso, 
+        'minutos_reserva': minutos, 
+        'cliente': cliente,
+        'origen_nombre': origen_nombre,
+        'destino_nombre': destino_nombre,
+    })
 
 @login_required
 def pago(request, viaje_id):
@@ -705,6 +759,19 @@ def pago(request, viaje_id):
     
     orden_origen, orden_destino = obtener_ordenes_tramo(viaje, origen_id, destino_id)
 
+    # ⭐ Calcular nombres de origen y destino
+    origen_nombre = None
+    destino_nombre = None
+    if origen_id:
+        origen_obj = Oficina.objects.filter(id=origen_id).first()
+        origen_nombre = origen_obj.nombre if origen_obj else None
+    if destino_id:
+        destino_obj = Oficina.objects.filter(id=destino_id).first()
+        destino_nombre = destino_obj.nombre if destino_obj else None
+
+    # ⭐ Calcular expiracion_iso
+    expiracion_iso = (timezone.now() + timedelta(seconds=segundos_restantes)).isoformat()
+
     if request.method == 'POST':
         datos_post = request.POST.copy()
         monto_str = datos_post.get('monto_pagado_bs', '')
@@ -717,7 +784,7 @@ def pago(request, viaje_id):
             monto_excedente = diferencia if diferencia > Decimal('0.01') else Decimal('0')
             confirmar = request.POST.get('confirmar_diferencia')
             if (abs(diferencia) > Decimal('0.01')) and not confirmar:
-                return render(request, 'pago.html', {'viaje': viaje, 'form': form, 'cantidad': cantidad, 'total_usd': total_usd, 'total_bs': total_bs, 'tasa_bcv': tasa_bcv, 'datos_cuenta': datos_cuenta, 'minutos_reserva': minutos, 'tarifa': tarifa, 'monto_pagado': monto_pagado, 'diferencia': diferencia, 'monto_faltante': monto_faltante, 'monto_excedente': monto_excedente, 'mostrar_aviso': True})
+                return render(request, 'pago.html', {'viaje': viaje, 'form': form, 'cantidad': cantidad, 'total_usd': total_usd, 'total_bs': total_bs, 'tasa_bcv': tasa_bcv, 'datos_cuenta': datos_cuenta, 'minutos_reserva': minutos, 'tarifa': tarifa, 'monto_pagado': monto_pagado, 'diferencia': diferencia, 'monto_faltante': monto_faltante, 'monto_excedente': monto_excedente, 'mostrar_aviso': True, 'origen_nombre': origen_nombre, 'destino_nombre': destino_nombre, 'expiracion_iso': expiracion_iso})
             codigo = generar_codigo_transaccion()        
             with transaction.atomic():
                 transaccion = Transaccion.objects.create(codigo=codigo, cliente=cliente, viaje=viaje, cantidad_boletos=cantidad, monto_total_usd=total_usd, monto_total_bs=total_bs, tasa_bcv=tasa_bcv, estado='pendiente_verificacion', vendido_por=None, dispositivo_venta=request.META.get('HTTP_USER_AGENT', 'Desconocido'), oficina_destino=viaje.ruta.destinos.first())
@@ -762,7 +829,22 @@ def pago(request, viaje_id):
     else:
         metodo_inicial = request.GET.get('metodo', 'pago_movil')
         form = PagoWebForm(initial={'metodo': metodo_inicial})
-    return render(request, 'pago.html', {'viaje': viaje, 'form': form, 'cantidad': cantidad, 'tarifa': tarifa, 'seguro': valor_seguro, 'segundos_restantes': segundos_restantes, 'total_usd': total_usd, 'total_bs': total_bs, 'tasa_bcv': tasa_bcv, 'datos_cuenta': datos_cuenta, 'minutos_reserva': minutos})
+    return render(request, 'pago.html', {
+        'viaje': viaje, 
+        'form': form, 
+        'cantidad': cantidad, 
+        'tarifa': tarifa, 
+        'seguro': valor_seguro, 
+        'segundos_restantes': segundos_restantes, 
+        'total_usd': total_usd, 
+        'total_bs': total_bs, 
+        'tasa_bcv': tasa_bcv, 
+        'datos_cuenta': datos_cuenta, 
+        'minutos_reserva': minutos,
+        'origen_nombre': origen_nombre,
+        'destino_nombre': destino_nombre,
+        'expiracion_iso': expiracion_iso,
+    })
 
 @login_required
 def confirmacion(request, transaccion_id):
@@ -774,8 +856,21 @@ def confirmacion(request, transaccion_id):
     boletos = transaccion.boletos.all().order_by('asiento__numero')
     pagos = transaccion.pagos.all()
     
+    # ⭐ Calcular origen y destino real de cada boleto
     for boleto in boletos:
         boleto.imagen_qr = generar_imagen_qr_base64(boleto.codigo_qr)
+        
+        if boleto.orden_origen:
+            parada_origen = transaccion.viaje.ruta.paradas.filter(orden=boleto.orden_origen).first()
+            boleto.origen_nombre = parada_origen.oficina.nombre if parada_origen else transaccion.viaje.ruta.origen.nombre
+        else:
+            boleto.origen_nombre = transaccion.viaje.ruta.origen.nombre
+        
+        if boleto.orden_destino:
+            parada_destino = transaccion.viaje.ruta.paradas.filter(orden=boleto.orden_destino).first()
+            boleto.destino_nombre = parada_destino.oficina.nombre if parada_destino else 'Sin destino'
+        else:
+            boleto.destino_nombre = 'Sin destino'
     
     return render(request, 'confirmacion.html', {
         'transaccion': transaccion, 
@@ -829,7 +924,50 @@ def seleccionar_metodo_pago(request, viaje_id):
     total_usd = precio_unitario * cantidad
     tasa_bcv = obtener_parametro('107', default=0)
     total_bs = (total_usd * tasa_bcv).quantize(Decimal('0.01')) if tasa_bcv else 0
-    return render(request, 'seleccionar_metodo_pago.html', {'viaje': viaje, 'metodos': metodos, 'cantidad': cantidad, 'total_usd': total_usd, 'total_bs': total_bs, 'tasa_bcv': tasa_bcv, 'mostrar_cancelar': from_cancelar})
+    # ⭐ Calcular nombres de origen y destino
+    origen_nombre = None
+    destino_nombre = None
+    if origen_id:
+        origen_obj = Oficina.objects.filter(id=origen_id).first()
+        origen_nombre = origen_obj.nombre if origen_obj else None
+    if destino_id:
+        destino_obj = Oficina.objects.filter(id=destino_id).first()
+        destino_nombre = destino_obj.nombre if destino_obj else None
+        
+    # ⭐ Calcular tiempo restante de la reserva
+    minutos = int(obtener_parametro('101', default=10))
+    reserva_inicio_str = request.session.get('reserva_inicio')
+
+    if reserva_inicio_str:
+        try:
+            reserva_inicio = datetime.fromisoformat(reserva_inicio_str)
+            expira_en = reserva_inicio + timedelta(minutes=minutos)
+            if timezone.now() > expira_en:
+                liberar_reservas_vencidas(viaje=viaje)
+                request.session.pop('reserva_inicio', None)
+                messages.warning(request, "Tu tiempo de reserva ha expirado. Selecciona de nuevo.")
+                return redirect('core:inicio')
+            segundos_restantes = int((expira_en - timezone.now()).total_seconds())
+        except (ValueError, TypeError):
+            segundos_restantes = minutos * 60
+    else:
+        segundos_restantes = minutos * 60
+
+    # Pasar al template
+    expiracion_iso = (timezone.now() + timedelta(seconds=segundos_restantes)).isoformat()
+
+    return render(request, 'seleccionar_metodo_pago.html', {
+        'viaje': viaje, 
+        'metodos': metodos, 
+        'cantidad': cantidad, 
+        'total_usd': total_usd, 
+        'total_bs': total_bs, 
+        'tasa_bcv': tasa_bcv, 
+        'mostrar_cancelar': from_cancelar,
+        'origen_nombre': origen_nombre,
+        'destino_nombre': destino_nombre,
+        'expiracion_iso': expiracion_iso,
+    })
 
 @login_required
 def pasarela_virtual_view(request, viaje_id):
@@ -1011,12 +1149,18 @@ def taquilla_inicio(request):
                     })
         except (ValueError, Oficina.DoesNotExist):
             messages.error(request, "Formato de fecha o datos inválidos.")
+    
+    destino_seleccionado_nombre = None
+    if destino_id:
+        destino_obj = Oficina.objects.filter(id=destino_id).first()
+        destino_seleccionado_nombre = destino_obj.nombre if destino_obj else None
 
     return render(request, 'taquilla/inicio.html', {
         'empleado': empleado, 'oficinas': oficinas,
         'viajes_con_info': viajes_con_info,
         'origen_seleccionado': int(origen_id) if origen_id else None,
         'destino_seleccionado': int(destino_id) if destino_id else None,
+        'destino_seleccionado_nombre': destino_seleccionado_nombre,
         'fecha_seleccionada': fecha_str, 'tasa_bcv': tasa_bcv,
     })
 
@@ -1134,6 +1278,8 @@ def taquilla_mapa(request, viaje_id):
         'transaccion_reciente': None,
         'origen_id': origen_id,
         'destino_id': destino_id,
+        'origen_nombre': parada_origen.oficina.nombre if parada_origen else '',
+        'destino_nombre': parada_destino.oficina.nombre if parada_destino else '',
         'expiracion_iso': expiracion_iso,
     })
 
@@ -1366,7 +1512,9 @@ def taquilla_cobrar(request, viaje_id):
         'intervalo_renovacion': intervalo_renovacion, 'descuento_preferencial': descuento_preferencial,
         'cobrar_seguro_cortesia': cobrar_seguro_cortesia,
         'expiracion_iso': expiracion_iso, 'segundos_restantes': segundos_restantes, 'minutos_reserva': minutos_reserva,
-        'pisteros': pisteros, 
+        'pisteros': pisteros,
+        'origen_nombre': parada_origen.oficina.nombre if parada_origen else '',
+        'destino_nombre': parada_destino.oficina.nombre if parada_destino else '',
     })
 
 @login_required
@@ -1381,8 +1529,23 @@ def taquilla_confirmacion(request, transaccion_id):
     boletos = transaccion.boletos.all().order_by('asiento__numero')
     pagos = transaccion.pagos.all()
     
+    # ⭐ Calcular origen y destino real de cada boleto
     for boleto in boletos:
         boleto.imagen_qr = generar_imagen_qr_base64(boleto.codigo_qr)
+        
+        # Origen
+        if boleto.orden_origen:
+            parada_origen = transaccion.viaje.ruta.paradas.filter(orden=boleto.orden_origen).first()
+            boleto.origen_nombre = parada_origen.oficina.nombre if parada_origen else transaccion.viaje.ruta.origen.nombre
+        else:
+            boleto.origen_nombre = transaccion.viaje.ruta.origen.nombre
+        
+        # Destino
+        if boleto.orden_destino:
+            parada_destino = transaccion.viaje.ruta.paradas.filter(orden=boleto.orden_destino).first()
+            boleto.destino_nombre = parada_destino.oficina.nombre if parada_destino else 'Sin destino'
+        else:
+            boleto.destino_nombre = 'Sin destino'
     
     return render(request, 'taquilla/confirmacion.html', {
         'transaccion': transaccion,
@@ -1631,16 +1794,24 @@ def buscar_viajes(request):
     
     try:
         fecha = datetime.strptime(fecha_str, '%Y-%m-%d').date()
-        hoy = timezone.now().date()
+        hoy = timezone.localdate() # ⭐ Usamos localdate para evitar conflictos de zona horaria
         
         if fecha >= hoy:
             for viaje in viajes_validos:
                 if viaje.fecha == fecha:
                     if fecha == hoy:
                         minutos_bloqueo = int(obtener_parametro('184', default=60))
-                        ahora = timezone.localtime(timezone.now())
-                        hora_limite = ahora + timedelta(minutes=minutos_bloqueo)
-                        if viaje.hora > hora_limite.time():
+                        
+                        # ⭐ Obtenemos la hora local actual de manera limpia (.time())
+                        ahora_local = timezone.localtime(timezone.now())
+                        hora_actual = ahora_local.time()
+                        
+                        # Convertimos a datetime dummy de hoy para sumar los minutos de bloqueo de forma segura
+                        dt_actual = datetime.combine(hoy, hora_actual) + timedelta(minutes=minutos_bloqueo)
+                        hora_limite = dt_actual.time()
+                        
+                        # Si la hora del viaje es posterior al límite de bloqueo, se muestra
+                        if viaje.hora > hora_limite:
                             viajes_finales.append(viaje)
                     else:
                         viajes_finales.append(viaje)
@@ -2726,10 +2897,23 @@ def confirmar_desbloqueo_por_email(request, token, accion):
         return redirect('core:login')
     
     user = sesion.user
-    sesion.delete()
+    
+    with transaction.atomic():
+        # 1. Eliminar todas las sesiones activas asociadas a este usuario
+        SesionActiva.objects.filter(user=user).delete()
+        
+        # 2. Liberar de inmediato todos los asientos que tuviera reservados
+        Asiento.objects.filter(
+            estado='reservado',
+            reservado_por=user
+        ).update(
+            estado='disponible',
+            reservado_por=None,
+            reservado_hasta=None
+        )
     
     if accion == 'si':
-        messages.success(request, "Sesión liberada. Ya puedes ingresar con tu contraseña.")
+        messages.success(request, "Sesión anterior liberada y asientos desbloqueados con éxito. Ya puedes ingresar con tu contraseña.")
     else:
         messages.warning(request, "Hemos cerrado la sesión anterior por seguridad. Si no fuiste tú, te recomendamos cambiar tu contraseña.")
     
