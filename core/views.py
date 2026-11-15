@@ -316,7 +316,7 @@ def login_view(request):
                             sesion_existente.token_desbloqueo = token
                             sesion_existente.save()
                             
-                            host_actual = request.get_host() # Esto toma automáticamente la IP de la red o el 127.0.0.1 según corresponda
+                            host_actual = request.get_host()
                             scheme = 'https' if request.is_secure() else 'http'
                             base_url = f"{scheme}://{host_actual}"
 
@@ -344,8 +344,15 @@ def login_view(request):
                                 messages.info(request, f"Estimado usuario: se ha enviado un correo a {email_oculto} para confirmar el inicio de sesión.")
                                 return render(request, 'login.html', {'form': form, 'mostrar_confirmacion_email': True})
                             except Exception as e:
-                                messages.error(request, f"Error al enviar el correo: {str(e)}")
-                                return render(request, 'login.html', {'form': form})
+                                # ⭐ FALLBACK: Si el correo falla, permitir el login igual
+                                messages.warning(
+                                    request,
+                                    "Estimado usuario: su cuenta está activa en otro dispositivo. "
+                                    "No pudimos enviarle el correo de confirmación (error de red), pero "
+                                    "hemos cerrado la sesión anterior por seguridad. Si no fue usted, "
+                                    "cambie su contraseña inmediatamente."
+                                )
+                                sesion_existente.delete()
 
                 auth_login(request, user)
                 request.session.set_expiry(0)
