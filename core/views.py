@@ -3211,11 +3211,28 @@ def reenviar_desbloqueo_view(request):
         from django.core.mail import send_mail
         from django.conf import settings
         
+        html_content = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+            <h2 style="color: #003366; text-align: center;">Viba-Web - Seguridad</h2>
+            <p>Hola <strong>{user.first_name}</strong>,</p>
+            <p>Se ha generado un nuevo código para desbloquear su sesión. Para continuar, haz clic en el siguiente número en la pantalla del navegador:</p>
+            <div style="text-align: center; margin: 30px 0;">
+                <span style="font-size: 64px; font-weight: bold; color: #003366; background-color: #f4f6f8; padding: 20px 40px; border-radius: 12px; letter-spacing: 8px; border: 2px dashed #003366;">
+                    {codigo_correcto}
+                </span>
+            </div>
+            <p>Si no fuiste tú, ignora este mensaje y cambia tu contraseña.</p>
+            <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+            <p style="color: #666; font-size: 12px; text-align: center;">Viba-Web - Sistema de venta de boletos</p>
+        </div>
+        """
+        
         send_mail(
             subject='Nuevo código de seguridad - Viba-Web',
-            message=f'Hola {user.first_name},\n\nSe ha generado un nuevo código para desbloquear su sesión.\nHaga clic en el número {codigo_correcto} en la pantalla del navegador.',
+            message=f'Hola {user.first_name},\n\nSe ha generado un nuevo código para desbloquear su sesión.\n\nSu número de desbloqueo es: {codigo_correcto}\n\nHaga clic en este número en la pantalla del navegador.',
             from_email=settings.DEFAULT_FROM_EMAIL,
             recipient_list=[user.email],
+            html_message=html_content,
             fail_silently=False,
         )
         
