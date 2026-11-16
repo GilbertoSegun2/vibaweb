@@ -15,35 +15,25 @@
                 <div class="alert alert-info text-center">
                     <i class="bi bi-shield-lock-fill fs-3 d-block mb-2"></i>
                     <h5>Desbloqueo de seguridad</h5>
-                    <p class="mb-2">Se ha enviado un número de 3 cifras a su correo electrónico.</p>
-                    <p class="mb-3"><strong>Haga clic en el número que coincida con el correo.</strong></p>
+                    <p class="mb-2">Se han enviado <strong>dos números</strong> a su correo electrónico.</p>
+                    <p class="mb-3"><strong>Haga clic en ellos <u>en el orden</u> que se los enviamos.</strong></p>
                     
-                    <div class="d-flex justify-content-center gap-3 mb-3">
-                        <form method="post" action="{% url 'core:desbloquear_sesion' %}" onsubmit="mostrarCarga('Verificando...', 'Por favor, espere.');">
-                            {% csrf_token %}
-                            <input type="hidden" name="codigo" value="{{ numeros.0 }}">
-                            <button type="submit" class="btn btn-outline-primary btn-lg" style="font-size: 2rem; font-weight: bold; min-width: 100px;">
-                                {{ numeros.0 }}
-                            </button>
-                        </form>
-                        <form method="post" action="{% url 'core:desbloquear_sesion' %}" onsubmit="mostrarCarga('Verificando...', 'Por favor, espere.');">
-                            {% csrf_token %}
-                            <input type="hidden" name="codigo" value="{{ numeros.1 }}">
-                            <button type="submit" class="btn btn-outline-primary btn-lg" style="font-size: 2rem; font-weight: bold; min-width: 100px;">
-                                {{ numeros.1 }}
-                            </button>
-                        </form>
-                        <form method="post" action="{% url 'core:desbloquear_sesion' %}" onsubmit="mostrarCarga('Verificando...', 'Por favor, espere.');">
-                            {% csrf_token %}
-                            <input type="hidden" name="codigo" value="{{ numeros.2 }}">
-                            <button type="submit" class="btn btn-outline-primary btn-lg" style="font-size: 2rem; font-weight: bold; min-width: 100px;">
-                                {{ numeros.2 }}
-                            </button>
-                        </form>
+                    <div class="d-flex justify-content-center gap-2 mb-3 flex-wrap">
+                        {% for num in numeros %}
+                            <form method="post" action="{% url 'core:desbloquear_sesion' %}" onsubmit="mostrarCarga('Verificando...', 'Por favor, espere.');" style="display:inline-block;">
+                                {% csrf_token %}
+                                <input type="hidden" name="codigo" value="{{ num }}">
+                                <button type="submit" class="btn btn-outline-primary btn-lg" 
+                                        style="font-size: 2rem; font-weight: bold; min-width: 100px; padding: 15px 20px;"
+                                        {% if num|stringformat:'s' in seleccionados %}disabled{% endif %}>
+                                    {{ num }}
+                                </button>
+                            </form>
+                        {% endfor %}
                     </div>
                     
                     <p class="small text-muted mb-2">Si no ve el correo, revise la carpeta de spam.</p>
-                    <p class="small text-warning mb-2"><strong>Intentos restantes: {{ intentos|default:3 }}</strong></p>
+                    <p class="small text-warning mb-2"><strong>Oportunidades restantes: {{ intentos|default:2 }}</strong></p>
                     
                     <form method="post" action="{% url 'core:reenviar_desbloqueo' %}" onsubmit="mostrarCarga('Reenviando...', 'Por favor, espere.');">
                         {% csrf_token %}

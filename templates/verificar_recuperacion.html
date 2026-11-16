@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+
+{% block title %}Verificar Identidad - Viba-Web{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card shadow-sm">
+            <div class="card-body p-4">
+                <h3 class="mb-4 text-center" style="color: #003366;">
+                    <i class="bi bi-shield-lock-fill"></i> Verificar Identidad
+                </h3>
+
+                <div class="alert alert-info text-center">
+                    <i class="bi bi-envelope-check-fill fs-3 d-block mb-2"></i>
+                    <h5>Recuperación de contraseña</h5>
+                    <p class="mb-2">Se han enviado <strong>dos números</strong> a su correo electrónico.</p>
+                    <p class="mb-3"><strong>Haga clic en ellos <u>en el orden</u> que se los enviamos.</strong></p>
+
+                    <div class="d-flex justify-content-center gap-2 mb-3 flex-wrap">
+                        {% for num in numeros %}
+                            <form method="post" action="{% url 'core:verificar_recuperacion' %}" onsubmit="mostrarCarga('Verificando...', 'Por favor, espere.');" style="display:inline-block;">
+                                {% csrf_token %}
+                                <input type="hidden" name="codigo" value="{{ num }}">
+                                <button type="submit" class="btn btn-outline-primary btn-lg"
+                                        style="font-size: 2rem; font-weight: bold; min-width: 100px; padding: 15px 20px;"
+                                        {% if num|stringformat:'s' in seleccionados %}disabled{% endif %}>
+                                    {{ num }}
+                                </button>
+                            </form>
+                        {% endfor %}
+                    </div>
+
+                    <p class="small text-muted mb-2">Si no ve el correo, revise la carpeta de spam.</p>
+                    <p class="small text-warning mb-2"><strong>Oportunidades restantes: {{ intentos|default:2 }}</strong></p>
+
+                    <form method="post" action="{% url 'core:reenviar_recuperacion' %}" onsubmit="mostrarCarga('Reenviando...', 'Por favor, espere.');">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-outline-secondary btn-sm">
+                            <i class="bi bi-arrow-clockwise"></i> Reenviar código
+                        </button>
+                    </form>
+                </div>
+
+                <div class="text-center mt-4">
+                    <a href="{% url 'core:login' %}" class="btn btn-secondary px-4">
+                        <i class="bi bi-arrow-left"></i> Volver al Login
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

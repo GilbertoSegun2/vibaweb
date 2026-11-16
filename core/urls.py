@@ -26,6 +26,10 @@ urlpatterns = [
     path('desbloquear/confirmar/', views.confirmar_desbloqueo_view, name='confirmar_desbloqueo'),
     path('desbloquear-sesion/', views.desbloquear_sesion_view, name='desbloquear_sesion'),
     path('reenviar-desbloqueo/', views.reenviar_desbloqueo_view, name='reenviar_desbloqueo'),
+    path('recuperar-clave/', views.solicitar_recuperacion_view, name='password_reset'),
+    path('recuperar-clave/verificar/', views.verificar_recuperacion_view, name='verificar_recuperacion'),
+    path('recuperar-clave/reenviar/', views.reenviar_recuperacion_view, name='reenviar_recuperacion'),
+    path('recuperar-clave/nueva/', views.nueva_clave_view, name='nueva_clave'),
 
     # ⭐ FLUJO DE RECUPERACIÓN DE CONTRASEÑA
     path('recuperar-clave/', auth_views.PasswordResetView.as_view(
@@ -34,6 +38,16 @@ urlpatterns = [
         success_url='/recuperar-clave/enviado/',
         extra_context={'current_app': 'core'}
     ), name='password_reset'),
+    # ⭐ FLUJO DE RECUPERACIÓN CON TECLADO DE 8 BOTONES
+    path('recuperar-clave/', views.solicitar_recuperacion_view, name='password_reset'),
+    path('recuperar-clave/verificar/', views.verificar_recuperacion_view, name='verificar_recuperacion'),
+    path('recuperar-clave/reenviar/', views.reenviar_recuperacion_view, name='reenviar_recuperacion'),
+    path('recuperar-clave/nueva/', views.nueva_clave_view, name='nueva_clave'),
+    # Ruta que usa el formulario para el aviso de "correo enviado"
+    path('recuperar-clave/enviado/', auth_views.PasswordResetDoneView.as_view(
+        template_name='registration/password_reset_done.html',
+        extra_context={'current_app': 'core'}
+    ), name='password_reset_done'),
     
     path('recuperar-clave/enviado/', auth_views.PasswordResetDoneView.as_view(
         template_name='registration/password_reset_done.html',

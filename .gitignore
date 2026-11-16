@@ -25,3 +25,6 @@ Thumbs.db
 # Backups
 *.bak
 media/
+
+partes_revision/
+dividir.py

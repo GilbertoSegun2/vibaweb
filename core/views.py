@@ -20,7 +20,7 @@ from django.conf import settings
 from django.template.loader import render_to_string
 
 from .models import (
-    Oficina, Viaje, Asiento, Transaccion, Pago, Boleto, Tarifa, 
+    Oficina, Viaje, Asiento, Transaccion, Pago, Boleto, Tarifa, Bus,
     MovimientoAsiento, UsuarioEmpresa, Cliente, Credito, 
     PlantillaBus, PlantillaAsiento, Ruta, RutaParada, Suscripcion,
     Pistero, SesionActiva, Conductor, Liquidacion, GastoLiquidacion,
@@ -33,29 +33,6 @@ from .utils import (
     generar_codigo_qr, asiento_esta_disponible_en_tramo,
     generar_numero_boleto, generar_imagen_qr_base64, enmascarar_email,
 )
-
-# ============================================================
-# SEGURIDAD: SESIÓN ÚNICA POR USUARIO-WEB
-# ============================================================
-def procesar_login_con_espera(request, user):
-    if user.is_staff or user.is_superuser:
-        return True, "OK"
-    cliente = getattr(user, 'cliente', None)
-    if not cliente:
-        return True, "OK"
-    minutos_espera = int(obtener_parametro('142', default=3))
-    sesion_existente = SesionActiva.objects.filter(user=user).first()
-    if sesion_existente:
-        inactividad = timezone.now() - sesion_existente.ultima_actividad
-        if inactividad < timedelta(minutes=minutos_espera):
-            minutos_restantes = minutos_espera - int(inactividad.total_seconds() / 60)
-            if minutos_restantes < 1:
-                minutos_restantes = 1
-            return False, (f"Estimado cliente: su cuenta se encuentra activa en otro dispositivo. "
-                           f"Por su seguridad, aguarde {minutos_restantes} minuto(s) antes de intentar nuevamente.")
-        else:
-            sesion_existente.delete()
-    return True, "OK"
 
 # ============================================================
 # FUNCIONES AUXILIARES DE SEGURIDAD Y TRAMOS
@@ -327,46 +304,74 @@ def login_view(request):
                                 )
                                 # El flujo continúa al auth_login (abajo)
                             else:
-                                # ⭐ CLIENTE WEB: Challenge-Response con 3 números
+                                # ⭐ CLIENTE WEB: Challenge-Response con 8 números y 2 posiciones
                                 import random
-                                numeros = random.sample(range(100, 999), 3)
-                                codigo_correcto = numeros[0]
+                                
+                                # Generar 8 números aleatorios ÚNICOS
+                                numeros = random.sample(range(100, 999), 8)
+                                
+                                # Elegir 2 posiciones (0 a 7) al azar
+                                indices_correctos = random.sample(range(8), 2)
+                                codigo_1 = numeros[indices_correctos[0]]
+                                codigo_2 = numeros[indices_correctos[1]]
+                                
+                                # El orden importa
+                                codigo_correcto = [codigo_1, codigo_2]
                                 
                                 request.session['desbloqueo_correcto'] = codigo_correcto
                                 request.session['desbloqueo_sesion_id'] = sesion_existente.id
-                                request.session['desbloqueo_intentos'] = 3
+                                request.session['desbloqueo_intentos'] = 2
                                 request.session['desbloqueo_numeros'] = numeros
                                 request.session['desbloqueo_user_id'] = user.id
+                                request.session['desbloqueo_seleccionados'] = []
                                 
                                 try:
                                     from django.core.mail import send_mail
                                     from django.conf import settings
-                                    
+
                                     html_content = f"""
                                     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
                                         <h2 style="color: #003366; text-align: center;">Viba-Web - Seguridad</h2>
                                         <p>Hola <strong>{user.first_name}</strong>,</p>
-                                        <p>Alguien está intentando iniciar sesión en tu cuenta. Para desbloquear la sesión anterior, haz clic en el siguiente número en la pantalla del navegador:</p>
-                                        <div style="text-align: center; margin: 30px 0;">
-                                            <span style="font-size: 64px; font-weight: bold; color: #003366; background-color: #f4f6f8; padding: 20px 40px; border-radius: 12px; letter-spacing: 8px; border: 2px dashed #003366;">
-                                                {codigo_correcto}
-                                            </span>
-                                        </div>
+                                        <p>Alguien está intentando iniciar sesión en tu cuenta. Para desbloquear la sesión anterior, haz clic en estos dos números <strong>en este orden</strong>:</p>
+                                        
+                                        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="margin: 30px 0;">
+                                            <tr>
+                                                <td align="center">
+                                                    <table role="presentation" border="0" cellpadding="0" cellspacing="0">
+                                                        <tr>
+                                                            <td style="padding: 10px;">
+                                                                <div style="font-size: 48px; font-weight: bold; color: #003366; background-color: #f4f6f8; padding: 15px 25px; border-radius: 12px; letter-spacing: 4px; border: 2px dashed #003366; text-align: center;">
+                                                                    {codigo_1}
+                                                                </div>
+                                                            </td>
+                                                            <td style="padding: 10px;">
+                                                                <div style="font-size: 48px; font-weight: bold; color: #003366; background-color: #f4f6f8; padding: 15px 25px; border-radius: 12px; letter-spacing: 4px; border: 2px dashed #003366; text-align: center;">
+                                                                    {codigo_2}
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                        </table>
+
                                         <p>Si no fuiste tú, ignora este mensaje y cambia tu contraseña.</p>
                                         <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
                                         <p style="color: #666; font-size: 12px; text-align: center;">Viba-Web - Sistema de venta de boletos</p>
                                     </div>
                                     """
                                     
+                                    
                                     send_mail(
                                         subject='Alerta de seguridad - Viba-Web',
-                                        message=f'Hola {user.first_name},\n\nSu número de desbloqueo es: {codigo_correcto}\n\nHaga clic en este número en la pantalla del navegador.',
+                                        message=f'Hola {user.first_name},\n\nHaga clic en estos dos números en este orden: {codigo_1} y luego {codigo_2}.',
                                         from_email=settings.DEFAULT_FROM_EMAIL,
                                         recipient_list=[user.email],
                                         html_message=html_content,
                                         fail_silently=False,
                                     )
-                                    messages.info(request, f"Se ha enviado un correo con el número correcto.")
+                                    messages.info(request, f"Se ha enviado un correo con los números correctos.")
                                 except Exception as e:
                                     messages.warning(request, "No pudimos enviar el correo. Use 'Reenviar código'.")
                                 
@@ -374,7 +379,8 @@ def login_view(request):
                                     'form': form,
                                     'mostrar_desbloqueo': True,
                                     'numeros': numeros,
-                                    'intentos': 3,
+                                    'intentos': 2,
+                                    'seleccionados': [],
                                 })
 
                 auth_login(request, user)
@@ -3049,7 +3055,6 @@ def taquilla_anular_liquidacion(request, liquidacion_id):
             # 1. Devolver los boletos a estado 'usado' para que se puedan re-liquidar
             Boleto.objects.filter(
                 viaje=liquidacion.viaje,
-                transaccion__oficina_venta=empleado.oficina,
                 estado='liquidado'
             ).update(estado='usado')
             
@@ -3093,100 +3098,77 @@ def desbloquear_sesion_view(request):
     codigo_correcto = request.session.get('desbloqueo_correcto')
     sesion_id = request.session.get('desbloqueo_sesion_id')
     user_id = request.session.get('desbloqueo_user_id')
-    intentos = request.session.get('desbloqueo_intentos', 3)
+    intentos = request.session.get('desbloqueo_intentos', 2)
+    seleccionados = request.session.get('desbloqueo_seleccionados', [])
+    numeros = request.session.get('desbloqueo_numeros', [])
 
     if not codigo or not codigo_correcto or not sesion_id or not user_id:
         messages.error(request, "Sesión de desbloqueo inválida. Intente de nuevo.")
         return redirect('core:login')
 
-    # ⭐ CASO: SE AGOTARON LOS INTENTOS (3 fallos)
     if intentos <= 0:
-        # Borrar la sesión vieja y la sesión de desbloqueo
         SesionActiva.objects.filter(id=sesion_id).delete()
-        request.session.pop('desbloqueo_correcto', None)
-        request.session.pop('desbloqueo_sesion_id', None)
-        request.session.pop('desbloqueo_intentos', None)
-        request.session.pop('desbloqueo_numeros', None)
-        request.session.pop('desbloqueo_user_id', None)
-        messages.error(request, "Ha agotado sus intentos de desbloqueo. Por seguridad, su cuenta ha sido bloqueada temporalmente. Intente más tarde.")
+        for key in ['desbloqueo_correcto', 'desbloqueo_sesion_id', 'desbloqueo_intentos', 'desbloqueo_numeros', 'desbloqueo_user_id', 'desbloqueo_seleccionados']:
+            request.session.pop(key, None)
+        messages.error(request, "Ha agotado sus oportunidades. Su cuenta ha sido bloqueada temporalmente.")
         return redirect('core:inicio')
 
-    if codigo == str(codigo_correcto):
-        # ⭐ CÓDIGO CORRECTO: borrar la sesión vieja
-        SesionActiva.objects.filter(id=sesion_id).delete()
-        request.session.pop('desbloqueo_correcto', None)
-        request.session.pop('desbloqueo_sesion_id', None)
-        request.session.pop('desbloqueo_intentos', None)
-        request.session.pop('desbloqueo_numeros', None)
-        request.session.pop('desbloqueo_user_id', None)
-        messages.success(request, "Sesión liberada. Ya puede ingresar con su contraseña.")
-        return redirect('core:login')
-    
-    else:
-        # ⭐ CÓDIGO INCORRECTO: restar intento, generar NUEVOS números y enviar correo
-        intentos -= 1
-        request.session['desbloqueo_intentos'] = intentos
-        
-        if intentos <= 0:
-            # Si era el último intento, agotar
-            SesionActiva.objects.filter(id=sesion_id).delete()
-            request.session.pop('desbloqueo_correcto', None)
-            request.session.pop('desbloqueo_sesion_id', None)
-            request.session.pop('desbloqueo_intentos', None)
-            request.session.pop('desbloqueo_numeros', None)
-            request.session.pop('desbloqueo_user_id', None)
-            messages.error(request, "Ha agotado sus intentos de desbloqueo. Por seguridad, su cuenta ha sido bloqueada temporalmente. Intente más tarde.")
-            return redirect('core:inicio')
-        
-        # Generar 3 números nuevos
-        import random
-        numeros = random.sample(range(100, 999), 3)
-        codigo_correcto_nuevo = numeros[0]
-        
-        request.session['desbloqueo_correcto'] = codigo_correcto_nuevo
-        request.session['desbloqueo_numeros'] = numeros
-        
-        # Enviar nuevo correo
-                # Enviar nuevo correo
-        try:
-            from django.core.mail import send_mail
-            from django.conf import settings
+    # Agregar el clic
+    if codigo not in seleccionados:
+        seleccionados.append(codigo)
+        request.session['desbloqueo_seleccionados'] = seleccionados
+
+    # Si ya hizo los 2 clics
+    if len(seleccionados) == 2:
+        if seleccionados == [str(c) for c in codigo_correcto]:
+            # ⭐ ACERTÓ: Login directo
             user = User.objects.get(id=user_id)
+            SesionActiva.objects.filter(id=sesion_id).delete()
+            for key in ['desbloqueo_correcto', 'desbloqueo_sesion_id', 'desbloqueo_intentos', 'desbloqueo_numeros', 'desbloqueo_user_id', 'desbloqueo_seleccionados']:
+                request.session.pop(key, None)
             
-            html_content = f"""
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
-                <h2 style="color: #003366; text-align: center;">Viba-Web - Seguridad</h2>
-                <p>Hola <strong>{user.first_name}</strong>,</p>
-                <p>Se ha generado un nuevo código para desbloquear su sesión. Para continuar, haz clic en el siguiente número en la pantalla del navegador:</p>
-                <div style="text-align: center; margin: 30px 0;">
-                    <span style="font-size: 64px; font-weight: bold; color: #003366; background-color: #f4f6f8; padding: 20px 40px; border-radius: 12px; letter-spacing: 8px; border: 2px dashed #003366;">
-                        {codigo_correcto_nuevo}
-                    </span>
-                </div>
-                <p>Le quedan <strong>{intentos} intentos</strong>.</p>
-                <p>Si no fuiste tú, ignora este mensaje y cambia tu contraseña.</p>
-                <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
-                <p style="color: #666; font-size: 12px; text-align: center;">Viba-Web - Sistema de venta de boletos</p>
-            </div>
-            """
-            
-            send_mail(
-                subject='Nuevo código de seguridad - Viba-Web',
-                message=f'Hola {user.first_name},\n\nSe ha generado un nuevo código para desbloquear su sesión.\n\nSu número de desbloqueo es: {codigo_correcto_nuevo}\n\nLe quedan {intentos} intentos.',
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[user.email],
-                html_message=html_content,
-                fail_silently=False,
+            auth_login(request, user)
+            request.session.set_expiry(0)
+            SesionActiva.objects.create(
+                user=user,
+                session_key=request.session.session_key,
+                ip_address=request.META.get('REMOTE_ADDR'),
+                user_agent=request.META.get('HTTP_USER_AGENT', '')[:250],
+                ultima_actividad=timezone.now()
             )
-            messages.warning(request, f"Número incorrecto. Se ha enviado un nuevo código a su correo. Le quedan {intentos} intentos.")
-        except Exception as e:
-            messages.error(request, f"Número incorrecto. No pudimos enviar el nuevo correo. Le quedan {intentos} intentos.")
-        
-        return render(request, 'login.html', {
-            'mostrar_desbloqueo': True,
-            'numeros': numeros,
-            'intentos': intentos,
-        })
+            messages.success(request, f"¡Bienvenido nuevamente, {user.first_name or user.username}! Su sesión ha sido desbloqueada.")
+            if getattr(user, 'usuarioempresa', None):
+                return redirect('core:taquilla_inicio')
+            return redirect('core:inicio')
+        else:
+            # ⭐ FALLÓ
+            intentos -= 1
+            request.session['desbloqueo_intentos'] = intentos
+            request.session['desbloqueo_seleccionados'] = []
+            
+            if intentos <= 0:
+                SesionActiva.objects.filter(id=sesion_id).delete()
+                for key in ['desbloqueo_correcto', 'desbloqueo_sesion_id', 'desbloqueo_intentos', 'desbloqueo_numeros', 'desbloqueo_user_id', 'desbloqueo_seleccionados']:
+                    request.session.pop(key, None)
+                messages.error(request, "Ha agotado sus oportunidades. Su cuenta ha sido bloqueada temporalmente.")
+                return redirect('core:inicio')
+            
+            return render(request, 'login.html', {
+                'form': LoginForm(),  # <-- Agregado
+                'minutos_login': int(obtener_parametro('185', default=2)), # <-- Agregado
+                'mostrar_desbloqueo': True,
+                'numeros': numeros,
+                'intentos': intentos,
+                'seleccionados': seleccionados,
+            })
+    
+    # Si solo ha hecho el primer clic
+    return render(request, 'login.html', {
+        'mostrar_desbloqueo': True,
+        'numeros': numeros,
+        'intentos': intentos,
+        'seleccionados': seleccionados,
+    })
 
 @require_POST
 def reenviar_desbloqueo_view(request):
@@ -3200,13 +3182,18 @@ def reenviar_desbloqueo_view(request):
     try:
         user = User.objects.get(id=user_id)
         
+        # Generar 8 números y 2 correctos en orden
         import random
-        numeros = random.sample(range(100, 999), 3)
-        codigo_correcto = numeros[0]
+        numeros = random.sample(range(100, 999), 8)
+        indices_correctos = random.sample(range(8), 2)
+        codigo_1 = numeros[indices_correctos[0]]
+        codigo_2 = numeros[indices_correctos[1]]
+        codigo_correcto = [codigo_1, codigo_2]
         
         request.session['desbloqueo_correcto'] = codigo_correcto
         request.session['desbloqueo_numeros'] = numeros
-        request.session['desbloqueo_intentos'] = 3
+        request.session['desbloqueo_intentos'] = 2
+        request.session['desbloqueo_seleccionados'] = []
         
         from django.core.mail import send_mail
         from django.conf import settings
@@ -3215,12 +3202,23 @@ def reenviar_desbloqueo_view(request):
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
             <h2 style="color: #003366; text-align: center;">Viba-Web - Seguridad</h2>
             <p>Hola <strong>{user.first_name}</strong>,</p>
-            <p>Se ha generado un nuevo código para desbloquear su sesión. Para continuar, haz clic en el siguiente número en la pantalla del navegador:</p>
-            <div style="text-align: center; margin: 30px 0;">
-                <span style="font-size: 64px; font-weight: bold; color: #003366; background-color: #f4f6f8; padding: 20px 40px; border-radius: 12px; letter-spacing: 8px; border: 2px dashed #003366;">
-                    {codigo_correcto}
-                </span>
-            </div>
+            <p>Se ha generado un nuevo código. Haga clic en estos dos números <strong>en este orden</strong>:</p>
+            <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="margin: 30px 0;">
+                <tr>
+                    <td align="center">
+                        <table role="presentation" border="0" cellpadding="0" cellspacing="0">
+                            <tr>
+                                <td style="padding: 10px;">
+                                    <div style="font-size: 48px; font-weight: bold; color: #003366; background-color: #f4f6f8; padding: 15px 25px; border-radius: 12px; letter-spacing: 4px; border: 2px dashed #003366; text-align: center;">{codigo_1}</div>
+                                </td>
+                                <td style="padding: 10px;">
+                                    <div style="font-size: 48px; font-weight: bold; color: #003366; background-color: #f4f6f8; padding: 15px 25px; border-radius: 12px; letter-spacing: 4px; border: 2px dashed #003366; text-align: center;">{codigo_2}</div>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+            </table>
             <p>Si no fuiste tú, ignora este mensaje y cambia tu contraseña.</p>
             <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
             <p style="color: #666; font-size: 12px; text-align: center;">Viba-Web - Sistema de venta de boletos</p>
@@ -3229,15 +3227,285 @@ def reenviar_desbloqueo_view(request):
         
         send_mail(
             subject='Nuevo código de seguridad - Viba-Web',
-            message=f'Hola {user.first_name},\n\nSe ha generado un nuevo código para desbloquear su sesión.\n\nSu número de desbloqueo es: {codigo_correcto}\n\nHaga clic en este número en la pantalla del navegador.',
+            message=f'Hola {user.first_name},\n\nHaga clic en estos dos números en este orden: {codigo_1} y luego {codigo_2}.',
             from_email=settings.DEFAULT_FROM_EMAIL,
             recipient_list=[user.email],
             html_message=html_content,
             fail_silently=False,
         )
-        
         messages.info(request, "Se ha enviado un nuevo código a su correo.")
+        
+        # ⭐ En lugar de redirigir al login, renderizamos el login con los nuevos números
+        return render(request, 'login.html', {
+            'form': LoginForm(),
+            'mostrar_desbloqueo': True,
+            'numeros': numeros,
+            'intentos': 2,
+            'seleccionados': [],
+            'minutos_login': int(obtener_parametro('185', default=2)),
+        })
+        
     except Exception as e:
         messages.error(request, "No pudimos reenviar el correo. Intente de nuevo.")
+        return redirect('core:login')
     
-    return redirect('core:login')
+# ============================================================
+# FLUJO DE RECUPERACIÓN DE CONTRASEÑA (8 BOTONES)
+# ============================================================
+
+def solicitar_recuperacion_view(request):
+    """
+    Paso 1: el usuario ingresa su email. Si existe, generamos 8 números,
+    elegimos 2 correctos en orden, enviamos email y mostramos el teclado.
+    """
+    if request.user.is_authenticated:
+        return redirect('core:inicio')
+
+    if request.method == 'POST':
+        email = request.POST.get('email', '').strip().lower()
+        if not email:
+            messages.error(request, "Por favor, ingrese su correo electrónico.")
+            return render(request, 'registration/password_reset_form.html', {'email': email})
+
+        user = User.objects.filter(email__iexact=email).first()
+        if not user:
+            # Por seguridad, no revelamos si el email existe o no
+            messages.info(request, "Si el correo está registrado, recibirá un código de verificación.")
+            return redirect('core:password_reset_done')
+
+        # Generar 8 números y 2 correctos en orden
+        numeros = random.sample(range(100, 999), 8)
+        indices_correctos = random.sample(range(8), 2)
+        codigo_1 = numeros[indices_correctos[0]]
+        codigo_2 = numeros[indices_correctos[1]]
+        codigo_correcto = [codigo_1, codigo_2]
+
+        request.session['recuperacion_correcto'] = codigo_correcto
+        request.session['recuperacion_numeros'] = numeros
+        request.session['recuperacion_intentos'] = 2
+        request.session['recuperacion_seleccionados'] = []
+        request.session['recuperacion_user_id'] = user.id
+
+        try:
+            from django.core.mail import send_mail
+            from django.conf import settings
+
+            html_content = f"""
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+                <h2 style="color: #003366; text-align: center;">Viba-Web - Recuperación</h2>
+                <p>Hola <strong>{user.first_name}</strong>,</p>
+                <p>Ha solicitado recuperar su contraseña. Para verificar su identidad, haga clic en estos dos números <strong>en este orden</strong>:</p>
+                
+                <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="margin: 30px 0;">
+                    <tr>
+                        <td align="center">
+                            <table role="presentation" border="0" cellpadding="0" cellspacing="0">
+                                <tr>
+                                    <td style="padding: 10px;">
+                                        <div style="font-size: 48px; font-weight: bold; color: #003366; background-color: #f4f6f8; padding: 15px 25px; border-radius: 12px; letter-spacing: 4px; border: 2px dashed #003366; text-align: center;">
+                                            {codigo_1}
+                                        </div>
+                                    </td>
+                                    <td style="padding: 10px;">
+                                        <div style="font-size: 48px; font-weight: bold; color: #003366; background-color: #f4f6f8; padding: 15px 25px; border-radius: 12px; letter-spacing: 4px; border: 2px dashed #003366; text-align: center;">
+                                            {codigo_2}
+                                        </div>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+
+                <p>Si no fue usted, ignore este mensaje. Su contraseña no cambiará.</p>
+                <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+                <p style="color: #666; font-size: 12px; text-align: center;">Viba-Web - Sistema de venta de boletos</p>
+            </div>
+            """
+
+            send_mail(
+                subject='Recuperación de contraseña - Viba-Web',
+                message=f'Hola {user.first_name},\n\nHaga clic en estos dos números en este orden: {codigo_1} y luego {codigo_2}.',
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[user.email],
+                html_message=html_content,
+                fail_silently=False,
+            )
+            messages.info(request, "Se ha enviado un correo con los números de verificación.")
+        except Exception as e:
+            messages.warning(request, "No pudimos enviar el correo. Use 'Reenviar código'.")
+
+        return render(request, 'verificar_recuperacion.html', {
+            'numeros': numeros,
+            'intentos': 2,
+            'seleccionados': [],
+        })
+
+    # GET: mostrar formulario de email
+    return render(request, 'registration/password_reset_form.html')
+
+
+@require_POST
+def verificar_recuperacion_view(request):
+    codigo = request.POST.get('codigo')
+    codigo_correcto = request.session.get('recuperacion_correcto')
+    user_id = request.session.get('recuperacion_user_id')
+    intentos = request.session.get('recuperacion_intentos', 2)
+    seleccionados = request.session.get('recuperacion_seleccionados', [])
+    numeros = request.session.get('recuperacion_numeros', [])
+
+    if not codigo or not codigo_correcto or not user_id:
+        messages.error(request, "Sesión de recuperación inválida. Intente de nuevo.")
+        return redirect('core:password_reset')
+
+    if intentos <= 0:
+        for key in ['recuperacion_correcto', 'recuperacion_numeros', 'recuperacion_intentos',
+                    'recuperacion_seleccionados', 'recuperacion_user_id', 'recuperacion_autorizado']:
+            request.session.pop(key, None)
+        messages.error(request, "Ha agotado sus oportunidades. Solicite un nuevo código.")
+        return redirect('core:password_reset')
+
+    if codigo not in seleccionados:
+        seleccionados.append(codigo)
+        request.session['recuperacion_seleccionados'] = seleccionados
+
+    if len(seleccionados) == 2:
+        if seleccionados == [str(c) for c in codigo_correcto]:
+            # ⭐ ACERTÓ: marcar autorizado y redirigir a nueva contraseña
+            request.session['recuperacion_autorizado'] = True
+            for key in ['recuperacion_correcto', 'recuperacion_numeros', 'recuperacion_intentos', 'recuperacion_seleccionados']:
+                request.session.pop(key, None)
+            messages.success(request, "Identidad verificada. Ahora puede crear su nueva contraseña.")
+            return redirect('core:nueva_clave')
+        else:
+            intentos -= 1
+            request.session['recuperacion_intentos'] = intentos
+            request.session['recuperacion_seleccionados'] = []
+
+            if intentos <= 0:
+                for key in ['recuperacion_correcto', 'recuperacion_numeros', 'recuperacion_intentos',
+                            'recuperacion_seleccionados', 'recuperacion_user_id']:
+                    request.session.pop(key, None)
+                messages.error(request, "Ha agotado sus oportunidades. Solicite un nuevo código.")
+                return redirect('core:password_reset')
+
+            messages.warning(request, f"Números incorrectos. Le queda {intentos} oportunidad.")
+            return render(request, 'verificar_recuperacion.html', {
+                'numeros': numeros,
+                'intentos': intentos,
+                'seleccionados': [],
+            })
+
+    return render(request, 'verificar_recuperacion.html', {
+        'numeros': numeros,
+        'intentos': intentos,
+        'seleccionados': seleccionados,
+    })
+
+@require_POST
+def reenviar_recuperacion_view(request):
+    user_id = request.session.get('recuperacion_user_id')
+    if not user_id:
+        messages.error(request, "No hay una recuperación pendiente.")
+        return redirect('core:password_reset')
+
+    try:
+        user = User.objects.get(id=user_id)
+        import random
+        numeros = random.sample(range(100, 999), 8)
+        indices_correctos = random.sample(range(8), 2)
+        codigo_1 = numeros[indices_correctos[0]]
+        codigo_2 = numeros[indices_correctos[1]]
+
+        request.session['recuperacion_correcto'] = [codigo_1, codigo_2]
+        request.session['recuperacion_numeros'] = numeros
+        request.session['recuperacion_intentos'] = 2
+        request.session['recuperacion_seleccionados'] = []
+
+        from django.core.mail import send_mail
+        from django.conf import settings
+
+        html_content = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+            <h2 style="color: #003366; text-align: center;">Viba-Web - Recuperación</h2>
+            <p>Hola <strong>{user.first_name}</strong>,</p>
+            <p>Se ha generado un nuevo código. Haga clic en estos dos números <strong>en este orden</strong>:</p>
+            <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="margin: 30px 0;">
+                <tr>
+                    <td align="center">
+                        <table role="presentation" border="0" cellpadding="0" cellspacing="0">
+                            <tr>
+                                <td style="padding: 10px;">
+                                    <div style="font-size: 48px; font-weight: bold; color: #003366; background-color: #f4f6f8; padding: 15px 25px; border-radius: 12px; letter-spacing: 4px; border: 2px dashed #003366; text-align: center;">{codigo_1}</div>
+                                </td>
+                                <td style="padding: 10px;">
+                                    <div style="font-size: 48px; font-weight: bold; color: #003366; background-color: #f4f6f8; padding: 15px 25px; border-radius: 12px; letter-spacing: 4px; border: 2px dashed #003366; text-align: center;">{codigo_2}</div>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+            </table>
+            <p>Si no fue usted, ignore este mensaje.</p>
+            <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+            <p style="color: #666; font-size: 12px; text-align: center;">Viba-Web - Sistema de venta de boletos</p>
+        </div>
+        """
+
+        send_mail(
+            subject='Nuevo código de recuperación - Viba-Web',
+            message=f'Hola {user.first_name},\n\nHaga clic en estos dos números en este orden: {codigo_1} y luego {codigo_2}.',
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user.email],
+            html_message=html_content,
+            fail_silently=False,
+        )
+        messages.info(request, "Se ha enviado un nuevo código a su correo.")
+        
+        # ⭐ En lugar de redirigir, renderizamos verificar_recuperacion con los nuevos números
+        return render(request, 'verificar_recuperacion.html', {
+            'numeros': numeros,
+            'intentos': 2,
+            'seleccionados': [],
+        })
+    except Exception:
+        messages.error(request, "No pudimos reenviar el correo. Intente de nuevo.")
+        return redirect('core:password_reset')
+
+def nueva_clave_view(request):
+    if not request.session.get('recuperacion_autorizado'):
+        messages.error(request, "Debe verificar su identidad primero.")
+        return redirect('core:password_reset')
+
+    user_id = request.session.get('recuperacion_user_id')
+    if not user_id:
+        messages.error(request, "Sesión inválida. Intente de nuevo.")
+        return redirect('core:password_reset')
+
+    if request.method == 'POST':
+        clave1 = request.POST.get('clave1', '')
+        clave2 = request.POST.get('clave2', '')
+
+        if not clave1 or not clave2:
+            messages.error(request, "Debe completar ambos campos.")
+        elif clave1 != clave2:
+            messages.error(request, "Las contraseñas no coinciden.")
+        elif len(clave1) < 8:
+            messages.error(request, "La contraseña debe tener al menos 8 caracteres.")
+        else:
+            try:
+                user = User.objects.get(id=user_id)
+                user.set_password(clave1)
+                user.save()
+
+                # Limpiar sesión de recuperación
+                for key in ['recuperacion_autorizado', 'recuperacion_user_id']:
+                    request.session.pop(key, None)
+
+                messages.success(request, "¡Contraseña actualizada! Ya puede iniciar sesión.")
+                return redirect('core:login')
+            except User.DoesNotExist:
+                messages.error(request, "Usuario no encontrado. Intente de nuevo.")
+                return redirect('core:password_reset')
+
+    return render(request, 'nueva_clave.html')
