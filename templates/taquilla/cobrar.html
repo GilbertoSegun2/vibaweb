@@ -40,41 +40,72 @@
         <!-- REPETIR FORMULARIO POR CADA ASIENTO -->
         {% for a in asientos_con_datos %}
         <div class="card shadow-sm mb-3">
-            <div class="card-header bg-light">
-                <strong>Asiento {{ a.numero }}</strong>
-                {% if a.lado %}<span class="badge bg-secondary">{{ a.lado }}</span>{% endif %}
+            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                <div>
+                    <strong>Asiento {{ a.numero }}</strong>
+                    {% if a.lado %}<span class="badge bg-secondary ms-1">{{ a.lado }}</span>{% endif %}
+                </div>
+                <span class="badge bg-primary" id="subtotal_asiento_{{ a.id }}">
+                    ${{ tarifa.monto_usd|add:valor_seguro|floatformat:2 }}
+                </span>
             </div>
             <div class="card-body">
                 <input type="hidden" name="asientos[]" value="{{ a.id }}">
                 <div class="row mb-3">
                     <div class="col-md-6">
                         <label class="form-label">Cédula (V-XXXX)</label>
-                        <!-- ⭐ AGREGADO: id y onblur para búsqueda -->
                         <input type="text" name="cedula_{{ a.id }}" id="cedula_{{ a.id }}" 
                                class="form-control" required placeholder="Ej: V-12345678"
                                onblur="buscarPasajeroPorCedula('{{ a.id }}')">
                     </div>
                     <div class="col-md-6">
                         <label class="form-label">Teléfono</label>
-                        <!-- ⭐ AGREGADO: id -->
                         <input type="text" name="telefono_{{ a.id }}" id="telefono_{{ a.id }}" 
                                class="form-control" placeholder="0414-1234567">
                     </div>
                 </div>
                 <div class="mb-3">
                     <label class="form-label">Nombre y Apellido</label>
-                    <!-- ⭐ AGREGADO: id -->
                     <input type="text" name="nombre_{{ a.id }}" id="nombre_{{ a.id }}" 
                            class="form-control" required placeholder="Nombre completo">
                 </div>
-                <div class="mb-3">
-                    <label class="form-label">Tipo de Pasajero</label>
-                    <select name="tipo_pasajero_{{ a.id }}" class="form-select tipo-pasajero" onchange="actualizarTotal()">
-                        <option value="normal">Normal</option>
-                        <option value="tercera_edad">Preferencial (3ra edad)</option>
-                        <option value="discapacitado">Preferencial (discapacitado)</option>
-                        <option value="cortesia">Cortesía</option>
-                    </select>
+
+                <!-- TIPO DE PASAJERO Y DESCUENTO MANUAL INDIVIDUAL -->
+                <div class="row g-2 mb-2">
+                    <div class="col-md-5">
+                        <label class="form-label">Tipo de Pasajero</label>
+                        <select name="tipo_pasajero_{{ a.id }}" id="tipo_pasajero_{{ a.id }}" 
+                                class="form-select tipo-pasajero" data-asiento-id="{{ a.id }}" onchange="actualizarTotal()">
+                            <option value="normal">Normal</option>
+                            <option value="tercera_edad">Preferencial (3ra edad)</option>
+                            <option value="discapacitado">Preferencial (discapacitado)</option>
+                            <option value="cortesia">Cortesía</option>
+                        </select>
+                    </div>
+                    <div class="col-md-7">
+                        <label class="form-label">
+                            Descuento Manual 
+                            <small class="text-muted">(opcional, máx. {{ max_descuento_manual|default:100|floatformat:0 }}%)</small>
+                        </label>
+                        <div class="input-group">
+                            <select name="moneda_descuento_{{ a.id }}" id="moneda_descuento_{{ a.id }}" 
+                                    class="form-select" style="max-width: 95px;" onchange="actualizarTotal()">
+                                <option value="usd">USD</option>
+                                <option value="bs">Bs.</option>
+                            </select>
+                            <input type="number" step="0.01" min="0" 
+                                   name="descuento_valor_{{ a.id }}" id="descuento_valor_{{ a.id }}" 
+                                   class="form-control descuento-manual-input" data-asiento-id="{{ a.id }}"
+                                   placeholder="0.00" oninput="actualizarTotal()">
+                        </div>
+                    </div>
+                </div>
+
+                <div id="info_desc_{{ a.id }}" class="small text-danger fw-bold mb-2" style="display: none;"></div>
+                <div id="box_motivo_{{ a.id }}" class="mb-1" style="display: none;">
+                    <input type="text" name="motivo_descuento_{{ a.id }}" id="motivo_descuento_{{ a.id }}" 
+                           class="form-control form-control-sm" maxlength="120" 
+                           placeholder="Motivo o autorización del descuento para este pasajero (opcional)">
                 </div>
             </div>
         </div>
@@ -190,11 +221,12 @@
     const PRECIO_BASE = parseFloat("{{ tarifa.monto_usd|default:0 }}".replace(',', '.')) || 0;
     const SEGURO = parseFloat("{{ valor_seguro|default:0 }}".replace(',', '.')) || 0;
     const TASA_BCV = parseFloat("{{ tasa_bcv|default:'0' }}".replace(',', '.')) || 0;
-    const DESCUENTO_PREFERENCIAL = parseFloat("{{ descuento_preferencial|default:0 }}") || 0;
+    const DESCUENTO_PREFERENCIAL = parseFloat("{{ descuento_preferencial|default:0 }}".replace(',', '.')) || 0;
+    const MAX_DESCUENTO_MANUAL = parseFloat("{{ max_descuento_manual|default:100 }}".replace(',', '.')) || 100;
     const COBRAR_SEGURO_CORTESIA = {{ cobrar_seguro_cortesia|yesno:"true,false" }};
 
     // ============================================================
-    // ⭐ NUEVA FUNCIÓN: BÚSQUEDA AUTOMÁTICA DE PASAJERO POR CÉDULA
+    // ⭐ BÚSQUEDA AUTOMÁTICA DE PASAJERO POR CÉDULA
     // ============================================================
     function buscarPasajeroPorCedula(asientoId) {
         const inputCedula = document.getElementById(`cedula_${asientoId}`);
@@ -202,22 +234,18 @@
         const inputTelefono = document.getElementById(`telefono_${asientoId}`);
         const cedula = inputCedula.value.trim();
 
-        // Si el campo está vacío o el nombre ya está lleno, no hacemos nada
         if (cedula.length < 5 || inputNombre.value.trim() !== '') {
             return;
         }
 
-        // Hacemos la petición al servidor
         fetch(`/taquilla/api/buscar-pasajero/?cedula=${encodeURIComponent(cedula)}`)
             .then(response => response.json())
             .then(data => {
                 if (data.encontrado) {
-                    // Autocompletamos los campos
                     inputNombre.value = data.nombre;
                     inputTelefono.value = data.telefono || '';
                     
-                    // Efecto visual para que el taquillero sepa que se llenó
-                    inputNombre.style.backgroundColor = '#d1e7dd'; // Verde clarito
+                    inputNombre.style.backgroundColor = '#d1e7dd';
                     inputTelefono.style.backgroundColor = '#d1e7dd';
                     
                     setTimeout(() => {
@@ -263,27 +291,82 @@
     function actualizarTotal() {
         const selects = document.querySelectorAll('.tipo-pasajero');
         let totalUSD = 0;
+
         selects.forEach(select => {
+            const asientoId = select.getAttribute('data-asiento-id');
             const tipo = select.value;
+
             let precioUnitario = PRECIO_BASE;
             let seguroUnitario = SEGURO;
+
             if (tipo === 'tercera_edad' || tipo === 'discapacitado') {
                 precioUnitario = PRECIO_BASE * (1 - (DESCUENTO_PREFERENCIAL / 100));
             } else if (tipo === 'cortesia') {
                 precioUnitario = 0;
                 seguroUnitario = COBRAR_SEGURO_CORTESIA ? SEGURO : 0;
             }
-            totalUSD += precioUnitario + seguroUnitario;
+
+            // Leer descuento manual individual de este asiento
+            const monedaSelect = document.getElementById(`moneda_descuento_${asientoId}`);
+            const inputDesc = document.getElementById(`descuento_valor_${asientoId}`);
+            const infoDesc = document.getElementById(`info_desc_${asientoId}`);
+            const boxMotivo = document.getElementById(`box_motivo_${asientoId}`);
+            const badgeSubtotal = document.getElementById(`subtotal_asiento_${asientoId}`);
+
+            let valorDesc = parseFloat(inputDesc.value) || 0;
+            if (valorDesc < 0) {
+                valorDesc = 0;
+                inputDesc.value = '';
+            }
+
+            let descManualUSD = 0;
+            if (valorDesc > 0) {
+                descManualUSD = (monedaSelect.value === 'bs' && TASA_BCV > 0)
+                    ? (valorDesc / TASA_BCV)
+                    : valorDesc;
+            }
+
+            const maxDescPermitidoUSD = precioUnitario * (MAX_DESCUENTO_MANUAL / 100);
+
+            if (valorDesc > 0) {
+                boxMotivo.style.display = 'block';
+                infoDesc.style.display = 'block';
+
+                if (descManualUSD > maxDescPermitidoUSD + 0.001) {
+                    infoDesc.innerText = `⚠️ Supera el máximo (${MAX_DESCUENTO_MANUAL}% = $${maxDescPermitidoUSD.toFixed(2)} / Bs. ${(maxDescPermitidoUSD * TASA_BCV).toFixed(2)}). Se ajustará al máximo.`;
+                    descManualUSD = maxDescPermitidoUSD;
+                } else {
+                    const descBs = descManualUSD * TASA_BCV;
+                    infoDesc.innerText = `Descuento aplicado: -$${descManualUSD.toFixed(2)} USD (Bs. ${descBs.toLocaleString('es-VE', {minimumFractionDigits: 2, maximumFractionDigits: 2})})`;
+                }
+            } else {
+                boxMotivo.style.display = 'none';
+                infoDesc.style.display = 'none';
+                infoDesc.innerText = '';
+            }
+
+            const precioFinalAsiento = Math.max(0, precioUnitario - descManualUSD);
+            const totalAsiento = precioFinalAsiento + seguroUnitario;
+            totalUSD += totalAsiento;
+
+            if (badgeSubtotal) {
+                const totalAsientoBs = totalAsiento * TASA_BCV;
+                badgeSubtotal.innerText = `$${totalAsiento.toFixed(2)} / Bs. ${totalAsientoBs.toLocaleString('es-VE', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+            }
         });
+
         const totalBs = totalUSD * TASA_BCV;
         const totalUSDRedondeado = Math.round(totalUSD * 100) / 100;
         const totalBsRedondeado = Math.round(totalBs * 100) / 100;
+
         const formatoUSD = totalUSDRedondeado.toLocaleString('es-VE', {minimumFractionDigits: 2, maximumFractionDigits: 2});
         const formatoBs = totalBsRedondeado.toLocaleString('es-VE', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
         document.getElementById('total-usd').innerText = formatoUSD;
         document.getElementById('total-bs').innerText = formatoBs;
         document.getElementById('total-cobrar').innerText = formatoUSD;
         document.getElementById('total-cobrar-bs').innerText = formatoBs;
+
         recalcularRestante();
     }
 
@@ -298,7 +381,7 @@
         const metodo = document.getElementById('metodo_pago').value;
         const montoInput = document.getElementById('monto_pago');
         const referencia = document.getElementById('referencia_pago').value;
-        const monto = parseFloat(montoInput.value);
+        const monto = parseFloat(montoInput.value.replace(',', '.'));
         if (!monto || monto <= 0) { alert('Ingrese un monto válido.'); return; }
         let montoUSD = monto, montoBs = 0;
         if (metodo === 'efectivo_bs' || metodo === 'pago_movil' || metodo === 'punto_venta') {

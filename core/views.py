@@ -1331,10 +1331,10 @@ def taquilla_cobrar(request, viaje_id):
 
     viaje = get_object_or_404(Viaje, id=viaje_id)
     
-    Asiento.objects.filter(
-        estado='reservado',
-        reservado_por=request.user
-    ).update(estado='disponible', reservado_por=None, reservado_hasta=None)
+    # ~ Asiento.objects.filter(
+        # ~ estado='reservado',
+        # ~ reservado_por=request.user
+    # ~ ).update(estado='disponible', reservado_por=None, reservado_hasta=None)
     
     destino_id = request.GET.get('destino') or request.POST.get('destino')
     origen_id = request.GET.get('origen') or request.POST.get('origen') or empleado.oficina.id
@@ -1352,6 +1352,7 @@ def taquilla_cobrar(request, viaje_id):
     
     descuento_preferencial = obtener_parametro('174', default=50)
     cobrar_seguro_cortesia = obtener_parametro('175', default=True)
+    max_descuento_manual = obtener_parametro('173', default=100)
     intervalo_renovacion = int(obtener_parametro('114', default=20))
 
     if not tarifa:
@@ -1415,10 +1416,14 @@ def taquilla_cobrar(request, viaje_id):
         if not asientos_ids:
             messages.error(request, "No hay asientos seleccionados.")
             return redirect('core:taquilla_mapa', viaje_id=viaje.id)
-
+ 
         boletos_creados = []
         total_venta_usd = Decimal('0.00')
         total_venta_bs = Decimal('0.00')
+        tasa_dec = Decimal(str(tasa_bcv)) if tasa_bcv else Decimal('0.00')
+        tarifa_orig = Decimal(str(tarifa.monto_usd))
+        seguro_orig = Decimal(str(valor_seguro))
+        max_pct = Decimal(str(max_descuento_manual))
 
         for asiento_id in asientos_ids:
             cedula = request.POST.get(f'cedula_{asiento_id}')
@@ -1431,23 +1436,70 @@ def taquilla_cobrar(request, viaje_id):
                 return redirect(f"/taquilla/viaje/{viaje.id}/cobrar/?destino={destino_id}&origen={origen_id}&" + "&".join([f"asientos[]={aid}" for aid in asientos_ids]))
 
             if tipo == 'cortesia':
-                precio_final = Decimal('0.00')
-                seguro_final = valor_seguro if cobrar_seguro_cortesia else Decimal('0.00')
+                precio_base_tipo = Decimal('0.00')
+                seguro_final = seguro_orig if cobrar_seguro_cortesia else Decimal('0.00')
+                desc_tipo_usd = tarifa_orig
             elif tipo in ['tercera_edad', 'discapacitado']:
-                precio_final = tarifa.monto_usd * (1 - (Decimal(descuento_preferencial) / 100))
-                seguro_final = valor_seguro
+                precio_base_tipo = (tarifa_orig * (Decimal('1') - (Decimal(str(descuento_preferencial)) / Decimal('100')))).quantize(Decimal('0.01'))
+                seguro_final = seguro_orig
+                desc_tipo_usd = tarifa_orig - precio_base_tipo
             else:
-                precio_final = tarifa.monto_usd
-                seguro_final = valor_seguro
+                precio_base_tipo = tarifa_orig
+                seguro_final = seguro_orig
+                desc_tipo_usd = Decimal('0.00')
+
+            # ⭐ DESCUENTO MANUAL INDIVIDUAL PARA ESTE ASIENTO (USD o Bs.)
+            moneda_desc = request.POST.get(f'moneda_descuento_{asiento_id}', 'usd')
+            desc_raw = request.POST.get(f'descuento_valor_{asiento_id}', '').strip()
+            motivo_desc = request.POST.get(f'motivo_descuento_{asiento_id}', '').strip()
+
+            desc_manual_usd = Decimal('0.00')
+            if desc_raw:
+                try:
+                    val_dec = Decimal(desc_raw.replace(',', '.'))
+                    if val_dec > 0:
+                        if moneda_desc == 'bs':
+                            if tasa_dec <= 0:
+                                messages.error(request, "No hay tasa BCV configurada para aplicar descuento en Bs.")
+                                return redirect(f"/taquilla/viaje/{viaje.id}/cobrar/?destino={destino_id}&origen={origen_id}&" + "&".join([f"asientos[]={aid}" for aid in asientos_ids]))
+                            desc_manual_usd = (val_dec / tasa_dec).quantize(Decimal('0.01'))
+                        else:
+                            desc_manual_usd = val_dec.quantize(Decimal('0.01'))
+                except Exception:
+                    messages.error(request, "El monto del descuento manual no es válido.")
+                    return redirect(f"/taquilla/viaje/{viaje.id}/cobrar/?destino={destino_id}&origen={origen_id}&" + "&".join([f"asientos[]={aid}" for aid in asientos_ids]))
+
+            max_desc_permitido = (precio_base_tipo * (max_pct / Decimal('100'))).quantize(Decimal('0.01'))
+            if desc_manual_usd > max_desc_permitido:
+                messages.error(
+                    request,
+                    f"El descuento manual (${desc_manual_usd:.2f}) excede el máximo permitido "
+                    f"({max_pct:.0f}% = ${max_desc_permitido:.2f})."
+                )
+                return redirect(f"/taquilla/viaje/{viaje.id}/cobrar/?destino={destino_id}&origen={origen_id}&" + "&".join([f"asientos[]={aid}" for aid in asientos_ids]))
+
+            precio_final = max(Decimal('0.00'), precio_base_tipo - desc_manual_usd)
+            descuento_total_usd = desc_tipo_usd + desc_manual_usd
+            pct_total = ((descuento_total_usd / tarifa_orig) * Decimal('100')).quantize(Decimal('0.01')) if tarifa_orig > 0 else Decimal('0.00')
 
             total_unitario = precio_final + seguro_final
             total_venta_usd += total_unitario
-            total_venta_bs += (total_unitario * tasa_bcv) if tasa_bcv else Decimal('0.00')
+            total_venta_bs += (total_unitario * tasa_dec).quantize(Decimal('0.01')) if tasa_dec > 0 else Decimal('0.00')
+
+            obs_boleto = ''
+            if desc_manual_usd > 0:
+                desc_bs_txt = (desc_manual_usd * tasa_dec).quantize(Decimal('0.01')) if tasa_dec > 0 else Decimal('0.00')
+                obs_boleto = f"Desc. manual: -${desc_manual_usd:.2f} (Bs. {desc_bs_txt:,.2f})"
+                if motivo_desc:
+                    obs_boleto += f" - {motivo_desc}"
 
             boletos_creados.append({
                 'asiento_id': asiento_id, 'cedula': cedula, 'nombre': nombre,
                 'telefono': telefono, 'tipo': tipo, 'precio': precio_final,
                 'seguro': seguro_final, 'total': total_unitario,
+                'descuento_total_usd': descuento_total_usd,
+                'porcentaje_descuento': min(Decimal('100.00'), pct_total),
+                'observacion': obs_boleto[:200],
             })
 
         try:
@@ -1460,7 +1512,7 @@ def taquilla_cobrar(request, viaje_id):
             return redirect(f"/taquilla/viaje/{viaje.id}/cobrar/?destino={destino_id}&origen={origen_id}&" + "&".join([f"asientos[]={aid}" for aid in asientos_ids]))
 
         total_pagado = sum(float(p['monto_usd']) for p in pagos_lista)
-        if abs(total_pagado - float(total_venta_usd)) > 0.01:
+        if abs(total_pagado - float(total_venta_usd)) > 0.02:
             messages.error(request, f"El total pagado (${total_pagado:.2f}) no coincide con el total a cobrar (${total_venta_usd:.2f}).")
             return redirect(f"/taquilla/viaje/{viaje.id}/cobrar/?destino={destino_id}&origen={origen_id}&" + "&".join([f"asientos[]={aid}" for aid in asientos_ids]))
 
@@ -1491,6 +1543,10 @@ def taquilla_cobrar(request, viaje_id):
 
                 for b in boletos_creados:
                     asiento = Asiento.objects.select_for_update().get(id=b['asiento_id'], viaje=viaje)
+                    if asiento.estado not in ['disponible', 'reservado'] or (
+                        asiento.estado == 'reservado' and asiento.reservado_por and asiento.reservado_por != request.user
+                    ):
+                        raise ValueError(f"El asiento {asiento.numero} ya fue ocupado por otro usuario.")
                     asiento.estado = 'vendido'
                     asiento.reservado_hasta = None
                     asiento.reservado_por = None
@@ -1501,11 +1557,16 @@ def taquilla_cobrar(request, viaje_id):
                         orden_origen=parada_origen.orden,
                         orden_destino=parada_destino.orden,
                         pasajero_cedula=b['cedula'], pasajero_nombre=b['nombre'], pasajero_telefono=b['telefono'],
-                        tipo_pasajero=b['tipo'], monto_tarifa_usd=b['precio'], monto_seguro_usd=b['seguro'],
+                        tipo_pasajero=b['tipo'],
+                        porcentaje_descuento=b['porcentaje_descuento'],
+                        monto_tarifa_usd=b['precio'],
+                        monto_seguro_usd=b['seguro'],
+                        monto_descuento_usd=b['descuento_total_usd'],
                         monto_total_usd=b['total'], tasa_bcv=tasa_bcv,
-                        monto_total_bs=(b['total'] * tasa_bcv).quantize(Decimal('0.01')) if tasa_bcv else 0,
+                        monto_total_bs=(b['total'] * tasa_dec).quantize(Decimal('0.01')) if tasa_dec else 0,
                         codigo_qr=generar_codigo_qr(), estado='vendido', vendido_por=request.user,
                         numero_boleto=generar_numero_boleto(empleado.oficina, es_continuo=obtener_parametro('179', default=False)),
+                        observacion=b['observacion'],
                     )
 
                 minutos_auto = int(obtener_parametro('202', default=15))
@@ -1518,7 +1579,8 @@ def taquilla_cobrar(request, viaje_id):
                         boleto_creado.estado = 'usado'
                         boleto_creado.fecha_chequeo = timezone.now()
                         boleto_creado.chequeado_por = request.user
-                        boleto_creado.observacion = f"Auto-chequeado al vender (faltan {int(minutos_para_salida)} min)."
+                        nota_auto = f"Auto-chequeado al vender (faltan {int(minutos_para_salida)} min)."
+                        boleto_creado.observacion = (f"{boleto_creado.observacion} | {nota_auto}" if boleto_creado.observacion else nota_auto)[:200]
                         boleto_creado.save()
                         
                         asiento_creado = boleto_creado.asiento
@@ -1548,6 +1610,7 @@ def taquilla_cobrar(request, viaje_id):
         'asientos_con_datos': asientos_con_datos, 'total_usd': total_usd, 'total_bs': total_bs,
         'intervalo_renovacion': intervalo_renovacion, 'descuento_preferencial': descuento_preferencial,
         'cobrar_seguro_cortesia': cobrar_seguro_cortesia,
+        'max_descuento_manual': max_descuento_manual,
         'expiracion_iso': expiracion_iso, 'segundos_restantes': segundos_restantes, 'minutos_reserva': minutos_reserva,
         'pisteros': pisteros,
         'origen_nombre': parada_origen.oficina.nombre if parada_origen else '',
