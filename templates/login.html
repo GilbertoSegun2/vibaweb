@@ -11,20 +11,54 @@
                     <i class="bi bi-box-arrow-in-right"></i> Iniciar Sesión
                 </h3>
                 
-                {% if mostrar_confirmacion_email %}
+                {% if mostrar_desbloqueo %}
                 <div class="alert alert-info text-center">
-                    <i class="bi bi-envelope-check-fill fs-3 d-block mb-2"></i>
-                    <h5>Revise su correo electrónico</h5>
-                    <p class="mb-0">Hemos enviado un enlace de confirmación a su correo. Por favor, revise su bandeja de entrada y haga clic en <strong>"Sí soy yo"</strong> para liberar la sesión y poder ingresar.</p>
-                    <p class="small text-muted mt-2">Si no ve el correo, revise la carpeta de spam. Si no tiene acceso a su correo, espere <strong>{{ minutos_login }} minutos</strong> y podrá ingresar automáticamente.</p>
+                    <i class="bi bi-shield-lock-fill fs-3 d-block mb-2"></i>
+                    <h5>Desbloqueo de seguridad</h5>
+                    <p class="mb-2">Se ha enviado un número de 3 cifras a su correo electrónico.</p>
+                    <p class="mb-3"><strong>Haga clic en el número que coincida con el correo.</strong></p>
+                    
+                    <div class="d-flex justify-content-center gap-3 mb-3">
+                        <form method="post" action="{% url 'core:desbloquear_sesion' %}" onsubmit="mostrarCarga('Verificando...', 'Por favor, espere.');">
+                            {% csrf_token %}
+                            <input type="hidden" name="codigo" value="{{ numeros.0 }}">
+                            <button type="submit" class="btn btn-outline-primary btn-lg" style="font-size: 2rem; font-weight: bold; min-width: 100px;">
+                                {{ numeros.0 }}
+                            </button>
+                        </form>
+                        <form method="post" action="{% url 'core:desbloquear_sesion' %}" onsubmit="mostrarCarga('Verificando...', 'Por favor, espere.');">
+                            {% csrf_token %}
+                            <input type="hidden" name="codigo" value="{{ numeros.1 }}">
+                            <button type="submit" class="btn btn-outline-primary btn-lg" style="font-size: 2rem; font-weight: bold; min-width: 100px;">
+                                {{ numeros.1 }}
+                            </button>
+                        </form>
+                        <form method="post" action="{% url 'core:desbloquear_sesion' %}" onsubmit="mostrarCarga('Verificando...', 'Por favor, espere.');">
+                            {% csrf_token %}
+                            <input type="hidden" name="codigo" value="{{ numeros.2 }}">
+                            <button type="submit" class="btn btn-outline-primary btn-lg" style="font-size: 2rem; font-weight: bold; min-width: 100px;">
+                                {{ numeros.2 }}
+                            </button>
+                        </form>
+                    </div>
+                    
+                    <p class="small text-muted mb-2">Si no ve el correo, revise la carpeta de spam.</p>
+                    <p class="small text-warning mb-2"><strong>Intentos restantes: {{ intentos|default:3 }}</strong></p>
+                    
+                    <form method="post" action="{% url 'core:reenviar_desbloqueo' %}" onsubmit="mostrarCarga('Reenviando...', 'Por favor, espere.');">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-outline-secondary btn-sm">
+                            <i class="bi bi-arrow-clockwise"></i> Reenviar código
+                        </button>
+                    </form>
                 </div>
-                
+
                 <div class="text-center mt-4">
                     <a href="{% url 'core:inicio' %}" class="btn btn-secondary px-4">
                         <i class="bi bi-house-door"></i> Volver al Inicio
                     </a>
                 </div>
-                
+
                 {% else %}
 
                     {% if request.GET.next %}

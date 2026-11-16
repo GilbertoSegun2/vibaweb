@@ -24,6 +24,8 @@ urlpatterns = [
     path('timeout-logout/', views.timeout_logout_view, name='timeout_logout'),
     path('desbloquear/solicitar/', views.solicitar_desbloqueo_login, name='solicitar_desbloqueo'),
     path('desbloquear/confirmar/', views.confirmar_desbloqueo_view, name='confirmar_desbloqueo'),
+    path('desbloquear-sesion/', views.desbloquear_sesion_view, name='desbloquear_sesion'),
+    path('reenviar-desbloqueo/', views.reenviar_desbloqueo_view, name='reenviar_desbloqueo'),
 
     # ⭐ FLUJO DE RECUPERACIÓN DE CONTRASEÑA
     path('recuperar-clave/', auth_views.PasswordResetView.as_view(

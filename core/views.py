@@ -292,6 +292,7 @@ def login_view(request):
         if next_url and not any(x in next_url for x in ['/perfil', '/login', '/registro']):
             return redirect(next_url)
         return redirect('core:inicio')
+    
     if request.method == 'POST':
         form = LoginForm(request.POST)
         if form.is_valid():
@@ -299,8 +300,10 @@ def login_view(request):
             password = form.cleaned_data['password']
             if '@' in username:
                 user_obj = User.objects.filter(email=username).first()
-                if user_obj: username = user_obj.username
+                if user_obj: 
+                    username = user_obj.username
             user = authenticate(request, username=username, password=password)
+            
             if user is not None:
                 # ⭐ VERIFICAR SI YA HAY UNA SESIÓN ACTIVA ANTES DE LOGUEAR
                 if not (user.is_staff or user.is_superuser):
@@ -311,48 +314,68 @@ def login_view(request):
                         inactividad = timezone.now() - sesion_existente.ultima_actividad
                         
                         if inactividad < timedelta(minutes=minutos_espera):
-                            # HAY SESIÓN ACTIVA RECIENTE: Generar token y enviar correo
-                            token = uuid.uuid4().hex
-                            sesion_existente.token_desbloqueo = token
-                            sesion_existente.save()
+                            # ⭐ DETECTAR SI ES TAQUILLERO O CLIENTE WEB
+                            es_taquillero = getattr(user, 'usuarioempresa', None) is not None
                             
-                            host_actual = request.get_host()
-                            scheme = 'https' if request.is_secure() else 'http'
-                            base_url = f"{scheme}://{host_actual}"
-
-                            link_si = f"{base_url}/desbloqueo/confirmar/{token}/si/"
-                            link_no = f"{base_url}/desbloqueo/confirmar/{token}/no/"
-                            
-                            try:
-                                from django.core.mail import send_mail
-                                
-                                html_content = render_to_string('email_desbloqueo.html', {
-                                    'user': user,
-                                    'link_si': link_si,
-                                    'link_no': link_no,
-                                })
-                                
-                                send_mail(
-                                    subject='Alerta de seguridad - Viba-Web',
-                                    message=f'Hola {user.first_name},\n\nAlguien está intentando iniciar sesión en tu cuenta.\nSi eres tú, haz clic aquí: {link_si}\nSi no eres tú, haz clic aquí: {link_no}',
-                                    from_email=settings.DEFAULT_FROM_EMAIL,
-                                    recipient_list=[user.email],
-                                    html_message=html_content,
-                                    fail_silently=False,
-                                )
-                                email_oculto = enmascarar_email(user.email)
-                                messages.info(request, f"Estimado usuario: se ha enviado un correo a {email_oculto} para confirmar el inicio de sesión.")
-                                return render(request, 'login.html', {'form': form, 'mostrar_confirmacion_email': True})
-                            except Exception as e:
-                                # ⭐ FALLBACK: Si el correo falla, permitir el login igual
+                            if es_taquillero:
+                                # ⭐ TAQUILLERO: Last-Login-Wins (sin correo, sin números)
+                                sesion_existente.delete()
                                 messages.warning(
                                     request,
-                                    "Estimado usuario: su cuenta está activa en otro dispositivo. "
-                                    "No pudimos enviarle el correo de confirmación (error de red), pero "
-                                    "hemos cerrado la sesión anterior por seguridad. Si no fue usted, "
-                                    "cambie su contraseña inmediatamente."
+                                    "Estimado usuario: su cuenta estaba activa en otro dispositivo. "
+                                    "Por seguridad, hemos cerrado la sesión anterior."
                                 )
-                                sesion_existente.delete()
+                                # El flujo continúa al auth_login (abajo)
+                            else:
+                                # ⭐ CLIENTE WEB: Challenge-Response con 3 números
+                                import random
+                                numeros = random.sample(range(100, 999), 3)
+                                codigo_correcto = numeros[0]
+                                
+                                request.session['desbloqueo_correcto'] = codigo_correcto
+                                request.session['desbloqueo_sesion_id'] = sesion_existente.id
+                                request.session['desbloqueo_intentos'] = 3
+                                request.session['desbloqueo_numeros'] = numeros
+                                request.session['desbloqueo_user_id'] = user.id
+                                
+                                try:
+                                    from django.core.mail import send_mail
+                                    from django.conf import settings
+                                    
+                                    html_content = f"""
+                                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+                                        <h2 style="color: #003366; text-align: center;">Viba-Web - Seguridad</h2>
+                                        <p>Hola <strong>{user.first_name}</strong>,</p>
+                                        <p>Alguien está intentando iniciar sesión en tu cuenta. Para desbloquear la sesión anterior, haz clic en el siguiente número en la pantalla del navegador:</p>
+                                        <div style="text-align: center; margin: 30px 0;">
+                                            <span style="font-size: 64px; font-weight: bold; color: #003366; background-color: #f4f6f8; padding: 20px 40px; border-radius: 12px; letter-spacing: 8px; border: 2px dashed #003366;">
+                                                {codigo_correcto}
+                                            </span>
+                                        </div>
+                                        <p>Si no fuiste tú, ignora este mensaje y cambia tu contraseña.</p>
+                                        <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+                                        <p style="color: #666; font-size: 12px; text-align: center;">Viba-Web - Sistema de venta de boletos</p>
+                                    </div>
+                                    """
+                                    
+                                    send_mail(
+                                        subject='Alerta de seguridad - Viba-Web',
+                                        message=f'Hola {user.first_name},\n\nSu número de desbloqueo es: {codigo_correcto}\n\nHaga clic en este número en la pantalla del navegador.',
+                                        from_email=settings.DEFAULT_FROM_EMAIL,
+                                        recipient_list=[user.email],
+                                        html_message=html_content,
+                                        fail_silently=False,
+                                    )
+                                    messages.info(request, f"Se ha enviado un correo con el número correcto.")
+                                except Exception as e:
+                                    messages.warning(request, "No pudimos enviar el correo. Use 'Reenviar código'.")
+                                
+                                return render(request, 'login.html', {
+                                    'form': form,
+                                    'mostrar_desbloqueo': True,
+                                    'numeros': numeros,
+                                    'intentos': 3,
+                                })
 
                 auth_login(request, user)
                 request.session.set_expiry(0)
@@ -385,7 +408,7 @@ def login_view(request):
                         ultima_actividad=timezone.now()
                     )
                 
-                # ⭐ PRIORIDAD 2: MENSAJES PERSONALIZADOS SEGÚN EL ROL
+                # ⭐ MENSAJES PERSONALIZADOS SEGÚN EL ROL
                 nombre = user.first_name or user.username
                 
                 if getattr(user, 'usuarioempresa', None):
@@ -422,6 +445,7 @@ def login_view(request):
                 messages.error(request, "Estimado usuario: los datos ingresados no coinciden con nuestros registros. Por favor, verifique su usuario y contraseña e intente nuevamente.")
     else:
         form = LoginForm()
+        
     minutos_login = int(obtener_parametro('185', default=2))
     
     return render(request, 'login.html', {
@@ -3062,3 +3086,141 @@ def api_buscar_bus(request):
         'placa': bus.placa,
         'capacidad': bus.capacidad,
     })
+    
+@require_POST
+def desbloquear_sesion_view(request):
+    codigo = request.POST.get('codigo')
+    codigo_correcto = request.session.get('desbloqueo_correcto')
+    sesion_id = request.session.get('desbloqueo_sesion_id')
+    user_id = request.session.get('desbloqueo_user_id')
+    intentos = request.session.get('desbloqueo_intentos', 3)
+
+    if not codigo or not codigo_correcto or not sesion_id or not user_id:
+        messages.error(request, "Sesión de desbloqueo inválida. Intente de nuevo.")
+        return redirect('core:login')
+
+    # ⭐ CASO: SE AGOTARON LOS INTENTOS (3 fallos)
+    if intentos <= 0:
+        # Borrar la sesión vieja y la sesión de desbloqueo
+        SesionActiva.objects.filter(id=sesion_id).delete()
+        request.session.pop('desbloqueo_correcto', None)
+        request.session.pop('desbloqueo_sesion_id', None)
+        request.session.pop('desbloqueo_intentos', None)
+        request.session.pop('desbloqueo_numeros', None)
+        request.session.pop('desbloqueo_user_id', None)
+        messages.error(request, "Ha agotado sus intentos de desbloqueo. Por seguridad, su cuenta ha sido bloqueada temporalmente. Intente más tarde.")
+        return redirect('core:inicio')
+
+    if codigo == str(codigo_correcto):
+        # ⭐ CÓDIGO CORRECTO: borrar la sesión vieja
+        SesionActiva.objects.filter(id=sesion_id).delete()
+        request.session.pop('desbloqueo_correcto', None)
+        request.session.pop('desbloqueo_sesion_id', None)
+        request.session.pop('desbloqueo_intentos', None)
+        request.session.pop('desbloqueo_numeros', None)
+        request.session.pop('desbloqueo_user_id', None)
+        messages.success(request, "Sesión liberada. Ya puede ingresar con su contraseña.")
+        return redirect('core:login')
+    
+    else:
+        # ⭐ CÓDIGO INCORRECTO: restar intento, generar NUEVOS números y enviar correo
+        intentos -= 1
+        request.session['desbloqueo_intentos'] = intentos
+        
+        if intentos <= 0:
+            # Si era el último intento, agotar
+            SesionActiva.objects.filter(id=sesion_id).delete()
+            request.session.pop('desbloqueo_correcto', None)
+            request.session.pop('desbloqueo_sesion_id', None)
+            request.session.pop('desbloqueo_intentos', None)
+            request.session.pop('desbloqueo_numeros', None)
+            request.session.pop('desbloqueo_user_id', None)
+            messages.error(request, "Ha agotado sus intentos de desbloqueo. Por seguridad, su cuenta ha sido bloqueada temporalmente. Intente más tarde.")
+            return redirect('core:inicio')
+        
+        # Generar 3 números nuevos
+        import random
+        numeros = random.sample(range(100, 999), 3)
+        codigo_correcto_nuevo = numeros[0]
+        
+        request.session['desbloqueo_correcto'] = codigo_correcto_nuevo
+        request.session['desbloqueo_numeros'] = numeros
+        
+        # Enviar nuevo correo
+                # Enviar nuevo correo
+        try:
+            from django.core.mail import send_mail
+            from django.conf import settings
+            user = User.objects.get(id=user_id)
+            
+            html_content = f"""
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+                <h2 style="color: #003366; text-align: center;">Viba-Web - Seguridad</h2>
+                <p>Hola <strong>{user.first_name}</strong>,</p>
+                <p>Se ha generado un nuevo código para desbloquear su sesión. Para continuar, haz clic en el siguiente número en la pantalla del navegador:</p>
+                <div style="text-align: center; margin: 30px 0;">
+                    <span style="font-size: 64px; font-weight: bold; color: #003366; background-color: #f4f6f8; padding: 20px 40px; border-radius: 12px; letter-spacing: 8px; border: 2px dashed #003366;">
+                        {codigo_correcto_nuevo}
+                    </span>
+                </div>
+                <p>Le quedan <strong>{intentos} intentos</strong>.</p>
+                <p>Si no fuiste tú, ignora este mensaje y cambia tu contraseña.</p>
+                <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+                <p style="color: #666; font-size: 12px; text-align: center;">Viba-Web - Sistema de venta de boletos</p>
+            </div>
+            """
+            
+            send_mail(
+                subject='Nuevo código de seguridad - Viba-Web',
+                message=f'Hola {user.first_name},\n\nSe ha generado un nuevo código para desbloquear su sesión.\n\nSu número de desbloqueo es: {codigo_correcto_nuevo}\n\nLe quedan {intentos} intentos.',
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[user.email],
+                html_message=html_content,
+                fail_silently=False,
+            )
+            messages.warning(request, f"Número incorrecto. Se ha enviado un nuevo código a su correo. Le quedan {intentos} intentos.")
+        except Exception as e:
+            messages.error(request, f"Número incorrecto. No pudimos enviar el nuevo correo. Le quedan {intentos} intentos.")
+        
+        return render(request, 'login.html', {
+            'mostrar_desbloqueo': True,
+            'numeros': numeros,
+            'intentos': intentos,
+        })
+
+@require_POST
+def reenviar_desbloqueo_view(request):
+    sesion_id = request.session.get('desbloqueo_sesion_id')
+    user_id = request.session.get('desbloqueo_user_id')
+    
+    if not sesion_id or not user_id:
+        messages.error(request, "No hay un desbloqueo pendiente.")
+        return redirect('core:login')
+    
+    try:
+        user = User.objects.get(id=user_id)
+        
+        import random
+        numeros = random.sample(range(100, 999), 3)
+        codigo_correcto = numeros[0]
+        
+        request.session['desbloqueo_correcto'] = codigo_correcto
+        request.session['desbloqueo_numeros'] = numeros
+        request.session['desbloqueo_intentos'] = 3
+        
+        from django.core.mail import send_mail
+        from django.conf import settings
+        
+        send_mail(
+            subject='Nuevo código de seguridad - Viba-Web',
+            message=f'Hola {user.first_name},\n\nSe ha generado un nuevo código para desbloquear su sesión.\nHaga clic en el número {codigo_correcto} en la pantalla del navegador.',
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user.email],
+            fail_silently=False,
+        )
+        
+        messages.info(request, "Se ha enviado un nuevo código a su correo.")
+    except Exception as e:
+        messages.error(request, "No pudimos reenviar el correo. Intente de nuevo.")
+    
+    return redirect('core:login')
