@@ -94,18 +94,41 @@
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="menuPrincipal">
-                                <ul class="navbar-nav ms-auto align-items-center">
+                <ul class="navbar-nav ms-auto align-items-center">
                     <!-- ================= ENLACES DE NAVEGACIÓN ================= -->
                     <li class="nav-item">
-                        <a class="nav-link" href="{% if user.usuarioempresa %}/taquilla/{% else %}/{% endif %}">Inicio</a>
+                        <a class="nav-link" href="{% if user.is_authenticated and user.usuarioempresa and user.usuarioempresa.activo %}{% url 'core:taquilla_inicio' %}{% else %}/{% endif %}">
+                            Inicio
+                        </a>
                     </li>
+
+                    {% if user.is_authenticated and user.usuarioempresa and user.usuarioempresa.activo %}
+                        <li class="nav-item">
+                            <a class="nav-link" href="{% url 'core:taquilla_liquidar' %}">
+                                <i class="bi bi-cash-stack"></i> Liquidar
+                            </a>
+                        </li>
+
+                        {% if user.usuarioempresa.rol == 'admin_oficina' or user.is_superuser %}
+                            <!-- Espacio reservado para futuras opciones de gerencia de oficina (ej. Crear salidas / Reportes) -->
+                        {% endif %}
+                    {% endif %}
+
                     <li class="nav-item">
                         <a class="nav-link" href="/ayuda/"><i class="bi bi-question-circle"></i> Ayuda</a>
                     </li>
 
                     {% if user.is_authenticated %}
+                        {% if user.usuarioempresa and user.usuarioempresa.activo %}
+                            <li class="nav-item d-none d-lg-block mx-1">
+                                <span class="badge bg-light text-dark fw-semibold">
+                                    {{ user.usuarioempresa.get_rol_display }} · {{ user.usuarioempresa.oficina.codigo }}
+                                </span>
+                            </li>
+                        {% endif %}
+
                         <li class="nav-item">
-                            <a class="nav-link" href="{% if user.usuarioempresa %}/taquilla/{% else %}/perfil/{% endif %}">
+                            <a class="nav-link" href="{% if user.usuarioempresa and user.usuarioempresa.activo %}{% url 'core:taquilla_inicio' %}{% else %}/perfil/{% endif %}">
                                 <i class="bi bi-person-circle"></i> {{ user.first_name|default:user.username }}
                             </a>
                         </li>
@@ -121,7 +144,7 @@
                             </a>
                         </li>
                         {% endif %}
-                    
+
                     {% else %}
                         <!-- ================= SEPARADOR VISUAL ================= -->
                         <li class="nav-item d-none d-lg-block mx-2">
@@ -129,18 +152,15 @@
                         </li>
 
                         <!-- ================= BOTONES DE ACCIÓN ================= -->
-                        
-                        <!-- 1. Botón Iniciar Sesión - Texto limpio -->
                         <li class="nav-item d-flex align-items-center me-3">
                             <a class="nav-link text-white fw-bold" href="/login/">
                                 Iniciar Sesión
                             </a>
                         </li>
 
-                        <!-- 2. Botón Descargar - Única Píldora Blanca -->
                         <li class="nav-item d-none d-flex align-items-center" id="btn-instalar-pwa-li">
-                            <a class="nav-link rounded-pill px-3 py-1 fw-bold d-flex align-items-center gap-2" 
-                               href="#" id="btn-instalar-pwa" 
+                            <a class="nav-link rounded-pill px-3 py-1 fw-bold d-flex align-items-center gap-2"
+                               href="#" id="btn-instalar-pwa"
                                style="font-size: 0.85rem; color: #333333; background-color: #ffffff; border: none; transition: all 0.3s ease;"
                                onmouseover="this.style.backgroundColor='#f8f9fa';"
                                onmouseout="this.style.backgroundColor='#ffffff';">
@@ -204,9 +224,60 @@
     <!-- ============================================================ -->
     <!-- SCRIPTS                                                      -->
     <!-- ============================================================ -->
-    
+
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- ⭐ MÁSCARA NUMÉRICA ESTILO BANCO (DERECHA A IZQUIERDA) -->
+    <script>
+    document.addEventListener('DOMContentLoaded', function () {
+        
+        function formatearEstiloBanco(valorRaw) {
+            let soloDigitos = valorRaw.replace(/\D/g, '');
+            if (!soloDigitos) return '0.00';
+            
+            let numeroEntero = parseInt(soloDigitos, 10);
+            let strPadded = numeroEntero.toString().padStart(3, '0');
+            
+            let parteEntera = strPadded.slice(0, -2);
+            let parteDecimal = strPadded.slice(-2);
+            
+            return `${parteEntera}.${parteDecimal}`;
+        }
+
+        // Escucha cualquier escritura en inputs con la clase .monto-banco
+        document.addEventListener('input', function (e) {
+            if (e.target && e.target.classList.contains('monto-banco')) {
+                e.target.value = formatearEstiloBanco(e.target.value);
+                
+                // Dispara el recálculo correspondiente según la pantalla activa
+                if (typeof recalcularTotal === 'function') {
+                    recalcularTotal();
+                }
+                if (typeof actualizarTotal === 'function') {
+                    actualizarTotal();
+                }
+            }
+        });
+
+        // Al enfocar el campo, asegurar formato 0.00 y mover cursor al final
+        document.addEventListener('focusin', function (e) {
+            if (e.target && e.target.classList.contains('monto-banco')) {
+                if (!e.target.value) e.target.value = '0.00';
+                setTimeout(() => {
+                    e.target.setSelectionRange(e.target.value.length, e.target.value.length);
+                }, 0);
+            }
+        });
+
+        // Mantener siempre el cursor al final al hacer clic
+        document.addEventListener('click', function (e) {
+            if (e.target && e.target.classList.contains('monto-banco')) {
+                e.target.setSelectionRange(e.target.value.length, e.target.value.length);
+            }
+        });
+    });
+    </script>
 
     <!-- ⭐ FUNCIONES DEL OVERLAY GLOBAL -->
     <script>
@@ -350,7 +421,7 @@
     }
     </script>
     
-        <!-- ============================================================ -->
+    <!-- ============================================================ -->
     <!-- PWA: REGISTRO Y LÓGICA DE INSTALACIÓN GLOBAL (BLINDADO)      -->
     <!-- ============================================================ -->
     <script>

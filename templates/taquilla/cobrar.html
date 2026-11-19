@@ -93,10 +93,12 @@
                                 <option value="usd">USD</option>
                                 <option value="bs">Bs.</option>
                             </select>
-                            <input type="number" step="0.01" min="0" 
+                            <!-- ⭐ ENTRADA ESTILO BANCO APLICADA -->
+                            <input type="text" inputmode="numeric" 
                                    name="descuento_valor_{{ a.id }}" id="descuento_valor_{{ a.id }}" 
-                                   class="form-control descuento-manual-input" data-asiento-id="{{ a.id }}"
-                                   placeholder="0.00" oninput="actualizarTotal()">
+                                   class="form-control text-end fw-bold descuento-manual-input monto-banco" 
+                                   data-asiento-id="{{ a.id }}"
+                                   placeholder="0.00" value="0.00">
                         </div>
                     </div>
                 </div>
@@ -145,7 +147,10 @@
                     </div>
                     <div class="col-md-3">
                         <label class="form-label fw-bold">Monto</label>
-                        <input type="text" id="monto_pago" class="form-control" placeholder="0.00">
+                        <!-- ⭐ ENTRADA ESTILO BANCO APLICADA -->
+                        <input type="text" inputmode="numeric" id="monto_pago" 
+                               class="form-control text-end fw-bold monto-banco" 
+                               placeholder="0.00" value="0.00">
                     </div>
                     <div class="col-md-3" id="campo_referencia" style="display:none;">
                         <label class="form-label fw-bold">Referencia</label>
@@ -316,7 +321,7 @@
             let valorDesc = parseFloat(inputDesc.value) || 0;
             if (valorDesc < 0) {
                 valorDesc = 0;
-                inputDesc.value = '';
+                inputDesc.value = '0.00';
             }
 
             let descManualUSD = 0;
@@ -393,7 +398,8 @@
         }
         pagos.push({ metodo, monto_usd: montoUSD.toFixed(2), monto_bs: montoBs.toFixed(2), referencia: referencia || '' });
         actualizarTablaPagos();
-        montoInput.value = '';
+        // ⭐ REINICIAR LIMPIO EN 0.00 PARA EL SIGUIENTE ABONO
+        montoInput.value = '0.00';
         document.getElementById('referencia_pago').value = '';
     }
 

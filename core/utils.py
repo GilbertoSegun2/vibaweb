@@ -232,27 +232,62 @@ def asiento_esta_disponible_en_tramo(asiento_id, viaje_id, nuevo_orden_origen, n
     
 def verificar_y_actualizar_bcv_automatico():
     """
-    Verifica si la tasa del BCV del día actual en Venezuela ya fue actualizada.
-    Si es un nuevo día, ejecuta el comando de actualización automáticamente.
+    Verifica la tasa BCV vigente para el día actual en Venezuela.
+    - Si ya cambió el día (ej. llegó las 00:01 AM) y hay una tasa programada, la activa automáticamente.
+    - Si falta la tasa del día, intenta consultar el BCV.
     """
     from django.core.management import call_command
     from django.utils import timezone
+    from datetime import timedelta
     from .models import Parametro
     
     try:
         ahora_ve = timezone.localtime(timezone.now())
         hoy_str = ahora_ve.strftime('%Y-%m-%d')
         
-        # Leer la fecha de la última actualización guardada en el parámetro '108'
+        # 1. Verificar la fecha de la tasa vigente actual (Parámetro 108)
         param_fecha = Parametro.objects.filter(codigo='108').first()
-        ultima_fecha = param_fecha.valor_texto if param_fecha else None
+        fecha_vigente = param_fecha.valor_texto if param_fecha else None
         
-        # Si no hay fecha registrada o la última fecha es de un día anterior, actualizamos
-        if not ultima_fecha or not ultima_fecha.startswith(hoy_str):
-            call_command('actualizar_bcv')
+        # Si la tasa vigente NO es la de hoy (es de un día anterior)
+        if not fecha_vigente or fecha_vigente != hoy_str:
+            # 2. Buscar si tenemos una tasa programada para hoy (Parámetro 109 y 110)
+            param_prog_f = Parametro.objects.filter(codigo='110').first()
+            fecha_prog = param_prog_f.valor_texto if param_prog_f else None
+            
+            param_prog = Parametro.objects.filter(codigo='109', activo=True).first()
+            
+            if param_prog and fecha_prog == hoy_str and param_prog.valor_numerico:
+                # ¡Llegó el nuevo día! Promovemos la tasa programada a tasa vigente oficial (Parámetro 107 y 108)
+                param_tasa, _ = Parametro.objects.get_or_create(
+                    codigo='107',
+                    defaults={'descripcion': 'Tasa BCV del día (Bs. por USD)', 'tipo': 'numero', 'activo': True}
+                )
+                param_tasa.valor_numerico = param_prog.valor_numerico
+                param_tasa.save()
+                
+                if not param_fecha:
+                    param_fecha = Parametro.objects.create(
+                        codigo='108', descripcion='Fecha a la que corresponde la tasa BCV', tipo='texto', activo=True
+                    )
+                param_fecha.valor_texto = hoy_str
+                param_fecha.save()
+                
+                print(f"✅ Tasa BCV activada automáticamente para hoy ({hoy_str}): {param_prog.valor_numerico}")
+            else:
+                # Si no hay tasa programada para hoy, intentamos consultar al BCV
+                call_command('actualizar_bcv')
+                
+        # 3. Si ya tenemos la tasa de hoy vigente, pero ya son las 4 PM o más de hoy,
+        # asegurémonos de descargar la tasa para mañana y guardarla como programada.
+        if ahora_ve.hour >= 16:
+            mañana_str = (ahora_ve.date() + timedelta(days=1)).strftime('%Y-%m-%d')
+            param_prog_f = Parametro.objects.filter(codigo='110').first()
+            if not param_prog_f or param_prog_f.valor_texto != mañana_str:
+                call_command('actualizar_bcv')
+                
     except Exception as e:
-        # Capturamos cualquier error de red o del BCV para que la web siga funcionando sin bloquearse
-        print(f"Aviso: No se pudo actualizar la tasa BCV automáticamente: {e}")
+        print(f"Aviso: No se pudo verificar o actualizar la tasa BCV automáticamente: {e}")
         
 def generar_numero_boleto(oficina, es_continuo=False):
     """

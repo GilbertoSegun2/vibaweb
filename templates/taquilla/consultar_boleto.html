@@ -10,21 +10,18 @@
     </div>
 
     <!-- Buscador (Solo Número de Boleto) -->
-    <div class="card shadow-sm mb-4">
-        <div class="card-body">
-            <form method="get" class="row g-3 align-items-end">
-                <div class="col-md-8">
-                    <label class="form-label fw-bold">Número de Boleto</label>
-                    <input type="text" name="q" class="form-control form-control-lg" 
-                           placeholder="Ej: 005-000123" 
-                           value="{{ busqueda }}" autofocus>
-                </div>
-                <div class="col-md-4">
-                    <button type="submit" class="btn btn-primary btn-lg w-100"><i class="bi bi-search"></i> Buscar</button>
-                </div>
-            </form>
+    <form method="get" class="row g-3 align-items-end" onsubmit="normalizarBoletoAntesDeBuscar()">
+        <div class="col-md-8">
+            <label class="form-label fw-bold">Número de Boleto</label>
+            <input type="text" name="q" id="input-boleto" class="form-control form-control-lg" 
+                   placeholder="Ej: 005-000123 o 123" 
+                   value="{{ busqueda }}" autofocus
+                   onblur="formatearNumeroBoleto()">
         </div>
-    </div>
+        <div class="col-md-4">
+            <button type="submit" class="btn btn-primary btn-lg w-100"><i class="bi bi-search"></i> Buscar</button>
+        </div>
+    </form>
 
     {% if busqueda %}
         {% if not boleto %}
@@ -66,19 +63,19 @@
 
                     <hr>
                     <div class="d-flex gap-2 justify-content-center">
-                        {% if boleto.estado == 'usado' %}
-                        <button class="btn btn-warning btn-lg" data-bs-toggle="modal" data-bs-target="#modalActivar">
+                        {% if boleto.estado == 'usado' or boleto.estado == 'liquidado' %}
+                        <button type="button" class="btn btn-warning btn-lg" data-bs-toggle="modal" data-bs-target="#modalActivar">
                             <i class="bi bi-arrow-counterclockwise"></i> Activar (Regresar a Vendido)
                         </button>
                         {% endif %}
                         
                         {% if boleto.estado == 'vendido' %}
-                        <button class="btn btn-danger btn-lg" data-bs-toggle="modal" data-bs-target="#modalAnular">
+                        <button type="button" class="btn btn-danger btn-lg" data-bs-toggle="modal" data-bs-target="#modalAnular">
                             <i class="bi bi-x-circle"></i> Anular Boleto
                         </button>
                         {% endif %}
                         
-                        {% if boleto.estado != 'vendido' and boleto.estado != 'usado' %}
+                        {% if boleto.estado != 'vendido' and boleto.estado != 'usado' and boleto.estado != 'liquidado' %}
                         <div class="alert alert-info text-center w-100 mb-0">
                             <i class="bi bi-info-circle"></i> 
                             Este boleto está en estado <strong>{{ boleto.get_estado_display }}</strong>. No se puede anular ni reactivar.
@@ -172,4 +169,34 @@
         </div>
     </div>
 </div>
+
+<script>
+const CODIGO_OFICINA_BOLETO = "{{ request.user.usuarioempresa.oficina.codigo|default:'005' }}";
+
+function formatearNumeroBoleto() {
+    const inp = document.getElementById('input-boleto');
+    if (!inp) return;
+    const raw = inp.value.trim();
+    if (!raw) return;
+
+    if (raw.includes('-')) {
+        const partes = raw.split('-');
+        const prefijo = (partes[0] || CODIGO_OFICINA_BOLETO).trim();
+        const nums = (partes[1] || '').replace(/\D/g, '');
+        if (nums) {
+            inp.value = `${prefijo}-${nums.padStart(6, '0')}`;
+        }
+        return;
+    }
+
+    const soloDigitos = raw.replace(/\D/g, '');
+    if (soloDigitos) {
+        inp.value = `${CODIGO_OFICINA_BOLETO}-${soloDigitos.padStart(6, '0')}`;
+    }
+}
+
+function normalizarBoletoAntesDeBuscar() {
+    formatearNumeroBoleto();
+}
+</script>
 {% endblock %}

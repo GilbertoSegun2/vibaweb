@@ -1,38 +1,43 @@
-from datetime import datetime
-from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout
-from django.contrib.auth import logout
-from django.contrib.auth.decorators import login_required
-from django.contrib.auth.models import User
-from django.contrib import messages
-from django.http import JsonResponse
-from django.views.decorators.http import require_POST
-from django.db import transaction
-from django.db.models import Q
-from django.utils import timezone
-from datetime import timedelta
-from decimal import Decimal
+# ─────────── STDLIB ───────────
 import json
 import uuid
 import random
-import resend
-from django.conf import settings
-from django.template.loader import render_to_string
+from datetime import datetime, timedelta
+from decimal import Decimal
 
+# ─────────── DJANGO ───────────
+from django.conf import settings
+from django.contrib import messages
+from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout, logout
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.models import User
+from django.db import transaction
+from django.db.models import Q, Count
+from django.http import JsonResponse
+from django.shortcuts import render, redirect, get_object_or_404
+from django.template.loader import render_to_string
+from django.urls import reverse                                 # ⭐ NUEVO
+from django.utils import timezone
+from django.views.decorators.http import require_POST
+
+# ─────────── TERCEROS ───────────
+import resend
+
+# ─────────── LOCALES ───────────
 from .models import (
     Oficina, Viaje, Asiento, Transaccion, Pago, Boleto, Tarifa, Bus,
-    MovimientoAsiento, UsuarioEmpresa, Cliente, Credito, 
+    MovimientoAsiento, UsuarioEmpresa, Cliente, Credito,
     PlantillaBus, PlantillaAsiento, Ruta, RutaParada, Suscripcion,
     Pistero, SesionActiva, Conductor, Liquidacion, GastoLiquidacion,
-    TipoGasto,
+    TipoGasto, Parametro, PasajeroListinMenor,
 )
 from .forms import RegistroForm, LoginForm, PagoWebForm, PasajeroForm, PasarelaVirtualForm
-
 from .utils import (
     obtener_parametro, liberar_reservas_vencidas, generar_codigo_transaccion,
     generar_codigo_qr, asiento_esta_disponible_en_tramo,
     generar_numero_boleto, generar_imagen_qr_base64, enmascarar_email,
 )
+
 
 # ============================================================
 # FUNCIONES AUXILIARES DE SEGURIDAD Y TRAMOS
@@ -1252,11 +1257,25 @@ def taquilla_mapa(request, viaje_id):
     liberar_reservas_vencidas(viaje=viaje, usuario=request.user)
 
     origen_id = request.GET.get('origen', empleado.oficina.id)
+    
+    # ⭐ GESTIÓN SEGURA E INMUTABLE DEL DESTINO DE VENTA
     destino_id = request.GET.get('destino')
     
     if not destino_id:
-        messages.error(request, "No se seleccionó un destino.")
-        return redirect('core:taquilla_inicio')
+        # Intentamos recuperarlo de la sesión de este viaje específico si el taquillero navega (ej. al escáner)
+        destino_id = request.session.get(f'taquilla_destino_{viaje_id}')
+
+    if not destino_id:
+        # Rescate automático absoluto (primer ingreso): toma el ÚLTIMO destino de la ruta del viaje
+        ultimo_destino = viaje.ruta.paradas.exclude(oficina_id=origen_id).last()
+        if ultimo_destino:
+            destino_id = ultimo_destino.oficina_id
+        else:
+            messages.error(request, "No se seleccionó un destino.")
+            return redirect('core:taquilla_inicio')
+
+    # Guardamos/fijamos el destino en la sesión para que se mantenga inmutable durante la venta/chequeo
+    request.session[f'taquilla_destino_{viaje_id}'] = destino_id
 
     parada_origen = viaje.ruta.paradas.filter(oficina_id=origen_id).first()
     parada_destino = viaje.ruta.paradas.filter(oficina_id=destino_id).first()
@@ -1302,6 +1321,8 @@ def taquilla_mapa(request, viaje_id):
 
     expiracion_iso = expira_en.isoformat()
     segundos_restantes = max(0, int((expira_en - tiempo_actual).total_seconds()))
+    hoy_local = timezone.localtime(timezone.now()).date()
+    puede_vender = (viaje.fecha >= hoy_local)
 
     return render(request, 'detalle_viaje.html', {
         'viaje': viaje,
@@ -1318,6 +1339,7 @@ def taquilla_mapa(request, viaje_id):
         'origen_nombre': parada_origen.oficina.nombre if parada_origen else '',
         'destino_nombre': parada_destino.oficina.nombre if parada_destino else '',
         'expiracion_iso': expiracion_iso,
+        'puede_vender': puede_vender,
     })
 
 def taquilla_cobrar(request, viaje_id):
@@ -2103,8 +2125,6 @@ def cancelar_registro(request):
     messages.info(request, "El registro ha sido cancelado.")
     return redirect('core:inicio')
     
-from django.db.models import Count
-
 def api_destinos_populares(request):
     origen_id = request.GET.get('origen_id')
     if not origen_id:
@@ -2535,158 +2555,7 @@ def taquilla_api_desbloquear_asientos(request):
         return JsonResponse({'ok': True, 'mensaje': f'{desbloqueados} asiento(s) desbloqueado(s) exitosamente.'})
     except Exception as e:
         return JsonResponse({'ok': False, 'error': str(e)}, status=500)
-
-@login_required
-def taquilla_liquidar(request):
-    try:
-        empleado = request.user.usuarioempresa
-    except UsuarioEmpresa.DoesNotExist:
-        messages.error(request, "No tiene permisos.")
-        return redirect('core:inicio')
-
-    porcentaje_empresa = Decimal(str(obtener_parametro('201', default=20)))
-    tasa_bcv = Decimal(str(obtener_parametro('107', default=0)))
     
-    if request.method == 'POST':
-        bus_id = request.POST.get('bus_id')
-        viaje_id = request.POST.get('viaje_id')
-        conductores_nombres = request.POST.get('conductores_nombres')
-        observacion = request.POST.get('observacion', '')
-        
-        if not bus_id or not viaje_id:
-            messages.error(request, "Debe seleccionar un bus y un viaje.")
-            return redirect('core:taquilla_liquidar')
-        
-        try:
-            with transaction.atomic():
-                bus = Bus.objects.get(id=bus_id)
-                viaje = Viaje.objects.get(id=viaje_id)
-                
-                # 1. Traer TODOS los boletos usados del viaje
-                todos_los_boletos = Boleto.objects.filter(
-                    viaje=viaje, estado='usado'
-                ).select_related('transaccion', 'transaccion__oficina_venta')
-                
-                if not todos_los_boletos.exists():
-                    messages.warning(request, "No hay boletos escaneados para liquidar.")
-                    return redirect('core:taquilla_liquidar')
-                
-                # 2. Cálculos Base
-                total_bruto_usd = sum(b.monto_total_usd for b in todos_los_boletos)
-                total_bruto_bs = total_bruto_usd * tasa_bcv
-                monto_empresa_usd = total_bruto_usd * (porcentaje_empresa / 100)
-                
-                # 3. Gastos Administrativos (Antes del %)
-                gastos_admin = request.POST.getlist('gasto_admin_monto[]')
-                conceptos_admin = request.POST.getlist('gasto_admin_concepto[]')
-                total_gastos_admin = sum(Decimal(m) for m in gastos_admin if m)
-                
-                # 4. Descuentos de Salida (Después del %)
-                gastos_salida = request.POST.getlist('gasto_salida_monto[]')
-                conceptos_salida = request.POST.getlist('gasto_salida_concepto[]')
-                total_gastos_salida = sum(Decimal(m) for m in gastos_salida if m)
-                
-                # 5. Cálculo Neto (como en VFP)
-                # Neto = Bruto - GastosAdmin - %Empresa - GastosSalida
-                neto_usd = total_bruto_usd - total_gastos_admin - monto_empresa_usd - total_gastos_salida
-                neto_bs = neto_usd * tasa_bcv
-                
-                # 6. Generar número correlativo
-                ultima_liq = Liquidacion.objects.filter(oficina_liquidacion=empleado.oficina).order_by('-id').first()
-                nuevo_num = int(ultima_liq.numero_liquidacion.split('-')[1]) + 1 if ultima_liq else 1
-                numero_liq = f"{empleado.oficina.codigo}-{nuevo_num:06d}"
-                
-                # 7. Crear la Liquidación
-                liquidacion = Liquidacion.objects.create(
-                    numero_liquidacion=numero_liq, viaje=viaje, bus=bus,
-                    oficina_liquidacion=empleado.oficina, dueno=bus.empresa,
-                    conductores_nombres=conductores_nombres,
-                    total_bruto_usd=total_bruto_usd, total_bruto_bs=total_bruto_bs,
-                    porcentaje_empresa=porcentaje_empresa, monto_porcentaje_empresa_usd=monto_empresa_usd,
-                    total_gastos_antes_usd=total_gastos_admin, total_gastos_despues_usd=total_gastos_salida,
-                    neto_a_pagar_usd=neto_usd, neto_a_pagar_bs=neto_bs,
-                    liquidado_por=request.user, observacion=observacion
-                )
-                
-                # 8. Guardar el detalle de los gastos
-                for i, c in enumerate(conceptos_admin):
-                    m = gastos_admin[i] if i < len(gastos_admin) else 0
-                    if m: GastoLiquidacion.objects.create(liquidacion=liquidacion, concepto=c, monto_usd=Decimal(m), tipo='antes')
-                    
-                for i, c in enumerate(conceptos_salida):
-                    m = gastos_salida[i] if i < len(gastos_salida) else 0
-                    if m: GastoLiquidacion.objects.create(liquidacion=liquidacion, concepto=c, monto_usd=Decimal(m), tipo='despues')
-                
-                # 9. Marcar los boletos como liquidados
-                todos_los_boletos.update(estado='liquidado')
-                
-                messages.success(request, f"Liquidación {numero_liq} generada exitosamente.")
-                return redirect('core:taquilla_liquidacion_detalle', liquidacion.id)
-        except Exception as e:
-            messages.error(request, f"Error al liquidar: {str(e)}")
-            return redirect('core:taquilla_liquidar')
-    
-    # GET: Cargar los datos
-    hoy = timezone.localtime(timezone.now()).date()
-    viajes = Viaje.objects.filter(fecha=hoy, estado='programado').order_by('hora')
-    viaje_id_preseleccionado = request.GET.get('viaje_id')
-    
-    return render(request, 'taquilla/liquidar.html', {
-        'viajes': viajes,
-        'porcentaje_empresa': porcentaje_empresa,
-        'viaje_id_preseleccionado': viaje_id_preseleccionado,
-        'empleado': empleado,
-        'tasa_bcv': tasa_bcv,
-        'gastos_antes': TipoGasto.objects.filter(tipo='antes', activo=True),
-        'gastos_despues': TipoGasto.objects.filter(tipo='despues', activo=True),
-    })
-    
-@login_required
-def api_datos_liquidacion(request):
-    if not hasattr(request.user, 'usuarioempresa'):
-        return JsonResponse({'ok': False, 'error': 'No autorizado'}, status=403)
-    
-    viaje_id = request.GET.get('viaje_id')
-    if not viaje_id:
-        return JsonResponse({'ok': False, 'error': 'Falta viaje_id'}, status=400)
-    
-    try:
-        empleado = request.user.usuarioempresa
-        viaje = Viaje.objects.get(id=viaje_id)
-        
-        numero_bus = viaje.bus.numero_bus or 'Sin número'
-        dueno_codigo = viaje.bus.empresa.codigo if viaje.bus.empresa else ''
-        dueno_nombre = viaje.bus.empresa.nombre if viaje.bus.empresa else 'Sin dueño'
-        dueno = f"{dueno_codigo} - {dueno_nombre}" if dueno_codigo else dueno_nombre
-        
-        conductores = ', '.join([c.nombre for c in viaje.bus.conductores.all()])
-        
-        # ⭐ AQUÍ EL CAMBIO: Traemos TODOS los boletos usados del viaje, no solo los locales
-        boletos = Boleto.objects.filter(
-            viaje=viaje, 
-            estado='usado'
-        ).select_related('asiento', 'transaccion', 'transaccion__oficina_venta')
-        
-        boletos_data = [{
-            'asiento': b.asiento.numero,
-            'nombre': b.pasajero_nombre,
-            'cedula': b.pasajero_cedula,
-            'monto_total_usd': float(b.monto_total_usd),
-            'es_propio': b.transaccion.oficina_venta == empleado.oficina,
-            'oficina_venta': b.transaccion.oficina_venta.nombre if b.transaccion.oficina_venta else 'Sin Oficina'
-        } for b in boletos]
-        
-        return JsonResponse({
-            'ok': True,
-            'bus_id': viaje.bus.id,
-            'numero_bus': numero_bus,
-            'dueno': dueno,
-            'conductores': conductores,
-            'boletos': boletos_data
-        })
-    except Exception as e:
-        return JsonResponse({'ok': False, 'error': str(e)}, status=500)
-        
 # ============================================================
 # MÓDULO DE ABORDAJE Y CHEQUEO QR
 # ============================================================
@@ -2700,21 +2569,21 @@ def taquilla_escaner(request):
 
     hoy = timezone.localtime(timezone.now()).date()
     viajes = Viaje.objects.filter(
-        fecha=hoy, estado='programado', cerrado_venta=False
+        fecha=hoy, estado__in=['programado', 'en_curso']
     ).select_related('ruta', 'bus').order_by('hora')
-    
+
     viaje_id_preseleccionado = request.GET.get('viaje_id')
     
     total_abordados = 0
     if viaje_id_preseleccionado:
         total_abordados = Boleto.objects.filter(viaje_id=viaje_id_preseleccionado, estado='usado').count()
-    
+
     return render(request, 'taquilla/escaner_qr.html', {
         'viajes': viajes,
         'viaje_preseleccionado': viaje_id_preseleccionado,
         'total_abordados': total_abordados,
+        'codigo_oficina_actual': empleado.oficina.codigo if empleado.oficina else '001', # ⭐ NUEVO CLAVE
     })
-
 
 @require_POST
 @login_required
@@ -2793,22 +2662,6 @@ def taquilla_cerrar_venta(request, viaje_id):
         return JsonResponse({'ok': False, 'error': 'Viaje no encontrado.'}, status=404)
         
 @login_required
-def taquilla_liquidacion_detalle(request, liquidacion_id):
-    try:
-        empleado = request.user.usuarioempresa
-    except UsuarioEmpresa.DoesNotExist:
-        messages.error(request, "No tiene permisos.")
-        return redirect('core:inicio')
-
-    liquidacion = get_object_or_404(Liquidacion, id=liquidacion_id, oficina_liquidacion=empleado.oficina)
-    gastos = liquidacion.gastos.all().order_by('tipo')
-    
-    return render(request, 'taquilla/liquidacion_detalle.html', {
-        'liquidacion': liquidacion,
-        'gastos': gastos,
-    })
-
-@login_required
 def taquilla_consultar_boleto(request):
     try:
         empleado = request.user.usuarioempresa
@@ -2830,14 +2683,14 @@ def taquilla_consultar_boleto(request):
     if request.method == 'POST' and request.POST.get('accion') == 'activar':
         boleto_id = request.POST.get('boleto_id')
         password = request.POST.get('password')
-        boleto = get_object_or_404(Boleto, id=boleto_id)
+        boleto = get_object_or_404(Boleto.objects.select_related('viaje', 'asiento', 'transaccion'), id=boleto_id)
 
-        if boleto.estado != 'usado':
+        if boleto.estado not in ['usado', 'liquidado']:
             messages.error(
-                request, 
+                request,
                 f"No se puede reactivar el boleto {boleto.numero_boleto}. "
                 f"Estado actual: {boleto.get_estado_display()}. "
-                f"Solo se reactivan boletos chequeados/abordados."
+                f"Solo se reactivan boletos chequeados o liquidados."
             )
             return redirect('core:taquilla_consultar_boleto')
 
@@ -2846,24 +2699,73 @@ def taquilla_consultar_boleto(request):
             return redirect('core:taquilla_consultar_boleto')
 
         with transaction.atomic():
+            estado_anterior = boleto.estado
+            viaje = boleto.viaje
+            tasa_bcv = Decimal(str(obtener_parametro('107', default=0)))
+
             boleto.estado = 'vendido'
             boleto.fecha_chequeo = None
             boleto.chequeado_por = None
             boleto.save()
 
+            # Liberar el puesto del bus para que quede disponible
             asiento = boleto.asiento
-            asiento.estado = 'vendido'
+            asiento.estado = 'disponible'
+            asiento.reservado_por = None
+            asiento.reservado_hasta = None
             asiento.save()
 
+            # Si estaba liquidado, recalcular la liquidación activa del viaje sin este boleto
+            if estado_anterior == 'liquidado' and viaje:
+                liq_activa = Liquidacion.objects.select_for_update().filter(
+                    viaje=viaje, estado='activa'
+                ).first()
+                if liq_activa:
+                    boletos_restantes = Boleto.objects.filter(
+                        viaje=viaje, estado='liquidado'
+                    )
+                    nuevo_bruto_usd = sum(
+                        (b.monto_tarifa_usd for b in boletos_restantes), Decimal('0.00')
+                    ).quantize(Decimal('0.01'))
+                    nuevo_bruto_bs = (nuevo_bruto_usd * tasa_bcv).quantize(Decimal('0.01')) if tasa_bcv > 0 else Decimal('0.00')
+                    nuevo_monto_empresa = (
+                        nuevo_bruto_usd * (liq_activa.porcentaje_empresa / Decimal('100'))
+                    ).quantize(Decimal('0.01'))
+                    nuevo_neto_usd = (
+                        nuevo_bruto_usd
+                        - liq_activa.total_gastos_antes_usd
+                        - nuevo_monto_empresa
+                        - liq_activa.total_gastos_despues_usd
+                    ).quantize(Decimal('0.01'))
+                    nuevo_neto_bs = (nuevo_neto_usd * tasa_bcv).quantize(Decimal('0.01')) if tasa_bcv > 0 else Decimal('0.00')
+
+                    liq_activa.total_bruto_usd = nuevo_bruto_usd
+                    liq_activa.total_bruto_bs = nuevo_bruto_bs
+                    liq_activa.monto_porcentaje_empresa_usd = nuevo_monto_empresa
+                    liq_activa.neto_a_pagar_usd = nuevo_neto_usd
+                    liq_activa.neto_a_pagar_bs = nuevo_neto_bs
+                    liq_activa.save()
+
+                if boleto.transaccion and not Boleto.objects.filter(
+                    transaccion=boleto.transaccion, estado='liquidado'
+                ).exists():
+                    boleto.transaccion.numero_liquidacion = None
+                    boleto.transaccion.save(update_fields=['numero_liquidacion'])
+
             MovimientoAsiento.objects.create(
-                asiento=asiento, tipo='desbloqueo',
-                estado_anterior='usado', estado_nuevo='vendido',
+                asiento=asiento,
+                tipo='desbloqueo',
+                estado_anterior=estado_anterior,
+                estado_nuevo='vendido',
                 usuario=request.user,
-                motivo=f'Boleto reactivado por el taquillero. Boleto: {boleto.numero_boleto}',
+                motivo=(
+                    f"Boleto reactivado ({estado_anterior} -> vendido), puesto liberado y retirado de liquidación. "
+                    f"Boleto: {boleto.numero_boleto}"
+                ),
                 boleto_relacionado=boleto
             )
 
-        messages.success(request, f"Boleto {boleto.numero_boleto} reactivado exitosamente.")
+        messages.success(request, f"Boleto {boleto.numero_boleto} reactivado y puesto liberado exitosamente.")
         return redirect('core:taquilla_consultar_boleto')
 
     if request.method == 'POST' and request.POST.get('accion') == 'anular':
@@ -3092,68 +2994,6 @@ def api_crear_tipo_gasto(request):
         return JsonResponse({'ok': False, 'error': 'Este gasto ya existe en otra categoría.'}, status=400)
     
     return JsonResponse({'ok': True, 'id': tipo_gasto.id, 'nombre': tipo_gasto.nombre})
-    
-@require_POST
-@login_required
-def taquilla_anular_liquidacion(request, liquidacion_id):
-    try:
-        empleado = request.user.usuarioempresa
-    except UsuarioEmpresa.DoesNotExist:
-        messages.error(request, "No tiene permisos.")
-        return redirect('core:inicio')
-
-    liquidacion = get_object_or_404(Liquidacion, id=liquidacion_id, oficina_liquidacion=empleado.oficina)
-    
-    if liquidacion.estado == 'anulada':
-        messages.warning(request, "Esta liquidación ya está anulada.")
-        return redirect('core:taquilla_liquidacion_detalle', liquidacion.id)
-    
-    password = request.POST.get('password')
-    if not request.user.check_password(password):
-        messages.error(request, "Clave incorrecta. No puede anular la liquidación.")
-        return redirect('core:taquilla_liquidacion_detalle', liquidacion.id)
-    
-    try:
-        with transaction.atomic():
-            # 1. Devolver los boletos a estado 'usado' para que se puedan re-liquidar
-            Boleto.objects.filter(
-                viaje=liquidacion.viaje,
-                estado='liquidado'
-            ).update(estado='usado')
-            
-            # 2. Marcar la liquidación como anulada
-            liquidacion.estado = 'anulada'
-            liquidacion.observacion = f"{liquidacion.observacion}\n\nANULADA por {request.user.username} el {timezone.now().strftime('%d/%m/%Y %H:%M')}"
-            liquidacion.save()
-            
-        messages.success(request, f"Liquidación {liquidacion.numero_liquidacion} anulada. Los boletos vuelven a estar disponibles para liquidar.")
-    except Exception as e:
-        messages.error(request, f"Error al anular: {str(e)}")
-    
-    return redirect('core:taquilla_liquidacion_detalle', liquidacion.id)
-    
-@login_required
-def api_buscar_bus(request):
-    if not hasattr(request.user, 'usuarioempresa'):
-        return JsonResponse({'ok': False, 'error': 'No autorizado'}, status=403)
-    
-    numero = request.GET.get('numero', '').strip()
-    if not numero:
-        return JsonResponse({'ok': False, 'error': 'Falta el número'}, status=400)
-    
-    bus = Bus.objects.filter(numero_bus__iexact=numero, activo=True).select_related('empresa').first()
-    if not bus:
-        return JsonResponse({'ok': False, 'error': 'Bus no encontrado'}, status=404)
-    
-    return JsonResponse({
-        'ok': True,
-        'accionista_codigo': bus.empresa.codigo if bus.empresa else '',
-        'accionista_nombre': bus.empresa.nombre if bus.empresa else 'Sin dueño',
-        'conductor': bus.conductor or '',
-        'asistente': bus.asistente or '',
-        'placa': bus.placa,
-        'capacidad': bus.capacidad,
-    })
     
 @require_POST
 def desbloquear_sesion_view(request):
@@ -3572,3 +3412,552 @@ def nueva_clave_view(request):
                 return redirect('core:password_reset')
 
     return render(request, 'nueva_clave.html')
+    
+def api_marcar_no_show(request):
+    """Permite al taquillero marcar un boleto 'vendido' como 'no_show' antes de cerrar la liquidación."""
+    if request.method != 'POST' or not hasattr(request.user, 'usuarioempresa'):
+        return JsonResponse({'ok': False, 'error': 'No autorizado'}, status=403)
+
+    boleto_id = request.POST.get('boleto_id')
+    try:
+        with transaction.atomic():
+            boleto = Boleto.objects.select_for_update().get(id=boleto_id)
+            if boleto.estado != 'vendido':
+                return JsonResponse({'ok': False, 'error': f'El boleto está en estado {boleto.get_estado_display()}.'})
+
+            boleto.estado = 'no_show'
+            boleto.liberado_por = request.user
+            nota = f"Marcado No-Show en liquidación por {request.user.username}."
+            boleto.observacion = (f"{boleto.observacion} | {nota}" if boleto.observacion else nota)[:200]
+            boleto.save()
+
+            if boleto.asiento:
+                MovimientoAsiento.objects.create(
+                    asiento=boleto.asiento,
+                    tipo='no_show',
+                    estado_anterior=boleto.asiento.estado,
+                    estado_nuevo=boleto.asiento.estado,
+                    usuario=request.user,
+                    motivo=f"Pasajero no abordó (No-Show). Boleto {boleto.numero_boleto}",
+                    boleto_relacionado=boleto,
+                )
+
+            return JsonResponse({'ok': True})
+    except Boleto.DoesNotExist:
+        return JsonResponse({'ok': False, 'error': 'Boleto no encontrado.'}, status=404)
+    except Exception as e:
+        return JsonResponse({'ok': False, 'error': str(e)}, status=500)
+
+def taquilla_anular_liquidacion(request, liquidacion_id):
+    try:
+        empleado = request.user.usuarioempresa
+    except UsuarioEmpresa.DoesNotExist:
+        messages.error(request, "No tiene permisos.")
+        return redirect('core:inicio')
+
+    liquidacion = get_object_or_404(Liquidacion, id=liquidacion_id, oficina_liquidacion=empleado.oficina)
+
+    if liquidacion.estado == 'anulada':
+        messages.warning(request, "Esta liquidación ya está anulada.")
+        return redirect('core:taquilla_liquidacion_detalle', liquidacion.id)
+
+    password = request.POST.get('password')
+    if not request.user.check_password(password):
+        messages.error(request, "Clave incorrecta. No puede anular la liquidación.")
+        return redirect('core:taquilla_liquidacion_detalle', liquidacion.id)
+
+    try:
+        with transaction.atomic():
+            Boleto.objects.filter(
+                viaje=liquidacion.viaje,
+                estado='liquidado'
+            ).update(estado='usado')
+
+            Transaccion.objects.filter(
+                viaje=liquidacion.viaje,
+                numero_liquidacion=liquidacion.numero_liquidacion
+            ).update(numero_liquidacion='')
+
+            liquidacion.estado = 'anulada'
+            liquidacion.observacion = f"{liquidacion.observacion}\n\nANULADA por {request.user.username} el {timezone.now().strftime('%d/%m/%Y %H:%M')}".strip()
+            liquidacion.save()
+
+            liquidacion.viaje.cerrado_venta = False
+            liquidacion.viaje.save(update_fields=['cerrado_venta'])
+
+        messages.success(request, f"Liquidación {liquidacion.numero_liquidacion} anulada. Los boletos vuelven a estar disponibles para liquidar.")
+    except Exception as e:
+        messages.error(request, f"Error al anular: {str(e)}")
+
+    return redirect('core:taquilla_liquidacion_detalle', liquidacion.id)
+    
+def _obtener_o_crear_porcentaje_empresa():
+    """Lee el parámetro 201 (% empresa en liquidaciones) y asegura que devuelva un Decimal válido."""
+    try:
+        param = Parametro.objects.filter(codigo='201').first()
+        if param:
+            # Si el parámetro existe, revisamos su valor_numerico
+            if param.valor_numerico is not None:
+                return Decimal(str(param.valor_numerico))
+            else:
+                # Si existe pero está vacío, le asignamos 20.00 por defecto y lo guardamos
+                param.valor_numerico = Decimal('20.00')
+                param.save(update_fields=['valor_numerico'])
+                return Decimal('20.00')
+        else:
+            # Si no existe en absoluto, lo creamos de una vez
+            param_nuevo = Parametro.objects.create(
+                codigo='201',
+                descripcion='Porcentaje de la empresa en liquidaciones (%)',
+                tipo='numero',
+                valor_numerico=Decimal('20.00'),
+                activo=True
+            )
+            return Decimal('20.00')
+    except Exception:
+        return Decimal('20.00')
+
+def taquilla_liquidar(request):
+    try:
+        empleado = request.user.usuarioempresa
+    except UsuarioEmpresa.DoesNotExist:
+        messages.error(request, "No tiene permisos.")
+        return redirect('core:inicio')
+
+    porcentaje_default = _obtener_o_crear_porcentaje_empresa()
+    tasa_bcv = Decimal(str(obtener_parametro('107', default=0)))
+
+    viaje_id_param = request.GET.get('viaje_id') or request.POST.get('viaje_id')
+    origen_id = request.GET.get('origen', empleado.oficina.id)
+    
+    destino_id = request.GET.get('destino')
+    if not destino_id and viaje_id_param:
+        destino_id = request.session.get(f'taquilla_destino_{viaje_id_param}')
+
+    if request.method == 'POST':
+        bus_id = request.POST.get('bus_id')
+        viaje_id = request.POST.get('viaje_id') or viaje_id_param
+        conductores_nombres = request.POST.get('conductores_nombres', '').strip()
+        observacion = request.POST.get('observacion', '').strip()
+
+        try:
+            porcentaje_empresa = Decimal(str(request.POST.get('porcentaje_empresa', porcentaje_default)).replace(',', '.'))
+            if porcentaje_empresa < 0 or porcentaje_empresa > 100:
+                porcentaje_empresa = porcentaje_default
+        except Exception:
+            porcentaje_empresa = porcentaje_default
+
+        try:
+            with transaction.atomic():
+                viaje = Viaje.objects.select_for_update().get(id=viaje_id)
+                bus = Bus.objects.get(id=bus_id) if bus_id else viaje.bus
+
+                # ⭐ BUSCAR SI YA EXISTE UNA LIQUIDACIÓN ACTIVA PARA ESTE VIAJE (MISMO NÚMERO CASADO)
+                liq_existente = Liquidacion.objects.select_for_update().filter(
+                    viaje=viaje, estado='activa'
+                ).first()
+
+                # ⭐ INCLUIR TANTO LOS YA LIQUIDADOS ANTES COMO LOS NUEVOS ESCANEADOS ('usado')
+                todos_los_boletos = Boleto.objects.select_for_update().filter(
+                    viaje=viaje, estado__in=['usado', 'liquidado']
+                ).select_related('transaccion', 'transaccion__oficina_venta')
+
+                if not todos_los_boletos.exists():
+                    messages.warning(request, "No hay boletos abordados (escaneados) para liquidar en este viaje.")
+                    return redirect(f"{reverse('core:taquilla_liquidar')}?viaje_id={viaje_id}&origen={origen_id}&destino={destino_id}")
+
+                total_bruto_usd = sum((b.monto_tarifa_usd for b in todos_los_boletos), Decimal('0.00')).quantize(Decimal('0.01'))
+                total_bruto_bs = (total_bruto_usd * tasa_bcv).quantize(Decimal('0.01')) if tasa_bcv > 0 else Decimal('0.00')
+                monto_empresa_usd = (total_bruto_usd * (porcentaje_empresa / Decimal('100'))).quantize(Decimal('0.01'))
+
+                # Gastos Antes
+                gastos_antes_montos = request.POST.getlist('gasto_antes_monto[]')
+                gastos_antes_conceptos = request.POST.getlist('gasto_antes_concepto[]')
+                total_gastos_antes = Decimal('0.00')
+                lista_gastos_antes = []
+                for i, concepto in enumerate(gastos_antes_conceptos):
+                    raw_m = gastos_antes_montos[i] if i < len(gastos_antes_montos) else '0'
+                    val_m = Decimal(str(raw_m or '0').replace(',', '.')).quantize(Decimal('0.01'))
+                    if concepto.strip() and val_m > 0:
+                        total_gastos_antes += val_m
+                        lista_gastos_antes.append((concepto.strip(), val_m))
+
+                # Gastos Después
+                gastos_despues_montos = request.POST.getlist('gasto_despues_monto[]')
+                gastos_despues_conceptos = request.POST.getlist('gasto_despues_concepto[]')
+                total_gastos_despues = Decimal('0.00')
+                lista_gastos_despues = []
+                for i, concepto in enumerate(gastos_despues_conceptos):
+                    raw_m = gastos_despues_montos[i] if i < len(gastos_despues_montos) else '0'
+                    val_m = Decimal(str(raw_m or '0').replace(',', '.')).quantize(Decimal('0.01'))
+                    if concepto.strip() and val_m > 0:
+                        total_gastos_despues += val_m
+                        lista_gastos_despues.append((concepto.strip(), val_m))
+
+                neto_usd = (total_bruto_usd - total_gastos_antes - monto_empresa_usd - total_gastos_despues).quantize(Decimal('0.01'))
+                neto_bs = (neto_usd * tasa_bcv).quantize(Decimal('0.01')) if tasa_bcv > 0 else Decimal('0.00')
+
+                default_cond = ', '.join([c for c in [bus.conductor, bus.asistente] if c]) or 'No especificado'
+
+                obs_final = observacion
+                if porcentaje_empresa != porcentaje_default and f"% Empresa modificado manualmente" not in obs_final:
+                    aviso_pct = f"⚠️ % Empresa modificado manualmente: {porcentaje_empresa}% (Estándar: {porcentaje_default}%)"
+                    obs_final = f"{obs_final}\n{aviso_pct}".strip() if obs_final else aviso_pct
+
+                if liq_existente:
+                    # ⭐ CONSERVAR EL NÚMERO DE LIQUIDACIÓN ORIGINAL Y ACTUALIZAR DATOS
+                    numero_liq = liq_existente.numero_liquidacion
+                    liq_existente.bus = bus
+                    liq_existente.dueno = bus.empresa
+                    liq_existente.conductores_nombres = conductores_nombres or default_cond
+                    liq_existente.total_bruto_usd = total_bruto_usd
+                    liq_existente.total_bruto_bs = total_bruto_bs
+                    liq_existente.porcentaje_empresa = porcentaje_empresa
+                    liq_existente.monto_porcentaje_empresa_usd = monto_empresa_usd
+                    liq_existente.total_gastos_antes_usd = total_gastos_antes
+                    liq_existente.total_gastos_despues_usd = total_gastos_despues
+                    liq_existente.neto_a_pagar_usd = neto_usd
+                    liq_existente.neto_a_pagar_bs = neto_bs
+                    liq_existente.observacion = obs_final
+                    liq_existente.save()
+
+                    # Reemplazar gastos con los editados actualmente
+                    liq_existente.gastos.all().delete()
+                    liquidacion = liq_existente
+                    mensaje_exito = f"Liquidación {numero_liq} actualizada exitosamente."
+                else:
+                    # ⭐ PRIMERA VEZ: GENERAR NUEVO CORRELATIVO
+                    ultima_liq = Liquidacion.objects.filter(oficina_liquidacion=empleado.oficina).order_by('-id').first()
+                    if ultima_liq and '-' in ultima_liq.numero_liquidacion:
+                        try:
+                            nuevo_num = int(ultima_liq.numero_liquidacion.split('-')[1]) + 1
+                        except ValueError:
+                            nuevo_num = Liquidacion.objects.filter(oficina_liquidacion=empleado.oficina).count() + 1
+                    else:
+                        nuevo_num = 1
+                    numero_liq = f"{empleado.oficina.codigo}-{nuevo_num:06d}"
+
+                    liquidacion = Liquidacion.objects.create(
+                        numero_liquidacion=numero_liq,
+                        viaje=viaje,
+                        bus=bus,
+                        oficina_liquidacion=empleado.oficina,
+                        dueno=bus.empresa,
+                        conductores_nombres=conductores_nombres or default_cond,
+                        total_bruto_usd=total_bruto_usd,
+                        total_bruto_bs=total_bruto_bs,
+                        porcentaje_empresa=porcentaje_empresa,
+                        monto_porcentaje_empresa_usd=monto_empresa_usd,
+                        total_gastos_antes_usd=total_gastos_antes,
+                        total_gastos_despues_usd=total_gastos_despues,
+                        neto_a_pagar_usd=neto_usd,
+                        neto_a_pagar_bs=neto_bs,
+                        liquidado_por=request.user,
+                        observacion=obs_final,
+                    )
+                    mensaje_exito = f"Liquidación {numero_liq} generada exitosamente."
+
+                for concepto, monto in lista_gastos_antes:
+                    GastoLiquidacion.objects.create(liquidacion=liquidacion, concepto=concepto, monto_usd=monto, tipo='antes')
+
+                for concepto, monto in lista_gastos_despues:
+                    GastoLiquidacion.objects.create(liquidacion=liquidacion, concepto=concepto, monto_usd=monto, tipo='despues')
+
+                # ⭐ GUARDAR BEBÉS / NIÑOS / NIÑAS SIN PASAJE SOLO PARA EL LISTÍN DE ESTA SALIDA
+                nombres_menores = request.POST.getlist('menor_nombre[]')
+                destinos_menores = request.POST.getlist('menor_destino[]')
+
+                PasajeroListinMenor.objects.filter(viaje=viaje).delete()
+                for idx, nombre in enumerate(nombres_menores):
+                    nombre_limpio = (nombre or '').strip()
+                    if nombre_limpio:
+                        PasajeroListinMenor.objects.create(
+                            viaje=viaje,
+                            liquidacion=liquidacion,
+                            nombre_apellido=nombre_limpio,
+                            destino=(
+                                destinos_menores[idx].strip()
+                                if idx < len(destinos_menores) and destinos_menores[idx].strip()
+                                else (viaje.ruta.destino_final or '')
+                            ),
+                            registrado_por=request.user,
+                        )
+
+                imprimir_listin = request.POST.get('imprimir_listin') == '1'
+
+                tx_ids = set(todos_los_boletos.values_list('transaccion_id', flat=True))
+                Transaccion.objects.filter(id__in=tx_ids).update(numero_liquidacion=numero_liq)
+                todos_los_boletos.update(estado='liquidado')
+
+                # ⭐ EL VIAJE NO SE CIERRA AQUÍ (Solo el taquillero lo cierra manualmente)
+                messages.success(request, mensaje_exito)
+                url_detalle = reverse('core:taquilla_liquidacion_detalle', args=[liquidacion.id])
+                if imprimir_listin:
+                    return redirect(f"{url_detalle}?imprimir_listin=1")
+                return redirect('core:taquilla_liquidacion_detalle', liquidacion.id)
+
+        except Exception as e:
+            messages.error(request, f"Error al liquidar: {str(e)}")
+            return redirect(f"{reverse('core:taquilla_liquidar')}?viaje_id={viaje_id}&origen={origen_id}&destino={destino_id}")
+
+    # ⭐ YA NO EXCLUIMOS VIAJES LIQUIDADOS PARA QUE SIEMPRE APAREZCAN DISPONIBLES
+    hoy = timezone.localtime(timezone.now()).date()
+    viajes_qs = Viaje.objects.filter(
+        fecha=hoy, estado__in=['programado', 'en_curso']
+    ).select_related('ruta', 'bus').order_by('hora')
+
+    viaje_obj = None
+    liq_activa = None
+    viajes_lista = list(viajes_qs)
+
+    if viaje_id_param:
+        viaje_obj = Viaje.objects.select_related('ruta', 'bus').filter(id=viaje_id_param).first()
+        if viaje_obj:
+            if not any(v.id == viaje_obj.id for v in viajes_lista):
+                viajes_lista.insert(0, viaje_obj)
+            liq_activa = Liquidacion.objects.filter(viaje=viaje_obj, estado='activa').prefetch_related('gastos').first()
+
+    menores_listin = PasajeroListinMenor.objects.filter(viaje=viaje_obj) if viaje_obj else PasajeroListinMenor.objects.none()
+
+    return render(request, 'taquilla/liquidar.html', {
+        'viajes': viajes_lista,
+        'viaje': viaje_obj,
+        'liq_activa': liq_activa,
+        'porcentaje_empresa': liq_activa.porcentaje_empresa if liq_activa else porcentaje_default,
+        'viaje_id_preseleccionado': viaje_id_param,
+        'empleado': empleado,
+        'tasa_bcv': tasa_bcv,
+        'origen_id': origen_id,
+        'destino_id': destino_id,
+        'gastos_antes': _gastos_ordenados_por_uso('antes'),
+        'gastos_despues': _gastos_ordenados_por_uso('despues'),
+        'menores_listin': menores_listin,
+    })
+
+
+def _gastos_ordenados_por_uso(tipo):
+    """Devuelve los TipoGasto activos de esa categoría ordenados por frecuencia de uso."""
+    usos = dict(
+        GastoLiquidacion.objects.filter(tipo=tipo)
+        .values('concepto')
+        .annotate(total=Count('id'))
+        .values_list('concepto', 'total')
+    )
+    tipos_gasto = list(TipoGasto.objects.filter(tipo=tipo, activo=True))
+    tipos_gasto.sort(key=lambda g: (-usos.get(g.nombre, 0), g.nombre))
+    return tipos_gasto
+
+def api_datos_liquidacion(request):
+    if not hasattr(request.user, 'usuarioempresa'):
+        return JsonResponse({'ok': False, 'error': 'No autorizado'}, status=403)
+
+    viaje_id = request.GET.get('viaje_id')
+    if not viaje_id:
+        return JsonResponse({'ok': False, 'error': 'Falta viaje_id'}, status=400)
+
+    try:
+        empleado = request.user.usuarioempresa
+        viaje = Viaje.objects.select_related('bus', 'bus__empresa').get(id=viaje_id)
+
+        # ⭐ Buscar si ya existe una liquidación activa para este viaje
+        liq_activa = Liquidacion.objects.filter(viaje=viaje, estado='activa').prefetch_related('gastos').first()
+
+        numero_bus = liq_activa.bus.numero_bus if liq_activa and liq_activa.bus else (viaje.bus.numero_bus or '')
+        
+        dueno_obj = liq_activa.dueno if liq_activa and liq_activa.dueno else viaje.bus.empresa
+        dueno_codigo = dueno_obj.codigo if dueno_obj else ''
+        dueno_nombre = dueno_obj.nombre if dueno_obj else 'Sin dueño'
+        dueno = f"{dueno_codigo} - {dueno_nombre}" if dueno_codigo else dueno_nombre
+
+        conductores = liq_activa.conductores_nombres if liq_activa else (', '.join([c for c in [viaje.bus.conductor, viaje.bus.asistente] if c]) or 'No especificado')
+
+        # ⭐ Incluir tanto los 'usado' (nuevos) como los ya 'liquidado' (anteriores)
+        boletos_usados = Boleto.objects.filter(
+            viaje=viaje,
+            estado__in=['usado', 'liquidado']
+        ).select_related('asiento', 'transaccion', 'transaccion__oficina_venta').order_by('asiento__numero')
+
+        # Los 'vendido' no abordaron
+        boletos_no_abordaron = Boleto.objects.filter(
+            viaje=viaje,
+            estado='vendido'
+        ).select_related('asiento').order_by('asiento__numero')
+
+        boletos_data = []
+        seguro_local_usd = Decimal('0.00')
+        seguro_externo_usd = Decimal('0.00')
+
+        for b in boletos_usados:
+            oficina_tx = b.transaccion.oficina_venta if b.transaccion else None
+            es_propio = (oficina_tx == empleado.oficina)
+            oficina_nombre = oficina_tx.nombre if oficina_tx else 'Venta Web'
+
+            if es_propio:
+                seguro_local_usd += b.monto_seguro_usd
+            else:
+                seguro_externo_usd += b.monto_seguro_usd
+
+            boletos_data.append({
+                'id': b.id,
+                'numero_boleto': b.numero_boleto or b.codigo_qr[:8],
+                'asiento': b.asiento.numero,
+                'nombre': b.pasajero_nombre,
+                'cedula': b.pasajero_cedula,
+                'monto_tarifa_usd': float(b.monto_tarifa_usd),
+                'monto_seguro_usd': float(b.monto_seguro_usd),
+                'es_propio': es_propio,
+                'oficina_venta': oficina_nombre,
+            })
+
+        no_abordaron_data = [{
+            'asiento': b.asiento.numero,
+            'numero_boleto': b.numero_boleto or '—',
+            'nombre': b.pasajero_nombre,
+            'cedula': b.pasajero_cedula,
+        } for b in boletos_no_abordaron]
+
+        # ⭐ Cargar gastos y datos guardados si ya existía liquidación
+        gastos_antes_data = []
+        gastos_despues_data = []
+        porcentaje_empresa = float(liq_activa.porcentaje_empresa) if liq_activa else None
+        observacion = liq_activa.observacion if liq_activa else ''
+        numero_liquidacion = liq_activa.numero_liquidacion if liq_activa else ''
+
+        if liq_activa:
+            for g in liq_activa.gastos.all():
+                gasto_item = {'concepto': g.concepto, 'monto_usd': float(g.monto_usd)}
+                if g.tipo == 'antes':
+                    gastos_antes_data.append(gasto_item)
+                else:
+                    gastos_despues_data.append(gasto_item)
+
+        return JsonResponse({
+            'ok': True,
+            'bus_id': (liq_activa.bus.id if liq_activa and liq_activa.bus else viaje.bus.id),
+            'numero_bus': numero_bus,
+            'dueno': dueno,
+            'destino_final': viaje.ruta.destino_final,
+            'conductores': conductores,
+            'porcentaje_empresa': porcentaje_empresa,
+            'observacion': observacion,
+            'numero_liquidacion': numero_liquidacion,
+            'gastos_antes': gastos_antes_data,
+            'gastos_despues': gastos_despues_data,
+            'boletos': boletos_data,
+            'no_abordaron': no_abordaron_data,
+            'seguro_local_usd': float(seguro_local_usd),
+            'seguro_externo_usd': float(seguro_externo_usd),
+        })
+    except Exception as e:
+        return JsonResponse({'ok': False, 'error': str(e)}, status=500)
+        
+@login_required
+def api_registrar_impresion_liquidacion(request, liquidacion_id):
+    if request.method == 'POST':
+        liq = get_object_or_404(Liquidacion, id=liquidacion_id)
+        liq.veces_impreso = (liq.veces_impreso or 0) + 1
+        liq.save(update_fields=['veces_impreso'])
+        return JsonResponse({'ok': True, 'veces_impreso': liq.veces_impreso})
+    return JsonResponse({'ok': False}, status=400)
+
+def api_buscar_bus(request):
+    """Busca un bus por su número interno y devuelve dueño y ambos conductores."""
+    if not hasattr(request.user, 'usuarioempresa'):
+        return JsonResponse({'ok': False, 'error': 'No autorizado'}, status=403)
+
+    numero = request.GET.get('numero', '').strip()
+    if not numero:
+        return JsonResponse({'ok': False, 'error': 'Ingrese un número de bus'}, status=400)
+
+    bus = Bus.objects.select_related('empresa').filter(numero_bus=numero, activo=True).first()
+    if not bus and numero.isdigit():
+        bus = Bus.objects.select_related('empresa').filter(numero_bus=numero.zfill(4), activo=True).first()
+
+    if not bus:
+        return JsonResponse({'ok': False, 'error': 'Bus no encontrado'})
+
+    lista_cond = [c for c in [bus.conductor, bus.asistente] if c]
+    return JsonResponse({
+        'ok': True,
+        'bus_id': bus.id,
+        'numero_bus': bus.numero_bus,
+        'accionista_codigo': bus.empresa.codigo if bus.empresa else '',
+        'accionista_nombre': bus.empresa.nombre if bus.empresa else 'Sin dueño',
+        'conductores': ', '.join(lista_cond),
+    })
+
+
+def taquilla_liquidacion_detalle(request, liquidacion_id):
+    try:
+        empleado = request.user.usuarioempresa
+    except UsuarioEmpresa.DoesNotExist:
+        messages.error(request, "No tiene permisos.")
+        return redirect('core:inicio')
+
+    liquidacion = get_object_or_404(Liquidacion, id=liquidacion_id, oficina_liquidacion=empleado.oficina)
+    gastos = liquidacion.gastos.all().order_by('tipo', 'id')
+
+    boletos = Boleto.objects.filter(
+        viaje=liquidacion.viaje,
+        estado__in=['liquidado', 'usado']
+    ).select_related('asiento', 'transaccion', 'transaccion__oficina_venta').order_by('asiento__numero')
+
+    tasa_liq = Decimal('0.00')
+    if liquidacion.total_bruto_usd > 0 and liquidacion.total_bruto_bs > 0:
+        tasa_liq = liquidacion.total_bruto_bs / liquidacion.total_bruto_usd
+    else:
+        tasa_liq = Decimal(str(obtener_parametro('107', default=0)))
+
+    total_local_usd = Decimal('0.00')
+    total_externo_usd = Decimal('0.00')
+    seguro_local_usd = Decimal('0.00')
+    seguro_externo_usd = Decimal('0.00')
+    boletos_detalle = []
+
+    for b in boletos:
+        oficina_tx = b.transaccion.oficina_venta if b.transaccion else None
+        es_propio = (oficina_tx == liquidacion.oficina_liquidacion)
+        if es_propio:
+            total_local_usd += b.monto_tarifa_usd
+            seguro_local_usd += b.monto_seguro_usd
+        else:
+            total_externo_usd += b.monto_tarifa_usd
+            seguro_externo_usd += b.monto_seguro_usd
+
+        boletos_detalle.append({
+            'asiento': b.asiento.numero,
+            'numero_boleto': b.numero_boleto or '—',
+            'pasajero': b.pasajero_nombre,
+            'cedula': b.pasajero_cedula,
+            'oficina': oficina_tx.nombre if oficina_tx else 'Venta Web',
+            'es_propio': es_propio,
+            'tarifa_usd': b.monto_tarifa_usd,
+            'seguro_usd': b.monto_seguro_usd,
+        })
+
+    seguro_local_bs = (seguro_local_usd * tasa_liq).quantize(Decimal('0.01')) if tasa_liq > 0 else Decimal('0.00')
+    seguro_externo_bs = (seguro_externo_usd * tasa_liq).quantize(Decimal('0.01')) if tasa_liq > 0 else Decimal('0.00')
+    menores_listin = PasajeroListinMenor.objects.filter(viaje=liquidacion.viaje)
+
+    return render(request, 'taquilla/liquidacion_detalle.html', {
+        'liquidacion': liquidacion,
+        'gastos': gastos,
+        'boletos_detalle': boletos_detalle,
+        'total_local_usd': total_local_usd,
+        'total_externo_usd': total_externo_usd,
+        'seguro_local_usd': seguro_local_usd,
+        'seguro_local_bs': seguro_local_bs,
+        'seguro_externo_usd': seguro_externo_usd,
+        'seguro_externo_bs': seguro_externo_bs,
+        'menores_listin': menores_listin,
+        'auto_imprimir_listin': request.GET.get('imprimir_listin') == '1',
+    })
+    
+    @login_required
+    def api_registrar_impresion_liquidacion(request, liquidacion_id):
+        if request.method == 'POST':
+            liq = get_object_or_404(Liquidacion, id=liquidacion_id)
+            liq.veces_impreso = (liq.veces_impreso or 0) + 1
+            liq.save(update_fields=['veces_impreso'])
+            return JsonResponse({'ok': True, 'veces_impreso': liq.veces_impreso})
+        return JsonResponse({'ok': False}, status=400)

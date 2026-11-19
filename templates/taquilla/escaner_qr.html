@@ -5,7 +5,7 @@
 <div class="container mt-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2 style="color: #003366;"><i class="bi bi-qr-code-scan"></i> Abordaje y Chequeo</h2>
-        <a href="{% url 'core:taquilla_inicio' %}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Volver</a>
+        <a href="#" id="btn-volver-mapa" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Volver al Viaje</a>
     </div>
 
     <div class="row">
@@ -36,7 +36,7 @@
 
                     <hr>
                     
-                    <!-- Entrada Manual -->
+                    <!-- Entrada Manual con Formato VFP (STRZERO) -->
                     <label class="form-label fw-bold text-muted small">O ingrese el Número de Boleto:</label>
                     <div class="input-group">
                         <input type="text" id="input-boleto-manual" class="form-control form-control-lg" placeholder="Ej: 005-000123">
@@ -68,6 +68,102 @@
 <script>
     let html5QrCode;
     
+    // Inyectamos la oficina actual del empleado desde Django (ej: "005")
+    const OFICINA_LOCAL = "{{ codigo_oficina_actual|default:'001'|escapejs }}";
+
+    /**
+     * Emula la función STRZERO() de VFP:
+     * - "123"      -> "005-000123" (asume oficina local del usuario)
+     * - "4-85"     -> "004-000085" (otra oficina)
+     * - "web-15"   -> "WEB-000015" (web)
+     * - QR (16 ch) -> Lo deja intacto
+     */
+    function formatearNumeroBoletoVFP(valorRaw) {
+        let val = (valorRaw || '').trim().toUpperCase();
+        if (!val) return '';
+
+        // Si es un código QR hexadecimal largo, no se altera
+        if (!val.includes('-') && val.length >= 10) {
+            return val;
+        }
+
+        // Caso 1: Solo números (ej. "123") -> Oficina local + ceros a la izquierda
+        if (/^\d+$/.test(val)) {
+            const oficinaPad = OFICINA_LOCAL.padStart(3, '0');
+            const secuenciaPad = val.padStart(6, '0');
+            return `${oficinaPad}-${secuenciaPad}`;
+        }
+
+        // Caso 2: Formato abreviado (ej. "4-85" o "web-12")
+        if (val.includes('-')) {
+            const partes = val.split('-');
+            let prefijo = partes[0].trim();
+            let numero = (partes[1] || '').trim();
+
+            if (prefijo === 'W' || prefijo === 'WEB') {
+                prefijo = 'WEB';
+            } else if (/^\d+$/.test(prefijo)) {
+                prefijo = prefijo.padStart(3, '0');
+            }
+
+            if (/^\d+$/.test(numero)) {
+                numero = numero.padStart(6, '0');
+            }
+
+            return `${prefijo}-${numero}`;
+        }
+
+        return val;
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const inputManual = document.getElementById('input-boleto-manual');
+        if (inputManual) {
+            // Al salir del campo (Tab o clic fuera), formatea visualmente
+            inputManual.addEventListener('blur', function() {
+                this.value = formatearNumeroBoletoVFP(this.value);
+            });
+
+            // Al presionar Enter, formatea y ejecuta la validación de inmediato
+            inputManual.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    this.value = formatearNumeroBoletoVFP(this.value);
+                    validarBoletoManual();
+                }
+            });
+        }
+    });
+    
+    document.addEventListener('DOMContentLoaded', function() {
+        const selectViaje = document.getElementById('select-viaje');
+        const btnVolver = document.getElementById('btn-volver-mapa');
+        
+        // Capturamos el origen y destino que vienen en la URL actual
+        const urlParams = new URLSearchParams(window.location.search);
+        const origenParam = urlParams.get('origen');
+        const destinoParam = urlParams.get('destino');
+
+        function actualizarEnlaceVolver() {
+            const viajeId = selectViaje.value;
+            if (viajeId) {
+                let url = `/taquilla/viaje/${viajeId}/`;
+                // Propagamos los parámetros de origen y destino si existen
+                if (origenParam && destinoParam) {
+                    url += `?origen=${origenParam}&destino=${destinoParam}`;
+                }
+                btnVolver.href = url;
+            } else {
+                btnVolver.href = "{% url 'core:taquilla_inicio' %}";
+            }
+        }
+
+        if (selectViaje && btnVolver) {
+            selectViaje.addEventListener('change', actualizarEnlaceVolver);
+            actualizarEnlaceVolver();
+        }
+    });
+
     function iniciarEscaner() {
         const viajeId = document.getElementById('select-viaje').value;
         if (!viajeId) {
@@ -94,7 +190,11 @@
     }
 
     function validarBoletoManual() {
-        const numero = document.getElementById('input-boleto-manual').value.trim();
+        const inputManual = document.getElementById('input-boleto-manual');
+        // Aplica STRZERO antes de enviar a validar
+        inputManual.value = formatearNumeroBoletoVFP(inputManual.value);
+        
+        const numero = inputManual.value.trim();
         const viajeId = document.getElementById('select-viaje').value;
         
         if (!viajeId) { alert('Primero seleccione un viaje.'); return; }
@@ -135,7 +235,6 @@
                 btnLiquidar.style.display = 'block';
                 btnLiquidar.href = `/taquilla/liquidar/?viaje_id=${viajeId}`;
 
-                // ⭐ Incrementar el contador de abordados
                 if (contadorEl) {
                     contadorEl.innerText = parseInt(contadorEl.innerText) + 1;
                 }

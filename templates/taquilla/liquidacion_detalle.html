@@ -5,9 +5,14 @@
 
 {% block extra_css %}
 <style>
+    .ticket-80mm,
+    .bloque-listin {
+        display: none;
+    }
+
     @media print {
         .no-print { display: none !important; }
-        body { background: white !important; }
+        body { background: white !important; font-size: 12px; margin: 0; padding: 0; }
         .card { border: 1px solid #ddd !important; box-shadow: none !important; }
         .marca-agua {
             position: fixed;
@@ -18,6 +23,76 @@
             color: rgba(220, 53, 69, 0.15);
             font-weight: 900;
             z-index: 9999;
+        }
+
+        /* MODO LISTÍN */
+        body.modo-listin .container,
+        body.modo-listin .ticket-80mm,
+        body.modo-listin .marca-agua {
+            display: none !important;
+        }
+        body.modo-listin .bloque-listin {
+            display: block !important;
+            padding: 10px 16px;
+        }
+
+        /* MODO CARTA (por defecto): Acta en carta + cada Nota de Débito en media carta */
+        body:not(.modo-80mm):not(.modo-listin) .ticket-80mm,
+        body:not(.modo-80mm):not(.modo-listin) .bloque-listin {
+            display: none !important;
+        }
+        body:not(.modo-80mm):not(.modo-listin) .nota-debito-media-carta {
+            page-break-inside: avoid;
+            break-inside: avoid;
+            page-break-after: always;
+            break-after: always;
+            height: 135mm;
+            box-sizing: border-box;
+            padding: 10px 14px;
+            border: 1px solid #333;
+            background: #fff;
+        }
+        body:not(.modo-80mm):not(.modo-listin) .nota-debito-media-carta:first-of-type {
+            page-break-before: always;
+            break-before: always;
+        }
+        body:not(.modo-80mm):not(.modo-listin) .nota-debito-media-carta:last-child {
+            page-break-after: auto;
+            break-after: auto;
+        }
+
+        /* MODO 80MM: Tirilla térmica (liquidación + notas de débito en 80mm) */
+        body.modo-80mm .container,
+        body.modo-80mm .bloque-listin,
+        body.modo-80mm .marca-agua {
+            display: none !important;
+        }
+        body.modo-80mm .ticket-80mm {
+            display: block !important;
+            width: 72mm;
+            max-width: 72mm;
+            margin: 0 auto;
+            padding: 2mm;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 10.5px;
+            line-height: 1.25;
+            color: #000;
+            background: #fff;
+        }
+        .ticket-80mm .sep {
+            border-top: 1px dashed #000;
+            margin: 5px 0;
+        }
+        .ticket-80mm .sep-doble {
+            border-top: 1px solid #000;
+            border-bottom: 1px solid #000;
+            height: 3px;
+            margin: 5px 0;
+        }
+        .ticket-80mm .corte-nota {
+            page-break-before: always;
+            break-before: always;
+            padding-top: 4mm;
         }
     }
 </style>
@@ -30,24 +105,34 @@
 
 <div class="container mt-4">
     <!-- Botones de Acción -->
-    <div class="d-flex justify-content-between mb-4 no-print">
+    <div class="d-flex justify-content-between align-items-center mb-4 no-print flex-wrap gap-2">
         <a href="{% url 'core:taquilla_liquidar' %}" class="btn btn-outline-secondary">
             <i class="bi bi-arrow-left"></i> Volver a Liquidar
         </a>
-        <div class="d-flex gap-2">
+        <div class="d-flex gap-2 align-items-center flex-wrap">
             {% if liquidacion.estado == 'activa' %}
                 <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#modalAnular">
                     <i class="bi bi-x-circle"></i> Anular Liquidación
                 </button>
             {% endif %}
-            <button onclick="window.print()" class="btn btn-primary">
+
+            <button type="button" onclick="imprimirListin()" class="btn btn-outline-info">
+                <i class="bi bi-card-list"></i> Imprimir Listín
+            </button>
+
+            <select id="formato-impresion" class="form-select" style="width: auto;" aria-label="Formato de impresión">
+                <option value="carta" selected>Hoja tipo carta</option>
+                <option value="80mm">Impresora 80mm</option>
+            </select>
+
+            <button type="button" onclick="imprimirActa()" class="btn btn-primary">
                 <i class="bi bi-printer"></i> Imprimir Acta
             </button>
         </div>
     </div>
 
-    <!-- Acta de Liquidación -->
-    <div class="card shadow-sm">
+    <!-- Acta de Liquidación (Carta) -->
+    <div class="card shadow-sm vista-carta">
         <div class="card-body p-4">
             <!-- Encabezado -->
             <div class="row mb-4">
@@ -57,7 +142,8 @@
                     {% endif %}
                     <h4 class="fw-bold" style="color: #003366;">ACTA DE LIQUIDACIÓN</h4>
                     <p class="mb-0"><strong>N°:</strong> {{ liquidacion.numero_liquidacion }}</p>
-                    <p class="mb-0"><strong>Fecha:</strong> {{ liquidacion.fecha_liquidacion|date:"d/m/Y H:i A" }}</p>
+                    <p class="mb-0"><strong>Fecha:</strong> {{ liquidacion.fecha_liquidacion|date:"d/m/Y h:i A" }}</p>
+                    <small class="text-muted" style="font-size: 0.72rem;">Imp: <span id="contador-impresiones">{{ liquidacion.veces_impreso }}</span></small>
                 </div>
                 <div class="col-md-6 text-end">
                     {% if liquidacion.estado == 'anulada' %}
@@ -75,7 +161,7 @@
                         <tr><th>Bus:</th><td>{{ liquidacion.bus.placa }} ({{ liquidacion.bus.modelo }})</td></tr>
                         <tr><th>N° Interno:</th><td>{{ liquidacion.bus.numero_bus|default:"—" }}</td></tr>
                         <tr><th>Dueño:</th><td>{{ liquidacion.dueno.nombre }}</td></tr>
-                        <tr><th>RIF:</th><td>{{ liquidacion.dueno.rif }}</td></tr>
+                        <tr><th>Cédula / RIF:</th><td>{{ liquidacion.dueno.cedula|default:"—" }}</td></tr>
                         <tr><th>Conductores:</th><td>{{ liquidacion.conductores_nombres }}</td></tr>
                     </table>
                 </div>
@@ -83,6 +169,9 @@
                     <table class="table table-sm">
                         <tr><th>Oficina Liquidadora:</th><td>{{ liquidacion.oficina_liquidacion.nombre }} ({{ liquidacion.oficina_liquidacion.codigo }})</td></tr>
                         <tr><th>Ruta:</th><td>{{ liquidacion.viaje.ruta.nombre }}</td></tr>
+                        {% if liquidacion.viaje.ruta.destino_final %}
+                        <tr><th>Destino Final:</th><td>{{ liquidacion.viaje.ruta.destino_final }}</td></tr>
+                        {% endif %}
                         <tr><th>Fecha del Viaje:</th><td>{{ liquidacion.viaje.fecha|date:"d/m/Y" }} - {{ liquidacion.viaje.hora|time:"h:i A" }}</td></tr>
                         <tr><th>Liquidado por:</th><td>{{ liquidacion.liquidado_por.get_full_name|default:liquidacion.liquidado_por.username }}</td></tr>
                     </table>
@@ -92,13 +181,13 @@
             <hr>
 
             <!-- Totales -->
-            <div class="row mb-4">
+            <div class="row mb-3">
                 <div class="col-md-3 text-center">
-                    <p class="text-muted mb-1 small">Total Bruto USD</p>
+                    <p class="text-muted mb-1 small">Total Bruto Tarifa (USD)</p>
                     <h4 class="fw-bold text-primary">${{ liquidacion.total_bruto_usd|floatformat:2 }}</h4>
                 </div>
                 <div class="col-md-3 text-center">
-                    <p class="text-muted mb-1 small">Total Bruto Bs.</p>
+                    <p class="text-muted mb-1 small">Total Bruto (Bs.)</p>
                     <h4 class="fw-bold">Bs. {{ liquidacion.total_bruto_bs|floatformat:2 }}</h4>
                 </div>
                 <div class="col-md-3 text-center">
@@ -106,16 +195,44 @@
                     <h4 class="fw-bold">${{ liquidacion.monto_porcentaje_empresa_usd|floatformat:2 }}</h4>
                 </div>
                 <div class="col-md-3 text-center">
-                    <p class="text-muted mb-1 small">Neto a Pagar</p>
+                    <p class="text-muted mb-1 small">Neto a Pagar Dueño</p>
                     <h4 class="fw-bold text-success">${{ liquidacion.neto_a_pagar_usd|floatformat:2 }}</h4>
                     <small class="text-muted">Bs. {{ liquidacion.neto_a_pagar_bs|floatformat:2 }}</small>
+                </div>
+            </div>
+
+            <!-- Desglose de Caja y Seguros (100% Empresa) -->
+            <div class="row g-2 mb-4 small">
+                <div class="col-md-6">
+                    <div class="border rounded p-2 bg-light">
+                        <div class="d-flex justify-content-between">
+                            <span>Recaudado Tarifa Oficina Local:</span>
+                            <strong>${{ total_local_usd|floatformat:2 }}</strong>
+                        </div>
+                        <div class="d-flex justify-content-between text-primary mt-1">
+                            <span>Seguro Boletos Oficina Local (100% Empresa):</span>
+                            <strong>${{ seguro_local_usd|floatformat:2 }} / Bs. {{ seguro_local_bs|floatformat:2 }}</strong>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="border rounded p-2 bg-light">
+                        <div class="d-flex justify-content-between">
+                            <span>Recaudado Tarifa Otras Oficinas / Web (*):</span>
+                            <strong>${{ total_externo_usd|floatformat:2 }}</strong>
+                        </div>
+                        <div class="d-flex justify-content-between text-info mt-1">
+                            <span>Seguro Otras Oficinas y Web (100% Empresa):</span>
+                            <strong>${{ seguro_externo_usd|floatformat:2 }} / Bs. {{ seguro_externo_bs|floatformat:2 }}</strong>
+                        </div>
+                    </div>
                 </div>
             </div>
 
             <hr>
 
             <!-- Tabla de Gastos -->
-            <div class="row">
+            <div class="row mb-4">
                 <div class="col-md-6">
                     <h6 class="fw-bold text-primary">Gastos Administrativos (Antes del %)</h6>
                     <table class="table table-sm table-bordered">
@@ -123,16 +240,17 @@
                             <tr><th>Concepto</th><th class="text-end">Monto USD</th></tr>
                         </thead>
                         <tbody>
-                            {% for g in gastos %}
-                                {% if g.tipo == 'antes' %}
+                            {% for gasto in liquidacion.gastos.all %}
+                                {% if gasto.tipo == 'antes' %}
                                     <tr>
-                                        <td>{{ g.concepto }}</td>
-                                        <td class="text-end">${{ g.monto_usd|floatformat:2 }}</td>
+                                        <td>{{ gasto.concepto }}</td>
+                                        <td class="text-end">${{ gasto.monto_usd|floatformat:2 }}</td>
                                     </tr>
                                 {% endif %}
-                            {% empty %}
-                                <tr><td colspan="2" class="text-center text-muted">Sin gastos</td></tr>
                             {% endfor %}
+                            {% if liquidacion.total_gastos_antes_usd == 0 %}
+                                <tr><td colspan="2" class="text-center text-muted">Sin gastos</td></tr>
+                            {% endif %}
                         </tbody>
                         <tfoot>
                             <tr class="table-light fw-bold">
@@ -149,16 +267,17 @@
                             <tr><th>Concepto</th><th class="text-end">Monto USD</th></tr>
                         </thead>
                         <tbody>
-                            {% for g in gastos %}
-                                {% if g.tipo == 'despues' %}
+                            {% for gasto in liquidacion.gastos.all %}
+                                {% if gasto.tipo == 'despues' %}
                                     <tr>
-                                        <td>{{ g.concepto }}</td>
-                                        <td class="text-end">${{ g.monto_usd|floatformat:2 }}</td>
+                                        <td>{{ gasto.concepto }}</td>
+                                        <td class="text-end">${{ gasto.monto_usd|floatformat:2 }}</td>
                                     </tr>
                                 {% endif %}
-                            {% empty %}
-                                <tr><td colspan="2" class="text-center text-muted">Sin gastos</td></tr>
                             {% endfor %}
+                            {% if liquidacion.total_gastos_despues_usd == 0 %}
+                                <tr><td colspan="2" class="text-center text-muted">Sin gastos</td></tr>
+                            {% endif %}
                         </tbody>
                         <tfoot>
                             <tr class="table-light fw-bold">
@@ -170,9 +289,40 @@
                 </div>
             </div>
 
+            <!-- Desglose de Pasajeros Liquidados (SOLO BOLETOS, SIN MENORES) -->
+            {% if boletos_detalle %}
+            <h6 class="fw-bold text-dark">Detalle de Pasajeros Liquidados ({{ boletos_detalle|length }})</h6>
+            <div class="table-responsive mb-3">
+                <table class="table table-sm table-bordered">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Asiento</th>
+                            <th>Boleto</th>
+                            <th>Pasajero</th>
+                            <th>Cédula</th>
+                            <th>Oficina Venta</th>
+                            <th class="text-end">Tarifa USD</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for b in boletos_detalle %}
+                        <tr>
+                            <td>{{ b.asiento }}</td>
+                            <td>{{ b.numero_boleto }}</td>
+                            <td>{{ b.pasajero }}</td>
+                            <td>{{ b.cedula }}</td>
+                            <td>{% if b.es_propio %}{{ b.oficina }}{% else %}<strong>* {{ b.oficina }}</strong>{% endif %}</td>
+                            <td class="text-end">${{ b.tarifa_usd|floatformat:2 }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+
             <!-- Observaciones -->
             {% if liquidacion.observacion %}
-                <div class="mt-4">
+                <div class="mt-3">
                     <h6 class="fw-bold">Observaciones:</h6>
                     <p class="text-muted">{{ liquidacion.observacion|linebreaks }}</p>
                 </div>
@@ -191,8 +341,242 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Pie de impresión (fecha y hora actual de impresión) -->
+            <div class="text-muted text-end mt-3" style="font-size: 0.72rem;">
+                Impreso el: <span class="fecha-hora-impresion-copia">{% now "d/m/Y h:i:s A" %}</span>
+            </div>
         </div>
     </div>
+
+    <!-- Notas de Débito en Media Carta (al imprimir en modo Carta) -->
+    {% if liquidacion.gastos.all %}
+    <div class="notas-debito-media-carta mt-4">
+        {% for gasto in liquidacion.gastos.all %}
+        <div class="nota-debito-media-carta d-flex flex-column justify-content-between">
+            <div>
+                <div class="d-flex justify-content-between border-bottom pb-1 mb-2">
+                    <div>
+                        <div class="fw-bold">NOTA DE DÉBITO</div>
+                        <small>Liq. N°: <strong>{{ liquidacion.numero_liquidacion }}</strong></small>
+                    </div>
+                    <div class="text-end small">
+                        <div><strong>N°:</strong> {{ gasto.id }}</div>
+                        <div>{{ liquidacion.fecha_liquidacion|date:"d/m/Y h:i A" }}</div>
+                    </div>
+                </div>
+                <div class="row small mb-2">
+                    <div class="col-6">
+                        <div><strong>Origen:</strong> {{ liquidacion.oficina_liquidacion.nombre }}</div>
+                        <div><strong>Destino:</strong> {{ liquidacion.viaje.ruta.destino_final|default:liquidacion.viaje.ruta.nombre }}</div>
+                        <div><strong>Unidad:</strong> {{ liquidacion.bus.numero_bus|default:liquidacion.bus.placa }} ({{ liquidacion.bus.placa }})</div>
+                    </div>
+                    <div class="col-6 text-end">
+                        <div><strong>Viaje:</strong> {{ liquidacion.viaje.fecha|date:"d/m/Y" }} {{ liquidacion.viaje.hora|time:"h:i A" }}</div>
+                        <div><strong>Tipo:</strong> {{ gasto.get_tipo_display }}</div>
+                        <div><strong>Dueño:</strong> {{ liquidacion.dueno.nombre }}</div>
+                    </div>
+                </div>
+                <div class="p-2 border bg-light small">
+                    <strong>Concepto:</strong> {{ gasto.concepto }}
+                </div>
+            </div>
+            <div class="d-flex justify-content-between align-items-end border-top pt-2 small">
+                <span class="text-muted" style="font-size: 0.72rem;">
+                    Impreso: <span class="fecha-hora-impresion-copia">{% now "d/m/Y h:i:s A" %}</span>
+                </span>
+                <strong>Monto USD: ${{ gasto.monto_usd|floatformat:2 }}</strong>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+
+<!-- ========================================================= -->
+<!-- BLOQUE LISTÍN DE PASAJEROS (MISMO N° DE LIQUIDACIÓN)       -->
+<!-- ========================================================= -->
+<div class="bloque-listin" id="bloque-listin">
+    <div class="d-flex justify-content-between align-items-start border-bottom pb-2 mb-3">
+        <div>
+            <h5 class="fw-bold mb-0">LISTÍN DE PASAJEROS</h5>
+            <div><strong>Listín / Liq. N°:</strong> {{ liquidacion.numero_liquidacion }}</div>
+        </div>
+        <div class="text-end small">
+            <div><strong>Fecha Viaje:</strong> {{ liquidacion.viaje.fecha|date:"d/m/Y" }} - {{ liquidacion.viaje.hora|time:"h:i A" }}</div>
+            <div><strong>Impreso:</strong> <span class="fecha-hora-impresion-copia">{% now "d/m/Y h:i:s A" %}</span></div>
+        </div>
+    </div>
+
+    <div class="row small mb-3">
+        <div class="col-6">
+            <div><strong>Origen:</strong> {{ liquidacion.oficina_liquidacion.nombre }}</div>
+            <div><strong>Destino Final:</strong> {{ liquidacion.viaje.ruta.destino_final|default:liquidacion.viaje.ruta.nombre }}</div>
+            <div><strong>Ruta:</strong> {{ liquidacion.viaje.ruta.nombre }}</div>
+        </div>
+        <div class="col-6">
+            <div><strong>Bus:</strong> {{ liquidacion.bus.numero_bus|default:"-" }} / Placa: {{ liquidacion.bus.placa }}</div>
+            <div><strong>Conductores:</strong> {{ liquidacion.conductores_nombres }}</div>
+        </div>
+    </div>
+
+    <table class="table table-sm table-bordered">
+        <thead class="table-light">
+            <tr>
+                <th style="width: 10%;">Asiento</th>
+                <th style="width: 45%;">Nombre y Apellido</th>
+                <th style="width: 20%;">Cédula / Condición</th>
+                <th style="width: 25%;">Destino</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for b in boletos_detalle %}
+            <tr>
+                <td>{{ b.asiento }}</td>
+                <td>{{ b.pasajero }}</td>
+                <td>{{ b.cedula }}</td>
+                <td>{{ liquidacion.viaje.ruta.destino_final|default:liquidacion.viaje.ruta.nombre }}</td>
+            </tr>
+            {% endfor %}
+            {% for m in menores_listin %}
+            <tr>
+                <td>MENOR</td>
+                <td>{{ m.nombre_apellido }}</td>
+                <td>SIN PASAJE</td>
+                <td>{{ m.destino|default:liquidacion.viaje.ruta.destino_final|default:liquidacion.viaje.ruta.nombre }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- ========================================================= -->
+<!-- BLOQUE TÉRMICO 80MM (LIQUIDACIÓN + NOTAS DE DÉBITO)       -->
+<!-- ========================================================= -->
+<div class="ticket-80mm" id="ticket-80mm">
+    <div style="text-align: center; font-weight: bold;">
+        <div>ACTA DE LIQUIDACION</div>
+        <div>Nro: {{ liquidacion.numero_liquidacion }}</div>
+        {% if liquidacion.estado == 'anulada' %}
+            <div>*** ANULADA ***</div>
+        {% endif %}
+    </div>
+
+    <div class="sep"></div>
+    <div><strong>Fecha Liq:</strong> {{ liquidacion.fecha_liquidacion|date:"d/m/Y h:i A" }}</div>
+    <div><strong>Oficina:</strong> {{ liquidacion.oficina_liquidacion.nombre }} ({{ liquidacion.oficina_liquidacion.codigo }})</div>
+    <div><strong>Ruta:</strong> {{ liquidacion.viaje.ruta.nombre }}</div>
+    {% if liquidacion.viaje.ruta.destino_final %}
+        <div><strong>Destino:</strong> {{ liquidacion.viaje.ruta.destino_final }}</div>
+    {% endif %}
+    <div><strong>Salida:</strong> {{ liquidacion.viaje.fecha|date:"d/m/Y" }} {{ liquidacion.viaje.hora|time:"h:i A" }}</div>
+    <div><strong>Bus:</strong> {{ liquidacion.bus.numero_bus|default:"-" }} / {{ liquidacion.bus.placa }}</div>
+    <div><strong>Dueno:</strong> {{ liquidacion.dueno.nombre }}</div>
+    <div><strong>Cond.:</strong> {{ liquidacion.conductores_nombres }}</div>
+    <div><strong>Cajero:</strong> {{ liquidacion.liquidado_por.get_full_name|default:liquidacion.liquidado_por.username }}</div>
+
+    <div class="sep-doble"></div>
+    <div style="display:flex; justify-content:space-between;">
+        <span>Bruto USD:</span>
+        <strong>${{ liquidacion.total_bruto_usd|floatformat:2 }}</strong>
+    </div>
+    <div style="display:flex; justify-content:space-between;">
+        <span>Bruto Bs.:</span>
+        <strong>{{ liquidacion.total_bruto_bs|floatformat:2 }}</strong>
+    </div>
+    <div style="display:flex; justify-content:space-between;">
+        <span>% Emp. ({{ liquidacion.porcentaje_empresa }}%):</span>
+        <span>${{ liquidacion.monto_porcentaje_empresa_usd|floatformat:2 }}</span>
+    </div>
+
+    <div class="sep"></div>
+    <div style="font-weight: bold;">GASTOS ANTES DEL %:</div>
+    {% for gasto in liquidacion.gastos.all %}
+        {% if gasto.tipo == 'antes' %}
+            <div style="display:flex; justify-content:space-between;">
+                <span>{{ gasto.concepto }}</span>
+                <span>${{ gasto.monto_usd|floatformat:2 }}</span>
+            </div>
+        {% endif %}
+    {% endfor %}
+    <div style="display:flex; justify-content:space-between; font-weight:bold;">
+        <span>Total Antes:</span>
+        <span>${{ liquidacion.total_gastos_antes_usd|floatformat:2 }}</span>
+    </div>
+
+    <div class="sep"></div>
+    <div style="font-weight: bold;">DESCUENTOS DESPUES DEL %:</div>
+    {% for gasto in liquidacion.gastos.all %}
+        {% if gasto.tipo == 'despues' %}
+            <div style="display:flex; justify-content:space-between;">
+                <span>{{ gasto.concepto }}</span>
+                <span>${{ gasto.monto_usd|floatformat:2 }}</span>
+            </div>
+        {% endif %}
+    {% endfor %}
+    <div style="display:flex; justify-content:space-between; font-weight:bold;">
+        <span>Total Despues:</span>
+        <span>${{ liquidacion.total_gastos_despues_usd|floatformat:2 }}</span>
+    </div>
+
+    <div class="sep-doble"></div>
+    <div style="display:flex; justify-content:space-between; font-weight:bold; font-size:12px;">
+        <span>NETO USD:</span>
+        <span>${{ liquidacion.neto_a_pagar_usd|floatformat:2 }}</span>
+    </div>
+    <div style="display:flex; justify-content:space-between; font-weight:bold;">
+        <span>NETO BS.:</span>
+        <span>{{ liquidacion.neto_a_pagar_bs|floatformat:2 }}</span>
+    </div>
+
+    {% if boletos_detalle %}
+    <div class="sep"></div>
+    <div style="font-weight: bold;">BOLETOS ({{ boletos_detalle|length }}):</div>
+    {% for b in boletos_detalle %}
+        <div style="display:flex; justify-content:space-between;">
+            <span>As.{{ b.asiento }} {{ b.numero_boleto }}</span>
+            <span>${{ b.tarifa_usd|floatformat:2 }}</span>
+        </div>
+        <div style="font-size: 9.5px;">{{ b.pasajero }} ({{ b.cedula }})</div>
+    {% endfor %}
+    {% endif %}
+
+    {% if liquidacion.observacion %}
+    <div class="sep"></div>
+    <div><strong>Obs:</strong> {{ liquidacion.observacion }}</div>
+    {% endif %}
+
+    <div class="sep"></div>
+    <div style="font-size: 9px; text-align: right;">
+        Imp. #{{ liquidacion.veces_impreso }} · <span class="fecha-hora-impresion-copia">{% now "d/m/Y h:i:s A" %}</span>
+    </div>
+
+    <!-- Notas de Débito vinculadas a la liquidación (80mm) -->
+    {% for gasto in liquidacion.gastos.all %}
+    <div class="corte-nota">
+        <div style="text-align: center; font-weight: bold;">
+            <div>NOTA DE DEBITO</div>
+            <div>Nro: {{ gasto.id }}</div>
+        </div>
+        <div class="sep"></div>
+        <div><strong>Liq. Nro:</strong> {{ liquidacion.numero_liquidacion }}</div>
+        <div><strong>Origen:</strong> {{ liquidacion.oficina_liquidacion.nombre }}</div>
+        <div><strong>Destino:</strong> {{ liquidacion.viaje.ruta.destino_final|default:liquidacion.viaje.ruta.nombre }}</div>
+        <div><strong>Fecha/Hora:</strong> {{ liquidacion.viaje.fecha|date:"d/m/Y" }} {{ liquidacion.viaje.hora|time:"h:i A" }}</div>
+        <div><strong>Unidad:</strong> {{ liquidacion.bus.numero_bus|default:liquidacion.bus.placa }} ({{ liquidacion.bus.placa }})</div>
+        <div><strong>Tipo:</strong> {{ gasto.get_tipo_display }}</div>
+        <div class="sep"></div>
+        <div><strong>Concepto:</strong> {{ gasto.concepto }}</div>
+        <div style="display:flex; justify-content:space-between; font-weight:bold; margin-top:4px;">
+            <span>MONTO USD:</span>
+            <span>${{ gasto.monto_usd|floatformat:2 }}</span>
+        </div>
+        <div class="sep"></div>
+        <div style="font-size: 9px; text-align: right;">
+            Impreso: <span class="fecha-hora-impresion-copia">{% now "d/m/Y h:i:s A" %}</span>
+        </div>
+    </div>
+    {% endfor %}
 </div>
 
 <!-- Modal de Anulación -->
@@ -224,4 +608,75 @@
 </div>
 {% endif %}
 
+<script>
+function obtenerFechaHoraActual() {
+    const ahora = new Date();
+    const fecha = ahora.toLocaleDateString('es-VE', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+    });
+    const hora = ahora.toLocaleTimeString('es-VE', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+    });
+    return `${fecha} ${hora}`;
+}
+
+function actualizarFechasImpresion() {
+    const texto = obtenerFechaHoraActual();
+    document.querySelectorAll('.fecha-hora-impresion-copia').forEach(el => {
+        el.innerText = texto;
+    });
+}
+
+function imprimirListin() {
+    document.body.classList.remove('modo-80mm');
+    document.body.classList.add('modo-listin');
+    actualizarFechasImpresion();
+    window.print();
+    setTimeout(() => {
+        document.body.classList.remove('modo-listin');
+    }, 600);
+}
+
+function imprimirActa() {
+    const formato = document.getElementById('formato-impresion')?.value || 'carta';
+    document.body.classList.remove('modo-listin');
+    document.body.classList.toggle('modo-80mm', formato === '80mm');
+    actualizarFechasImpresion();
+
+    fetch("{% url 'core:api_registrar_impresion_liquidacion' liquidacion.id %}", {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}',
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.ok) {
+            const contador = document.getElementById('contador-impresiones');
+            if (contador) {
+                contador.innerText = data.veces_impreso;
+            }
+            actualizarFechasImpresion();
+        }
+    })
+    .finally(() => {
+        window.print();
+        setTimeout(() => {
+            document.body.classList.remove('modo-80mm');
+        }, 600);
+    });
+}
+
+{% if auto_imprimir_listin %}
+document.addEventListener('DOMContentLoaded', function() {
+    setTimeout(() => imprimirListin(), 250);
+});
+{% endif %}
+</script>
 {% endblock %}

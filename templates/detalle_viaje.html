@@ -244,7 +244,7 @@
     <h2 style="color: #003366;">
         <i class="bi bi-bus-front"></i> {{ viaje.ruta.nombre }}
     </h2>
-    <a href="{% if user.usuarioempresa %}/taquilla/{% else %}/{% endif %}" class="btn btn-outline-secondary">
+    <a href="{% if user.usuarioempresa %}/taquilla/?origen={{ origen_id }}&destino={{ destino_id }}{% else %}/{% endif %}" class="btn btn-outline-secondary" onclick="liberarAsientosAntesDeSalir()">
         <i class="bi bi-arrow-left"></i> Volver
     </a>
 </div>
@@ -484,16 +484,19 @@
                             <i class="bi bi-arrow-repeat"></i> Reprogramar
                         </button>
                     </div>
+                    <!-- Botón Escanear QR (Pasando origen y destino actuales) -->
                     <div class="col-6">
-                        <a href="{% url 'core:taquilla_escaner' %}?viaje_id={{ viaje.id }}" class="btn btn-danger btn-sm w-100 fw-bold text-white">
+                        <a href="{% url 'core:taquilla_escaner' %}?viaje_id={{ viaje.id }}&origen={{ origen_id }}&destino={{ destino_id }}" class="btn btn-danger btn-sm w-100 fw-bold text-white">
                             <i class="bi bi-qr-code-scan"></i> Escanear QR
                         </a>
                     </div>
+
+                    <!-- Botón Liquidar (Pasando origen y destino actuales) -->
                     <div class="col-6">
-                        <a href="{% url 'core:taquilla_liquidar' %}?viaje_id={{ viaje.id }}" 
+                        <a href="{% url 'core:taquilla_liquidar' %}?viaje_id={{ viaje.id }}&origen={{ origen_id }}&destino={{ destino_id }}" 
                            class="btn btn-sm w-100 fw-bold text-white" 
                            style="background-color: #6f42c1;"
-                           onclick="mostrarCarga('Abriendo liquidación...', 'Preparando los datos del viaje. Por favor, espere.');">
+                           onclick="liberarAsientosAntesDeSalir(); mostrarCarga('Abriendo liquidación...', 'Preparando los datos del viaje. Por favor, espere.');">
                             <i class="bi bi-cash-coin"></i> Liquidar
                         </a>
                     </div>
@@ -814,6 +817,22 @@ document.addEventListener("DOMContentLoaded", function() {
             window.location.href = '/viajes/' + VIAJE_ID + '/pasajeros/';
         });
     }
+    
+    // Libera de forma síncrona/beacon los asientos del usuario al cambiar de vista importante
+    function liberarAsientosAntesDeSalir() {
+        const token = getCookie('csrftoken');
+        if (token) {
+            const formData = new FormData();
+            formData.append('csrfmiddlewaretoken', token);
+            // sendBeacon asegura que la petición se envíe incluso mientras cambia de página
+            navigator.sendBeacon('/taquilla/api/liberar-reservas-usuario/', formData);
+        }
+    }
+
+    // Opcional: limpiar también si recarga o cierra la pestaña
+    window.addEventListener('beforeunload', function() {
+        liberarAsientosAntesDeSalir();
+    });
 
     window.abrirCobroTaquilla = function() {
         if (seleccionados.size === 0) return;

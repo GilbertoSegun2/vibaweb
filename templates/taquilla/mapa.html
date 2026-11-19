@@ -78,7 +78,7 @@
                 <strong>Tramo:</strong> {{ parada_origen.oficina.nombre }} a {{ parada_destino.oficina.nombre }}
             </p>
         </div>
-        <a href="{% url 'core:taquilla_inicio' %}" class="btn btn-outline-secondary btn-sm">Volver</a>
+        <a href="{% url 'core:taquilla_inicio' %}?origen={{ origen_id }}&destino={{ destino_id }}" class="btn btn-outline-secondary btn-sm">Volver</a>
     </div>
 
     <div class="row">
@@ -122,26 +122,34 @@
         </div>
 
         <!-- Panel de Venta -->
-        <div class="col-md-4">
-            <div class="card shadow-sm">
-                <div class="card-body">
-                    <h5 class="card-title">Tu Venta</h5>
-                    <hr>
-                    <p class="mb-2"><strong>Asientos:</strong> <span id="asientos-lista">Ninguno</span></p>
-                    <p class="mb-2"><strong>Cantidad:</strong> <span id="cantidad">0</span></p>
-                    
-                    <div class="alert alert-success mt-3">
-                        <h6>Total estimado (USD):</h6>
-                        <h4 class="mb-0">$ <span id="total-usd">0.00</span></h4>
-                        <hr class="my-1">
-                        <small>Total en Bs.: <strong>Bs. <span id="total-bs">0.00</span></strong></small>
+        {% if es_fecha_hoy %}
+            <div class="col-md-4">
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <h5 class="card-title">Tu Venta</h5>
+                        <hr>
+                        <p class="mb-2"><strong>Asientos:</strong> <span id="asientos-lista">Ninguno</span></p>
+                        <p class="mb-2"><strong>Cantidad:</strong> <span id="cantidad">0</span></p>
+                        
+                        <div class="alert alert-success mt-3">
+                            <h6>Total estimado (USD):</h6>
+                            <h4 class="mb-0">$ <span id="total-usd">0.00</span></h4>
+                            <hr class="my-1">
+                            <small>Total en Bs.: <strong>Bs. <span id="total-bs">0.00</span></strong></small>
+                        </div>
+                        <button class="btn btn-success w-100" id="btn-vender" disabled onclick="irACobrar()">
+                            <i class="bi bi-cash-coin"></i> Cobrar
+                        </button>
                     </div>
-                    <button class="btn btn-success w-100" id="btn-vender" disabled onclick="irACobrar()">
-                        <i class="bi bi-cash-coin"></i> Cobrar
-                    </button>
                 </div>
             </div>
-        </div>
+        {% else %}
+            <div class="alert alert-warning shadow-sm">
+                <i class="bi bi-calendar-event"></i>
+                <strong>Viaje de fecha distinta a hoy ({{ viaje.fecha|date:"d/m/Y" }}):</strong>
+                No se permite cobrar boletos; solo puede gestionar liquidación o cierre de venta.
+            </div>
+        {% endif %}
     </div>
 </div>
 

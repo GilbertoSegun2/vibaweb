@@ -183,6 +183,17 @@ class Ruta(models.Model):
     )
     activa = models.BooleanField(default=True, verbose_name="Activa")
     observacion = models.CharField(max_length=200, blank=True, verbose_name="Observación")
+    
+    @property
+    def destino_final(self):
+        # 1. Buscar en RutaParada (por related_name 'paradas' o 'rutaparada_set')
+        rel_paradas = getattr(self, 'paradas', None) or self.rutaparada_set
+        ultima_parada = rel_paradas.select_related('oficina').order_by('-orden').first()
+        if ultima_parada and ultima_parada.oficina:
+            return ultima_parada.oficina.nombre
+        # 2. Respaldo desde el ManyToMany 'destinos' si no hay paradas cargadas
+        ultimo_destino = self.destinos.last()
+        return ultimo_destino.nombre if ultimo_destino else ''
 
     class Meta:
         verbose_name = "Ruta"
@@ -896,6 +907,7 @@ class Liquidacion(models.Model):
     
     # ⭐ NUEVO CAMPO: Estado de la liquidación
     estado = models.CharField(max_length=10, choices=ESTADOS, default='activa', verbose_name="Estado")
+    veces_impreso = models.PositiveIntegerField(default=0, verbose_name="Veces impreso")
     
     # Relaciones
     viaje = models.ForeignKey(Viaje, on_delete=models.PROTECT, verbose_name="Viaje")
@@ -971,3 +983,32 @@ class TipoGasto(models.Model):
     def __str__(self):
         return f"{self.nombre} ({self.get_tipo_display()})"
         
+class PasajeroListinMenor(models.Model):
+    """Bebés, niños y niñas sin pasaje registrados solo para el listín de la salida"""
+    viaje = models.ForeignKey(
+        'Viaje',
+        on_delete=models.CASCADE,
+        related_name='menores_listin'
+    )
+    liquidacion = models.ForeignKey(
+        'Liquidacion',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='menores_listin'
+    )
+    nombre_apellido = models.CharField(max_length=150)
+    destino = models.CharField(max_length=100, blank=True)
+    registrado_por = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True
+    )
+    fecha_registro = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['id']
+
+    def __str__(self):
+        return f"{self.nombre_apellido} (Viaje {self.viaje_id})"

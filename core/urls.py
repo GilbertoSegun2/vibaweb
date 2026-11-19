@@ -26,40 +26,23 @@ urlpatterns = [
     path('desbloquear/confirmar/', views.confirmar_desbloqueo_view, name='confirmar_desbloqueo'),
     path('desbloquear-sesion/', views.desbloquear_sesion_view, name='desbloquear_sesion'),
     path('reenviar-desbloqueo/', views.reenviar_desbloqueo_view, name='reenviar_desbloqueo'),
-    path('recuperar-clave/', views.solicitar_recuperacion_view, name='password_reset'),
-    path('recuperar-clave/verificar/', views.verificar_recuperacion_view, name='verificar_recuperacion'),
-    path('recuperar-clave/reenviar/', views.reenviar_recuperacion_view, name='reenviar_recuperacion'),
-    path('recuperar-clave/nueva/', views.nueva_clave_view, name='nueva_clave'),
+    path('desbloqueo/confirmar/<str:token>/<str:accion>/', views.confirmar_desbloqueo_por_email, name='confirmar_desbloqueo_por_email'),
+    path('reenviar-codigo-verificacion/', views.reenviar_codigo_verificacion, name='reenviar_codigo_verificacion'),
 
     # ⭐ FLUJO DE RECUPERACIÓN DE CONTRASEÑA
-    path('recuperar-clave/', auth_views.PasswordResetView.as_view(
-        template_name='registration/password_reset_form.html',
-        html_email_template_name='registration/password_reset_email.html',
-        success_url='/recuperar-clave/enviado/',
-        extra_context={'current_app': 'core'}
-    ), name='password_reset'),
-    # ⭐ FLUJO DE RECUPERACIÓN CON TECLADO DE 8 BOTONES
     path('recuperar-clave/', views.solicitar_recuperacion_view, name='password_reset'),
     path('recuperar-clave/verificar/', views.verificar_recuperacion_view, name='verificar_recuperacion'),
     path('recuperar-clave/reenviar/', views.reenviar_recuperacion_view, name='reenviar_recuperacion'),
     path('recuperar-clave/nueva/', views.nueva_clave_view, name='nueva_clave'),
-    # Ruta que usa el formulario para el aviso de "correo enviado"
     path('recuperar-clave/enviado/', auth_views.PasswordResetDoneView.as_view(
         template_name='registration/password_reset_done.html',
         extra_context={'current_app': 'core'}
     ), name='password_reset_done'),
-    
-    path('recuperar-clave/enviado/', auth_views.PasswordResetDoneView.as_view(
-        template_name='registration/password_reset_done.html',
-        extra_context={'current_app': 'core'}
-    ), name='password_reset_done'),
-    
     path('recuperar-clave/confirmar/<uidb64>/<token>/', auth_views.PasswordResetConfirmView.as_view(
         template_name='registration/password_reset_confirm.html',
         success_url='/recuperar-clave/completado/',
         extra_context={'current_app': 'core'}
     ), name='password_reset_confirm'),
-    
     path('recuperar-clave/completado/', auth_views.PasswordResetCompleteView.as_view(
         template_name='registration/password_reset_complete.html',
         extra_context={'current_app': 'core'}
@@ -87,7 +70,6 @@ urlpatterns = [
     path('taquilla/viaje/<int:viaje_id>/cobrar/', views.taquilla_cobrar, name='taquilla_cobrar'),
     path('taquilla/confirmacion/<int:transaccion_id>/', views.taquilla_confirmacion, name='taquilla_confirmacion'),
     path('taquilla/viaje/<int:viaje_id>/cerrar-venta/', views.taquilla_cerrar_venta, name='taquilla_cerrar_venta'),
-    path('taquilla/liquidacion/<int:liquidacion_id>/', views.taquilla_liquidacion_detalle, name='taquilla_liquidacion_detalle'),
     path('taquilla/consultar-boleto/', views.taquilla_consultar_boleto, name='taquilla_consultar_boleto'),
     path('taquilla/api/liberar-reservas-usuario/', views.liberar_reservas_usuario_api, name='liberar_reservas_usuario_api'),
     path('taquilla/api/buscar-pasajero/', views.taquilla_buscar_pasajero, name='taquilla_buscar_pasajero'),
@@ -117,6 +99,18 @@ urlpatterns = [
     path('taquilla/api/liberar-asiento-reprogramar/', views.taquilla_liberar_asiento_reprogramar, name='taquilla_liberar_asiento_reprogramar'),
 
     # ============================================================
+    # ⭐ MÓDULO DE LIQUIDACIONES DE SALIDA
+    # ============================================================
+    path('taquilla/liquidar/', views.taquilla_liquidar, name='taquilla_liquidar'),
+    path('taquilla/liquidacion/<int:liquidacion_id>/', views.taquilla_liquidacion_detalle, name='taquilla_liquidacion_detalle'),
+    path('taquilla/liquidacion/<int:liquidacion_id>/anular/', views.taquilla_anular_liquidacion, name='taquilla_anular_liquidacion'),
+    path('taquilla/liquidacion/<int:liquidacion_id>/registrar-impresion/', views.api_registrar_impresion_liquidacion, name='api_registrar_impresion_liquidacion'),
+    path('taquilla/api/datos-liquidacion/', views.api_datos_liquidacion, name='api_datos_liquidacion'),
+    path('taquilla/api/buscar-bus/', views.api_buscar_bus, name='api_buscar_bus'),
+    path('taquilla/api/crear-gasto/', views.api_crear_tipo_gasto, name='api_crear_tipo_gasto'),
+    path('taquilla/api/marcar-no-show/', views.api_marcar_no_show, name='api_marcar_no_show'),
+
+    # ============================================================
     # UTILIDADES Y APIS
     # ============================================================
     path('ayuda/', views.ayuda, name='ayuda'),
@@ -124,13 +118,4 @@ urlpatterns = [
     path('api/heartbeat/', views.heartbeat, name='heartbeat'),
     path('api/destinos-populares/', views.api_destinos_populares, name='api_destinos_populares'),
     path('api/buscar-oficinas/', views.api_buscar_oficinas, name='api_buscar_oficinas'),
-    
-    path('taquilla/liquidar/', views.taquilla_liquidar, name='taquilla_liquidar'),
-    path('taquilla/api/datos-liquidacion/', views.api_datos_liquidacion, name='api_datos_liquidacion'),
-    path('taquilla/api/buscar-bus/', views.api_buscar_bus, name='api_buscar_bus'),
-    path('desbloqueo/confirmar/<str:token>/<str:accion>/', views.confirmar_desbloqueo_por_email, name='confirmar_desbloqueo_por_email'),
-    path('reenviar-codigo-verificacion/', views.reenviar_codigo_verificacion, name='reenviar_codigo_verificacion'),
-    
-    path('taquilla/api/crear-gasto/', views.api_crear_tipo_gasto, name='api_crear_tipo_gasto'),
-    path('taquilla/liquidacion/<int:liquidacion_id>/anular/', views.taquilla_anular_liquidacion, name='taquilla_anular_liquidacion'),
 ]
