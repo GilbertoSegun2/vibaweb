@@ -1,0 +1,92 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container py-4" style="max-width: 560px;">
+    <div class="card shadow-sm">
+        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="bi bi-luggage me-2"></i>Etiquetas / Tickets de Maleta</h5>
+            <span class="badge bg-light text-dark">Próximo: {{ proximo_codigo }}</span>
+        </div>
+        <div class="card-body">
+            <form method="post" onsubmit="return confirmarImpresionMaleta();">
+                {% csrf_token %}
+
+                <div class="mb-3">
+                    <label for="oficina_id" class="form-label fw-semibold">Oficina</label>
+                    <select name="oficina_id" id="oficina_id" class="form-select" required>
+                        {% for ofi in oficinas %}
+                            <option value="{{ ofi.id }}" {% if ofi.id == oficina_default.id %}selected{% endif %}>
+                                {{ ofi.nombre|upper }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label for="cantidad_hojas" class="form-label fw-semibold">
+                        Cantidad de hojas tipo Carta a imprimir
+                        <span class="text-muted fw-normal d-block small">
+                            (Cada hoja tipo Carta contiene <strong>10 tickets de maleta</strong>)
+                        </span>
+                    </label>
+                    <select name="cantidad_hojas" id="cantidad_hojas" class="form-select" required onchange="actualizarResumenTickets()">
+                        {% for h in opciones_hojas %}
+                            <option value="{{ h }}">{{ h }} {% if h == 1 %}hoja{% else %}hojas{% endif %} ({{ h }}0 tickets)</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="alert alert-light border small mb-3" id="resumen-maleta">
+                    Se generarán <strong>10 tickets</strong> iniciando en <strong>{{ proximo_codigo }}</strong>.
+                    <br>
+                    <span class="text-muted">Nota: Los correlativos se asignan al generar y no se guardan individualmente.</span>
+                </div>
+
+                <div class="d-flex justify-content-between">
+                    <a href="{% url 'core:taquilla_inicio' %}" class="btn btn-outline-secondary">Volver</a>
+                    <button type="submit" class="btn btn-primary fw-semibold">
+                        <i class="bi bi-printer me-1"></i> Generar e Imprimir
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function actualizarResumenTickets() {
+    const hojas = parseInt(document.getElementById('cantidad_hojas').value || '1', 10);
+    const total = hojas * 10;
+    document.getElementById('resumen-maleta').innerHTML =
+        `Se generarán <strong>${total} tickets</strong> (${hojas} hoja${hojas > 1 ? 's' : ''} Carta) iniciando en <strong>{{ proximo_codigo }}</strong>.` +
+        `<br><span class="text-muted">Nota: Los correlativos se asignan al generar y no se guardan individualmente.</span>`;
+}
+
+function confirmarImpresionMaleta() {
+    const hojas = parseInt(document.getElementById('cantidad_hojas').value || '1', 10);
+    return confirm(`¿Generar ${hojas * 10} tickets de maleta (${hojas} hoja${hojas > 1 ? 's' : ''} Carta)?\nEl correlativo avanzará inmediatamente.`);
+}
+</script>
+
+{{ proximos_por_oficina|json_script:"proximos-maleta-data" }}
+<script>
+const proximosPorOficina = JSON.parse(document.getElementById('proximos-maleta-data').textContent);
+
+function obtenerProximoCodigo() {
+    const ofiId = document.getElementById('oficina_id').value;
+    return proximosPorOficina[ofiId] || '{{ proximo_codigo }}';
+}
+
+function actualizarResumenTickets() {
+    const hojas = parseInt(document.getElementById('cantidad_hojas').value || '1', 10);
+    const total = hojas * 10;
+    const prox = obtenerProximoCodigo();
+    document.getElementById('badge-proximo').textContent = `Próximo: ${prox}`;
+    document.getElementById('resumen-maleta').innerHTML =
+        `Se generarán <strong>${total} tickets</strong> (${hojas} hoja${hojas > 1 ? 's' : ''} Carta) iniciando en <strong>${prox}</strong>.` +
+        `<br><span class="text-muted">Nota: Los correlativos se asignan al generar y no se guardan individualmente.</span>`;
+}
+
+document.getElementById('oficina_id').addEventListener('change', actualizarResumenTickets);
+</script>
+{% endblock %}

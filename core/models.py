@@ -14,6 +14,15 @@ class Oficina(models.Model):
         verbose_name="¿Bloqueada para venta web?",
         help_text="Si está marcada, esta oficina no permite ventas web. Los clientes no verán viajes que salgan desde esta oficina."
     )
+    ultimo_numero_maleta = models.PositiveSmallIntegerField(
+        default=0,
+        verbose_name="Último número de maleta (0-999)"
+    )
+    letra_actual_maleta = models.CharField(
+        max_length=1,
+        default='A',
+        verbose_name="Letra actual de maleta"
+    )
 
     class Meta:
         verbose_name = "Oficina"
@@ -22,6 +31,14 @@ class Oficina(models.Model):
 
     def __str__(self):
         return f"{self.codigo} - {self.nombre}"
+
+    def proximo_codigo_maleta(self):
+        num = self.ultimo_numero_maleta + 1
+        letra = (self.letra_actual_maleta or 'A').upper()
+        if num > 999:
+            num = 1
+            letra = 'A' if letra >= 'Z' else chr(ord(letra) + 1)
+        return f"{num:03d}{letra}"
 
 class Empresa(models.Model):
     """Accionista (dueño de buses) - Alineado con PAEX"""

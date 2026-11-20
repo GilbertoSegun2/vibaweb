@@ -109,6 +109,18 @@
                             </a>
                         </li>
 
+                        <li class="nav-item">
+                            <a class="nav-link" href="{% url 'core:taquilla_tickets_maleta' %}">
+                                <i class="bi bi-suitcase-lg"></i> Tickets de Maleta
+                            </a>
+                        </li>
+
+                        <li class="nav-item">
+                            <a class="nav-link" href="{% url 'core:taquilla_consultar_boleto' %}">
+                                <i class="bi bi-search"></i> Consultar Boleto
+                            </a>
+                        </li>
+
                         {% if user.usuarioempresa.rol == 'admin_oficina' or user.is_superuser %}
                             <!-- Espacio reservado para futuras opciones de gerencia de oficina (ej. Crear salidas / Reportes) -->
                         {% endif %}

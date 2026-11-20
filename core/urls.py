@@ -118,4 +118,10 @@ urlpatterns = [
     path('api/heartbeat/', views.heartbeat, name='heartbeat'),
     path('api/destinos-populares/', views.api_destinos_populares, name='api_destinos_populares'),
     path('api/buscar-oficinas/', views.api_buscar_oficinas, name='api_buscar_oficinas'),
+    
+    # ============================================================
+    # TICKETS DE MALETA
+    # ============================================================
+    path('taquilla/tickets-maleta/', views.taquilla_tickets_maleta, name='taquilla_tickets_maleta'),
+    path('taquilla/tickets-maleta/imprimir/', views.taquilla_tickets_maleta_imprimir, name='taquilla_tickets_maleta_imprimir'),
 ]

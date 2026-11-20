@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Tickets de Maleta ({{ lote.desde }} - {{ lote.hasta }})</title>
+    <style>
+        @page {
+            size: letter portrait;
+            margin: 6mm 8mm;
+        }
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            color: #000;
+            background: #fff;
+        }
+        .no-print {
+            padding: 10px 16px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+        }
+        .no-print button, .no-print a {
+            padding: 6px 14px;
+            font-size: 13px;
+            cursor: pointer;
+            text-decoration: none;
+            border: 1px solid #333;
+            background: #fff;
+            color: #000;
+            border-radius: 4px;
+        }
+        .no-print button.primary {
+            background: #0d6efd;
+            color: #fff;
+            border-color: #0d6efd;
+            font-weight: bold;
+        }
+        .hoja-carta {
+            width: 100%;
+            height: 266mm; /* Alto útil en hoja Carta */
+            display: flex;
+            flex-direction: column;
+            page-break-after: always;
+        }
+        .hoja-carta:last-child {
+            page-break-after: auto;
+        }
+        .fila-ticket {
+            flex: 1; /* 10 filas iguales = 10% del alto cada una */
+            display: grid;
+            grid-template-columns: 22% 33% 22% 23%;
+            border-bottom: 1px solid #333;
+            align-items: center;
+        }
+        .fila-ticket:first-child {
+            border-top: 1px solid #333;
+        }
+        .celda {
+            height: 100%;
+            padding: 2mm 3mm;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            border-right: 1px dashed #666;
+        }
+        .celda:last-child {
+            border-right: none;
+        }
+        .celda-centro {
+            align-items: center;
+            text-align: center;
+        }
+        .oficina-txt {
+            font-size: 11pt;
+            font-weight: bold;
+            letter-spacing: 0.4px;
+            margin-bottom: 1.5mm;
+        }
+        .codigo-txt {
+            font-size: 17pt;
+            font-weight: bold;
+            letter-spacing: 1px;
+            font-family: "Courier New", Courier, monospace;
+        }
+        .empresa-txt {
+            font-size: 8.5pt;
+            font-weight: bold;
+            text-transform: uppercase;
+            margin-bottom: 1mm;
+        }
+        .sub-oficina-txt {
+            font-size: 8pt;
+            margin-bottom: 2mm;
+        }
+        .leyenda-maleta {
+            font-size: 8.5pt;
+            font-weight: bold;
+        }
+        .talon-logo {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            margin-bottom: 1mm;
+        }
+        .talon-logo img {
+            max-height: 7.5mm;
+            max-width: 18mm;
+            object-fit: contain;
+        }
+        .talon-logo span {
+            font-size: 7.5pt;
+            font-weight: bold;
+            line-height: 1.1;
+        }
+        .talon-ofi-peq {
+            font-size: 7.5pt;
+            margin-bottom: 1mm;
+        }
+        @media print {
+            .no-print {
+                display: none !important;
+            }
+        }
+    </style>
+</head>
+<body onload="window.print()">
+    <div class="no-print">
+        <div>
+            <strong>Tickets de maleta:</strong> {{ lote.desde }} al {{ lote.hasta }}
+            ({{ lote.total_tickets }} tickets · Oficina: {{ lote.oficina_nombre }})
+            — <em>Si cierra esta ventana sin imprimir, este lote no podrá reimprimirse.</em>
+        </div>
+        <div>
+            <button class="primary" onclick="window.print()">Imprimir ahora</button>
+            <a href="{% url 'core:taquilla_tickets_maleta' %}">Volver</a>
+        </div>
+    </div>
+
+    {% for hoja in lote.hojas %}
+    <div class="hoja-carta">
+        {% for codigo in hoja %}
+        <div class="fila-ticket">
+            <!-- Cuerpo 1: Oficina + Código -->
+            <div class="celda celda-centro">
+                <div class="oficina-txt">{{ lote.oficina_nombre }}</div>
+                <div class="codigo-txt">{{ codigo }}</div>
+            </div>
+
+            <!-- Cuerpo 2: Empresa + Oficina + Ticket de maleta -->
+            <div class="celda">
+                <div class="empresa-txt">{{ nombre_empresa }}</div>
+                <div class="sub-oficina-txt">OFICINA: {{ lote.oficina_nombre }}</div>
+                <div class="leyenda-maleta">Ticket de maleta</div>
+            </div>
+
+            <!-- Cuerpo 3: Oficina + Código -->
+            <div class="celda celda-centro">
+                <div class="oficina-txt">{{ lote.oficina_nombre }}</div>
+                <div class="codigo-txt">{{ codigo }}</div>
+            </div>
+
+            <!-- Cuerpo 4 (Pasajero): Logo + Empresa + Oficina + Código -->
+            <div class="celda">
+                <div class="talon-logo">
+                    {% if logo_empresa_url %}
+                        <img src="{{ logo_empresa_url }}" alt="Logo {{ nombre_empresa }}" onerror="this.style.display='none';">
+                    {% endif %}
+                    <span>{{ nombre_empresa }}</span>
+                </div>
+                <div class="talon-ofi-peq">{{ lote.oficina_nombre }}</div>
+                <div class="codigo-txt">{{ codigo }}</div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endfor %}
+</body>
+</html>

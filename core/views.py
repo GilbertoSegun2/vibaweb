@@ -3961,3 +3961,230 @@ def taquilla_liquidacion_detalle(request, liquidacion_id):
             liq.save(update_fields=['veces_impreso'])
             return JsonResponse({'ok': True, 'veces_impreso': liq.veces_impreso})
         return JsonResponse({'ok': False}, status=400)
+        
+from django.db import transaction
+from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib import messages
+from .models import Oficina, Parametro
+from .permissions import empleado_requerido
+
+
+def _avanzar_correlativo_maleta(contador, cantidad_tickets):
+    """
+    Genera `cantidad_tickets` códigos correlativos: 001A..999A, 001B..999B, ...
+    Actualiza `contador.ultimo_numero` y `contador.letra_actual` en memoria.
+    """
+    codigos = []
+    num = contador.ultimo_numero
+    letra = (contador.letra_actual or 'A').upper()
+
+    for _ in range(cantidad_tickets):
+        num += 1
+        if num > 999:
+            num = 1
+            letra = 'A' if letra >= 'Z' else chr(ord(letra) + 1)
+        codigos.append(f"{num:03d}{letra}")
+
+    contador.ultimo_numero = num
+    contador.letra_actual = letra
+    return codigos
+
+
+def _proximo_correlativo_maleta(contador):
+    num = contador.ultimo_numero + 1
+    letra = (contador.letra_actual or 'A').upper()
+    if num > 999:
+        num = 1
+        letra = 'A' if letra >= 'Z' else chr(ord(letra) + 1)
+    return f"{num:03d}{letra}"
+
+
+@empleado_requerido()
+def taquilla_tickets_maleta(request):
+    empleado = request.user.usuarioempresa
+    oficina_usuario = empleado.oficina
+
+    # Todas las oficinas activas, colocando primero la del taquillero logueado
+    otras_oficinas = list(
+        Oficina.objects.filter(activa=True).exclude(id=oficina_usuario.id).order_by('nombre')
+    )
+    oficinas = [oficina_usuario] + otras_oficinas
+
+    contador, _ = ContadorTicketMaleta.objects.get_or_create(id=1)
+
+    if request.method == 'POST':
+        oficina_id = request.POST.get('oficina_id')
+        try:
+            cantidad_hojas = int(request.POST.get('cantidad_hojas', 1))
+        except (TypeError, ValueError):
+            cantidad_hojas = 0
+
+        if cantidad_hojas < 1 or cantidad_hojas > 50:
+            messages.error(request, 'Indique una cantidad válida de hojas (entre 1 y 50).')
+            return redirect('core:taquilla_tickets_maleta')
+
+        oficina_sel = get_object_or_404(Oficina, id=oficina_id)
+        total_tickets = cantidad_hojas * 10
+
+        with transaction.atomic():
+            contador_lock, _ = ContadorTicketMaleta.objects.select_for_update().get_or_create(id=1)
+            codigos = _avanzar_correlativo_maleta(contador_lock, total_tickets)
+            contador_lock.save()
+
+        # Agrupar de 10 en 10 (1 hoja Carta = 10 tickets)
+        hojas = [codigos[i:i + 10] for i in range(0, len(codigos), 10)]
+
+        request.session['tickets_maleta_imprimir'] = {
+            'oficina_nombre': oficina_sel.nombre.upper(),
+            'oficina_codigo': getattr(oficina_sel, 'codigo', ''),
+            'hojas': hojas,
+            'desde': codigos[0],
+            'hasta': codigos[-1],
+            'total_tickets': total_tickets,
+        }
+        return redirect('core:taquilla_tickets_maleta_imprimir')
+
+    context = {
+        'oficinas': oficinas,
+        'oficina_default': oficina_usuario,
+        'proximo_codigo': _proximo_correlativo_maleta(contador),
+        'opciones_hojas': range(1, 21),  # 1 a 20 hojas (10 a 200 tickets)
+    }
+    return render(request, 'taquilla/tickets_maleta.html', context)
+
+
+@empleado_requerido()
+def taquilla_tickets_maleta_imprimir(request):
+    lote = request.session.pop('tickets_maleta_imprimir', None)
+    if not lote:
+        messages.warning(request, 'No hay tickets de maleta pendientes por imprimir o el lote ya fue consumido.')
+        return redirect('core:taquilla_tickets_maleta')
+
+    nombre_empresa, logo_empresa_url = _obtener_datos_empresa_maleta()
+
+    context = {
+        'lote': lote,
+        'nombre_empresa': nombre_empresa,
+        'logo_empresa_url': logo_empresa_url,
+    }
+    return render(request, 'taquilla/tickets_maleta_imprimir.html', context)
+    
+from django.templatetags.static import static
+from .models import Parametro
+
+
+def _obtener_datos_empresa_maleta():
+    params = {
+        str(p.codigo).strip(): p
+        for p in Parametro.objects.filter(codigo__in=['1', '150', '160'], activo=True)
+    }
+
+    p_nombre = params.get('1')
+    p_titulo = params.get('160')
+    nombre_empresa = (
+        (p_nombre.valor_texto if p_nombre and p_nombre.valor_texto else None)
+        or (p_titulo.valor_texto if p_titulo and p_titulo.valor_texto else None)
+        or 'Transporte VibaWeb C.A.'
+    ).strip()
+
+    p_logo = params.get('150')
+    logo_raw = (p_logo.valor_texto or '').strip() if p_logo and p_logo.valor_texto else ''
+
+    logo_url = ''
+    if logo_raw and not logo_raw.startswith('bi-'):
+        if logo_raw.startswith(('http://', 'https://', '/')):
+            logo_url = logo_raw
+        else:
+            # Si viene con subruta (ej. "iconos/logo_merida.png") o solo el archivo ("logo_merida.png")
+            ruta_rel = logo_raw if '/' in logo_raw or '\\' in logo_raw else f"img/iconos/{logo_raw}"
+            logo_url = static(ruta_rel.lstrip('/'))
+
+    return nombre_empresa, logo_url
+
+    
+from django.db import transaction
+from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib import messages
+from .models import Oficina
+from .permissions import empleado_requerido
+
+
+def _avanzar_correlativo_oficina_maleta(oficina_lock, cantidad_tickets):
+    """
+    Avanza el contador individual de la oficina: 001A..999A, 001B..999B, ...
+    Modifica `ultimo_numero_maleta` y `letra_actual_maleta` en `oficina_lock`.
+    """
+    codigos = []
+    num = oficina_lock.ultimo_numero_maleta
+    letra = (oficina_lock.letra_actual_maleta or 'A').upper()
+
+    for _ in range(cantidad_tickets):
+        num += 1
+        if num > 999:
+            num = 1
+            letra = 'A' if letra >= 'Z' else chr(ord(letra) + 1)
+        codigos.append(f"{num:03d}{letra}")
+
+    oficina_lock.ultimo_numero_maleta = num
+    oficina_lock.letra_actual_maleta = letra
+    return codigos
+
+
+@empleado_requerido()
+def taquilla_tickets_maleta(request):
+    empleado = request.user.usuarioempresa
+    oficina_usuario = empleado.oficina
+
+    # Todas las oficinas activas, colocando primero la del taquillero logueado
+    otras_oficinas = list(
+        Oficina.objects.filter(activa=True).exclude(id=oficina_usuario.id).order_by('nombre')
+    )
+    oficinas = [oficina_usuario] + otras_oficinas
+
+    if request.method == 'POST':
+        oficina_id = request.POST.get('oficina_id')
+        try:
+            cantidad_hojas = int(request.POST.get('cantidad_hojas', 1))
+        except (TypeError, ValueError):
+            cantidad_hojas = 0
+
+        if cantidad_hojas < 1 or cantidad_hojas > 50:
+            messages.error(request, 'Indique una cantidad válida de hojas (entre 1 y 50).')
+            return redirect('core:taquilla_tickets_maleta')
+
+        total_tickets = cantidad_hojas * 10
+
+        with transaction.atomic():
+            oficina_lock = get_object_or_404(
+                Oficina.objects.select_for_update(),
+                id=oficina_id,
+            )
+            codigos = _avanzar_correlativo_oficina_maleta(oficina_lock, total_tickets)
+            oficina_lock.save(update_fields=['ultimo_numero_maleta', 'letra_actual_maleta'])
+
+        hojas = [codigos[i:i + 10] for i in range(0, len(codigos), 10)]
+
+        request.session['tickets_maleta_imprimir'] = {
+            'oficina_id': oficina_lock.id,
+            'oficina_nombre': oficina_lock.nombre.upper(),
+            'oficina_codigo': getattr(oficina_lock, 'codigo', ''),
+            'hojas': hojas,
+            'desde': codigos[0],
+            'hasta': codigos[-1],
+            'total_tickets': total_tickets,
+        }
+        return redirect('core:taquilla_tickets_maleta_imprimir')
+
+    # Mapa id -> próximo código para actualizar el aviso en pantalla si el usuario cambia de oficina en el select
+    proximos_por_oficina = {
+        str(ofi.id): ofi.proximo_codigo_maleta() for ofi in oficinas
+    }
+
+    context = {
+        'oficinas': oficinas,
+        'oficina_default': oficina_usuario,
+        'proximo_codigo': oficina_usuario.proximo_codigo_maleta(),
+        'proximos_por_oficina': proximos_por_oficina,
+        'opciones_hojas': range(1, 21),
+    }
+    return render(request, 'taquilla/tickets_maleta.html', context)
